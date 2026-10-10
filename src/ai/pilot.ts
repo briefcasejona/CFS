@@ -8,7 +8,7 @@ import { surfaceHeight, airbaseById } from '../world/theater.js';
 import { G0 } from '../sim/atmosphere.js';
 
 export type Skill = 'rookie' | 'regular' | 'veteran' | 'ace';
-export type AITask = 'cap' | 'sweep' | 'escort' | 'strike' | 'sead' | 'cas' | 'intercept' | 'patrol' | 'ferry';
+export type AITask = 'cap' | 'sweep' | 'escort' | 'strike' | 'sead' | 'cas' | 'intercept' | 'patrol' | 'ferry' | 'awacs' | 'tanker';
 
 const SKILL: Record<Skill, { g: number; react: number; shootRange: number; aim: number; cm: number }> = {
   rookie: { g: 0.7, react: 1.6, shootRange: 0.55, aim: 3.0, cm: 0.5 },
@@ -33,6 +33,9 @@ export class AIPilot {
   waypoints: THREE.Vector3[] = [];
   wpIndex = 0;
   stationPoint: THREE.Vector3 | null = null;
+  /** racetrack axis heading (rad) for AWACS / tanker orbits */
+  stationHdg = Math.PI / 2;
+  private leg = 0;
   target: Aircraft | null = null;
   groundTargets: GroundUnit[] = [];
   groundTarget: GroundUnit | null = null;
@@ -101,6 +104,7 @@ export class AIPilot {
       if (fm.agl > 300) this.state = this.leader ? 'follow' : 'enroute';
       else return;
     }
+    if (this.task === 'awacs' || this.task === 'tanker') { this.state = this.wpIndex >= this.waypoints.length ? 'station' : 'enroute'; return; }
     if (!this.bingo && fm.totalFuel < fm.def.fuelInternal * 0.2) this.bingo = true;
 
     const threats = world.missilesAt(ac);
@@ -173,11 +177,28 @@ export class AIPilot {
 
   private flyStation(dt: number) {
     const ac = this.ac, fm = ac.fm;
+    if (this.task === 'awacs' || this.task === 'tanker') { this.flyRacetrack(dt); return; }
     const sp = this.stationPoint ?? ac.pos.clone();
     const d = new THREE.Vector3(sp.x - ac.pos.x, 0, sp.z - ac.pos.z);
     let hdg = Math.atan2(d.x, -d.z);
     if (d.length() < 20000) hdg += 75 * DEG; // orbit
     this.ap.holdAltHdgSpd(fm, Math.max(this.cruiseAlt, surfaceHeight(ac.pos.x, ac.pos.z) + 800), hdg, this.cruiseSpeed * 0.9, ac.ctrl, dt, 35 * DEG);
+  }
+
+  /** Racetrack: two 50 km legs, 12 km apart, gentle 20° bank turns — steady enough to tank behind. */
+  private flyRacetrack(dt: number) {
+    const ac = this.ac, fm = ac.fm;
+    const sp = this.stationPoint ?? ac.pos.clone();
+    const H = this.stationHdg, LEG = 25000, W = 24000;
+    const f = { x: Math.sin(H), z: -Math.cos(H) }, r = { x: Math.cos(H), z: Math.sin(H) };
+    const rx = ac.pos.x - sp.x, rz = ac.pos.z - sp.z;
+    const along = rx * f.x + rz * f.z;
+    if (this.leg === 0 && along > LEG) this.leg = 1;
+    else if (this.leg === 1 && along < -LEG) this.leg = 0;
+    // cross-track error to the active leg's line (positive = right of track)
+    const cross = this.leg === 0 ? rx * r.x + rz * r.z : -((rx - r.x * W) * r.x + (rz - r.z * W) * r.z);
+    const hdg = (this.leg === 0 ? H : H + Math.PI) - clamp(cross / 6000, -0.6, 0.6);
+    this.ap.holdAltHdgSpd(fm, Math.max(this.cruiseAlt, surfaceHeight(ac.pos.x, ac.pos.z) + 800), hdg, this.cruiseSpeed, ac.ctrl, dt, 20 * DEG);
   }
 
   private flyFollow(dt: number, world: World) {

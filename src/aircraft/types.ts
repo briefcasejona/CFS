@@ -131,6 +131,12 @@ export interface AircraftDef {
   capabilities?: Capability[];
   /** stores this airframe may carry (default: everything used in its loadouts) */
   allowedStores?: string[];
+  /** shares/receives the coalition air picture (Link 16); false for older jets */
+  datalink?: boolean;
+  /** selectable as a player aircraft (false for AWACS / tankers) */
+  playable?: boolean;
+  /** air-to-air refuelling tanker: boom and/or drogue, transfer rate kg/s */
+  tanker?: { boom: boolean; drogue: boolean; rateKgS: number };
 }
 
 export type Capability =

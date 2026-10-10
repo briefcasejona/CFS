@@ -13,6 +13,7 @@ const GREEN = '#40ff70';
 const DIM = '#1d6b33';
 
 export class Mfds {
+  private world: World | null = null;
   left: HTMLCanvasElement;
   right: HTMLCanvasElement;
   leftPage: MfdPage = 'FCR';
@@ -36,6 +37,7 @@ export class Mfds {
     if (this.timer > 0) return;
     this.timer = 1 / 20;
     const p = world.player;
+    this.world = world;
     const panels: Array<[HTMLCanvasElement, MfdPage, MfdPage[]]> = [[this.left, this.leftPage, LEFT_PAGES], [this.right, this.rightPage, RIGHT_PAGES]];
     for (const [cv, page, pages] of panels) {
       const c = cv.getContext('2d')!;
@@ -100,6 +102,19 @@ export class Mfds {
       this.txt(c, `${Math.round(ct.pos.y / FT / 1000)}`, x + 7, y + 8, GREEN, 10);
       if (r.cursor === ct.target || locked) c.strokeRect(x - 9, y - 9, 18, 18);
     }
+    // datalink tracks the own radar doesn't hold: hollow boxes
+    if (p.def.datalink !== false && this.world) {
+      for (const t of this.world.datalink.picture(p.side, p)) {
+        const d = t.pos.clone().sub(p.pos);
+        const range = d.length();
+        if (range > scale) continue;
+        const b = d.clone().applyQuaternion(inv);
+        const a = Math.atan2(b.x, -b.z) * RAD;
+        if (Math.abs(a) > az) continue;
+        const x = scanX(a), y = y1 - (range / scale) * (y1 - y0);
+        c.strokeStyle = DIM; c.lineWidth = 1.2; c.strokeRect(x - 4, y - 4, 8, 8);
+      }
+    }
     if (r.stt) {
       const t = r.stt;
       const range = t.pos.distanceTo(p.pos);
@@ -107,6 +122,8 @@ export class Mfds {
       const vc = -t.vel.clone().sub(p.vel).dot(los) / 0.5144;
       const aspect = Math.acos(clamp(t.fm.forward().dot(los.clone().negate()), -1, 1)) * RAD;
       this.txt(c, `${(range / NM).toFixed(1)}NM VC${vc.toFixed(0)} ASP${aspect.toFixed(0)}`, 150, 278, GREEN, 11, 'center');
+      // NCTR: engine-blade signature readable when the target is roughly nose-on and inside ~25 NM
+      if (aspect < 30 && range < 25 * NM && !r.def.name.includes('APG-66') && r.def.name !== 'AN/AWG-9') this.txt(c, `NCTR ${t.def.name}`, 150, 44, GREEN, 12, 'center');
     }
   }
 
@@ -139,6 +156,18 @@ export class Mfds {
       const q = toScreen(a.pos.x, a.pos.z);
       c.fillStyle = a.side === p.side ? '#4aa0ff' : '#ff5050';
       c.beginPath(); c.arc(q.x, q.y, 4, 0, Math.PI * 2); c.fill();
+    }
+    // off-board (datalink) tracks: hollow symbols with a heading stub; AWACS tracks marked with a dot
+    if (p.def.datalink !== false) {
+      for (const t of world.datalink.picture(p.side, p)) {
+        const q = toScreen(t.pos.x, t.pos.z);
+        const vq = toScreen(t.pos.x + t.vel.x * 30, t.pos.z + t.vel.z * 30);
+        c.strokeStyle = '#ff7a50'; c.lineWidth = 1.5;
+        c.beginPath(); c.moveTo(q.x, q.y - 6); c.lineTo(q.x + 5, q.y + 4); c.lineTo(q.x - 5, q.y + 4); c.closePath(); c.stroke();
+        c.beginPath(); c.moveTo(q.x, q.y); c.lineTo(vq.x, vq.y); c.stroke();
+        if (t.awacs) { c.fillStyle = '#ff7a50'; c.fillRect(q.x - 1, q.y - 1, 2, 2); }
+      }
+      this.txt(c, 'L16', 290, 14, DIM, 11, 'right');
     }
     c.fillStyle = GREEN;
     c.beginPath(); c.moveTo(cx, cy - 8); c.lineTo(cx + 6, cy + 6); c.lineTo(cx - 6, cy + 6); c.closePath(); c.fill();

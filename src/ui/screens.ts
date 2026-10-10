@@ -126,7 +126,7 @@ export function missionSetup(app: AppApi, advanced: boolean): HTMLElement {
   const detail = e.querySelector('.loadout-detail')!;
   const q = <T extends HTMLElement>(s: string) => e.querySelector(s) as T;
   const enemySel = q<HTMLSelectElement>('.enemy');
-  for (const a of AIRCRAFT) enemySel.append(new Option(`${a.name} (${a.country})`, a.id));
+  for (const a of AIRCRAFT) if (a.playable !== false) enemySel.append(new Option(`${a.name} (${a.country})`, a.id));
   enemySel.value = o.enemyId;
   q<HTMLSelectElement>('.skill').value = o.skill;
   q<HTMLSelectElement>('.start').value = o.start;
@@ -382,7 +382,7 @@ export function settingsScreen(app: AppApi): HTMLElement {
 /** Aircraft grouped by family, in definition order. */
 export function families(): Map<string, typeof AIRCRAFT> {
   const m = new Map<string, typeof AIRCRAFT>();
-  for (const a of AIRCRAFT) { const f = a.family ?? a.name; if (!m.has(f)) m.set(f, []); m.get(f)!.push(a); }
+  for (const a of AIRCRAFT) { if (a.playable === false) continue; const f = a.family ?? a.name; if (!m.has(f)) m.set(f, []); m.get(f)!.push(a); }
   // within a family: by block number, then variant letter (A, B, B(U), C, D, E)
   const key = (a: (typeof AIRCRAFT)[number]) => {
     const v = a.variant ?? '';

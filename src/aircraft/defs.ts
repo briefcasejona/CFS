@@ -374,7 +374,44 @@ const BASE: AircraftDef[] = [
     chaff: 80, flares: 40, approachKts: 135, rotateKts: 140,
     model: { wing: 'delta', canard: true, engines: 2, intake: 'chin', tailplane: false, color: 0x8b949c, sweep: 53 },
   },
+  // ------------------------------------------------------------------ support (AI only)
+  {
+    id: 'e3', name: 'E-3 Sentry', fullName: 'Boeing E-3G Sentry (AWACS)', role: 'AEW&C', country: 'USA/NATO', side: 'blue',
+    description: 'Airborne early warning: the AN/APY-2 rotodome sees fighters 200+ nm away and feeds the picture over Link 16.',
+    massEmpty: 73500, massMax: 147400, fuelInternal: 65000, pylonFuel: 0,
+    wingArea: 283, span: 44.4, chord: 7.3, length: 46.6, inertia: [5.0e6, 1.2e7, 1.6e7],
+    aero: aero({ CLa: 5.2, CLmax: 1.45, CD0: 0.021, k: 0.045, Mcrit: 0.8, waveDrag: 1.6, Cma: -0.6, Cmq: -14, Clp: -0.5, Cnb: 0.12 }),
+    engine: eng('4× TF33-PW-100A', 4, 93, 93, 0.85, { spoolTime: 8 }),
+    limits: { gMax: 2.5, gMin: -1, aoaMax: 14, rollRate: 30, maxMach: 0.85, vmaxKcas: 360 },
+    fcs: { type: 'cas' }, controls: { elev: 20, ail: 20, rud: 25 },
+    gear: gear(46.6, 6.7, 3.0), radar: { name: 'AN/APY-2 (rotodome)', range: 370000, azLimit: 180, tws: true },
+    rcs: 60, gun: null, stations: 0,
+    loadouts: [{ name: 'Mission', stores: [] }],
+    chaff: 0, flares: 0, approachKts: 140, rotateKts: 150,
+    model: { wing: 'swept', engines: 2, intake: 'under', tailplane: true, color: 0xc4c9cd, sweep: 35 },
+    playable: false,
+  },
+  {
+    id: 'kc135', name: 'KC-135R', fullName: 'Boeing KC-135R Stratotanker', role: 'Tanker', country: 'USA', side: 'blue',
+    description: 'Flying-boom tanker; with wing-tip MPRS pods it also refuels probe-equipped jets from drogues.',
+    massEmpty: 44660, massMax: 146000, fuelInternal: 90700, pylonFuel: 0,
+    wingArea: 226, span: 39.9, chord: 6.2, length: 41.5, inertia: [3.5e6, 9.0e6, 1.2e7],
+    aero: aero({ CLa: 5.2, CLmax: 1.45, CD0: 0.02, k: 0.045, Mcrit: 0.8, waveDrag: 1.6, Cma: -0.6, Cmq: -14, Clp: -0.5, Cnb: 0.12 }),
+    engine: eng('4× CFM F108', 4, 96, 96, 0.85, { spoolTime: 7 }),
+    limits: { gMax: 2.5, gMin: -1, aoaMax: 14, rollRate: 30, maxMach: 0.86, vmaxKcas: 360 },
+    fcs: { type: 'cas' }, controls: { elev: 20, ail: 20, rud: 25 },
+    gear: gear(41.5, 6.7, 2.8), radar: null,
+    rcs: 50, gun: null, stations: 0,
+    loadouts: [{ name: 'Tanker', stores: [] }],
+    chaff: 0, flares: 0, approachKts: 140, rotateKts: 150,
+    model: { wing: 'swept', engines: 2, intake: 'under', tailplane: true, color: 0xa8aeb3, sweep: 35 },
+    playable: false,
+    tanker: { boom: true, drogue: true, rateKgS: 16 },
+  },
 ];
+
+/** Jets without Link 16 (they still have their own radar picture). */
+const NO_DATALINK = new Set(['f4e', 't38c', 'mig29a', 'su27', 'm2000', 'av8b', 'f16a', 'f16b', 'f14a', 'f14b1']);
 
 // ------------------------------------------------------------------ variants
 /** Family / variant labels and crew for the base airframes. */
@@ -524,6 +561,10 @@ export function mergeDeep<T>(base: T, over: DeepPartial<T>): T {
   return out as T;
 }
 
+/** Air-to-air refuelling receivers by family. */
+const BOOM_FAMILIES = new Set(['F-16', 'F-15']);
+const PROBE_FAMILIES = new Set(['F-14', 'F/A-18', 'Rafale C', 'Typhoon', 'JAS 39', 'Mirage 2000-5', 'Su-30SM', 'Su-57', 'Harrier II']);
+
 /** Capabilities implied by loadouts and systems (explicit `capabilities` are added on top). */
 export function deriveCapabilities(d: AircraftDef): Capability[] {
   const caps = new Set<Capability>(d.capabilities ?? []);
@@ -538,6 +579,8 @@ export function deriveCapabilities(d: AircraftDef): Capability[] {
   }
   if (d.gun) caps.add('gun');
   if (d.fcs.swingWing) caps.add('swing-wing');
+  if (BOOM_FAMILIES.has(d.family ?? d.name)) caps.add('boom');
+  if (PROBE_FAMILIES.has(d.family ?? d.name)) caps.add('probe');
   if (d.fcs.vtol) caps.add('stovl');
   return [...caps];
 }
@@ -545,7 +588,7 @@ export function deriveCapabilities(d: AircraftDef): Capability[] {
 /** Fill in variant-system defaults (family, seats, allowed stores, capabilities). */
 function finalize(d: AircraftDef): AircraftDef {
   const allowed = d.allowedStores ?? [...new Set(d.loadouts.flatMap((l) => l.stores).filter(Boolean))];
-  const out: AircraftDef = { ...d, family: d.family ?? d.name, seats: d.seats ?? 1, allowedStores: allowed };
+  const out: AircraftDef = { ...d, family: d.family ?? d.name, seats: d.seats ?? 1, allowedStores: allowed, datalink: d.datalink ?? !NO_DATALINK.has(d.id), playable: d.playable ?? true };
   out.capabilities = deriveCapabilities(out);
   // loadouts may only use allowed stores
   out.loadouts = out.loadouts.filter((l) => l.stores.every((s) => !s || allowed.includes(s)));

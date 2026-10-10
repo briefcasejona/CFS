@@ -37,6 +37,7 @@ export function dlz(ac: Aircraft, target: Aircraft, wid: string) {
 }
 
 export class Hud {
+  private world: World | null = null;
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
   private w = 0; private h = 0;
@@ -54,6 +55,7 @@ export class Hud {
   }
 
   draw(world: World, scene: SceneRenderer, st: HudState, dt: number) {
+    this.world = world;
     const c = this.ctx;
     this.flash += dt;
     c.clearRect(0, 0, this.w, this.h);
@@ -251,6 +253,9 @@ export class Hud {
       const red = warns[0] === 'PULL UP' || warns[0] === 'MISSILE';
       this.text(warns[0], cx, (hy0 + hy1) / 2 + 70 * scale, red ? '#ff4040' : col, 20 * scale, 'center');
     }
+    // air-to-air refuelling director cue (like tanker director lights)
+    const cue = this.world?.refuel.cue();
+    if (cue) this.text(cue, cx, (hy0 + hy1) / 2 + 100 * scale, col, 14 * scale, 'center');
     c.shadowBlur = 0;
   }
 

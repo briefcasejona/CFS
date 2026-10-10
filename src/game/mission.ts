@@ -27,6 +27,12 @@ export interface FlightSpec {
   homeBase: string;
   waypoints?: Array<{ x: number; z: number; alt: number; name?: string }>;
   station?: { x: number; z: number; alt: number };
+  /** racetrack axis heading (deg) for AWACS / tanker stations */
+  stationHdg?: number;
+  /** cruise / orbit true airspeed (m/s) */
+  speed?: number;
+  /** internal fuel at start as a fraction of capacity (default full) */
+  fuelFraction?: number;
   targetGroup?: string;
   player?: boolean;
   squadronId?: string;
@@ -204,6 +210,7 @@ export function buildMission(spec: MissionSpec, opts: WorldOptions): BuiltMissio
     for (let i = 0; i < f.count; i++) {
       const ac = new Aircraft(def, f.side, `${cs} 1-${i + 1}`, f.stores);
       ac.nation = f.nation ?? defaultNation(f.side);
+      if (f.fuelFraction !== undefined) { ac.fm.fuel = def.fuelInternal * f.fuelFraction; ac.fm.updateMass(); }
       ac.flightId = f.id;
       ac.wingIndex = i;
       ac.homeBaseId = f.homeBase;
@@ -242,6 +249,8 @@ export function buildMission(spec: MissionSpec, opts: WorldOptions): BuiltMissio
         ai.homeBase = f.homeBase;
         ai.waypoints = (f.waypoints ?? []).map((w) => new THREE.Vector3(w.x, w.alt, w.z));
         if (f.station) ai.stationPoint = new THREE.Vector3(f.station.x, f.station.alt, f.station.z);
+        if (f.stationHdg !== undefined) ai.stationHdg = f.stationHdg * Math.PI / 180;
+        if (f.speed) ai.cruiseSpeed = f.speed;
         ai.cruiseAlt = f.station?.alt ?? f.waypoints?.[0]?.alt ?? 7000;
         if (f.targetGroup) ai.groundTargets = groupUnits.get(f.targetGroup) ?? [];
         if (i > 0) ai.leader = members[0];
@@ -333,11 +342,12 @@ export function evaluate(b: BuiltMission): MissionResult {
 }
 
 // ------------------------------------------------------------------ instant action / mission setup
-export type ScenarioId = 'freeflight' | 'takeoff' | 'bfm_guns' | 'bfm_ir' | 'bvr' | 'furball' | 'strike' | 'sead' | 'cas' | 'scramble';
+export type ScenarioId = 'freeflight' | 'takeoff' | 'refuel' | 'bfm_guns' | 'bfm_ir' | 'bvr' | 'furball' | 'strike' | 'sead' | 'cas' | 'scramble';
 
 export const SCENARIOS: Array<{ id: ScenarioId; name: string; desc: string }> = [
   { id: 'freeflight', name: 'Free flight', desc: 'Air start at 15,000 ft near Halvorsen AB. No threats — learn the jet.' },
   { id: 'takeoff', name: 'Takeoff & landing', desc: 'Runway start at Halvorsen AB. Take off, fly the pattern and land.' },
+  { id: 'refuel', name: 'Aerial refueling', desc: 'Join a KC-135R on its track with 35% fuel. Boom (F-16/F-15) or drogue (probe jets). Follow the HUD cue.' },
   { id: 'bfm_guns', name: 'BFM: guns only', desc: '1v1 head-on merge at 15,000 ft. Guns only — energy management decides.' },
   { id: 'bfm_ir', name: 'BFM: heaters + guns', desc: '1v1 from 10 nm, IR missiles and guns. Flares, flares, flares.' },
   { id: 'bvr', name: 'BVR 2v2', desc: 'You and a wingman vs. two bandits 50 nm out. Radar missiles, crank and notch.' },
@@ -413,6 +423,17 @@ export function buildScenario(o: CustomOptions): MissionSpec {
       goals.length = 0;
       goals.push({ kind: 'land' });
       break;
+    case 'refuel': {
+      const tx = -40000, tz = 110000, ta = 7600, tv = 195;
+      flights.push({ id: 'tanker', callsign: 'Texaco', side: playerSide, aircraftId: 'kc135', stores: [], count: 1, skill: 'veteran', task: 'tanker',
+        start: { kind: 'air', x: tx, z: tz, alt: ta, hdg: 90, speed: tv }, homeBase: 'halvorsen', station: { x: tx + 25000, z: tz, alt: ta }, stationHdg: 90, speed: tv });
+      const pf = playerFlight(pl.filter((s) => s !== 'tank'), { kind: 'air', x: tx - 800, z: tz + 40, alt: ta - 60, hdg: 90, speed: tv - 4 }, 'ferry');
+      pf.count = 1;
+      pf.fuelFraction = 0.35;
+      flights.push(pf);
+      goals.length = 0;
+      break;
+    }
     case 'bfm_guns':
       flights.push(playerFlight([], playerStart(AX, AZ + 3 * NM / 2, 0)));
       flights.push(enemy(o.enemyId, [], o.enemyCount, { kind: 'air', x: AX + 600, z: AZ - 3 * NM / 2, alt, hdg: 180, speed: spd }, 'sweep'));
@@ -437,6 +458,10 @@ export function buildScenario(o: CustomOptions): MissionSpec {
       flights.push(enemy(o.enemyId, pickLoadout(o.enemyId, ['CAP', 'Internal']), o.scenario === 'furball' ? Math.max(o.enemyCount, 4) : Math.max(o.enemyCount, 2),
         { kind: 'air', x: AX, z: AZ - dist / 2, alt: a2, hdg: 180, speed: spd }, 'sweep'));
       goals.unshift({ kind: 'killAir', side: enemySide });
+      // AWACS behind the friendly lines feeds the Link 16 picture
+      flights.push({ id: 'awacs', callsign: 'Magic', side: playerSide, aircraftId: 'e3', stores: [], count: 1, skill: 'veteran', task: 'awacs',
+        start: { kind: 'air', x: AX - 30000, z: AZ + 110000, alt: 9000, hdg: 90, speed: 190 }, homeBase: 'halvorsen',
+        station: { x: AX - 5000, z: AZ + 110000, alt: 9000 }, stationHdg: 90, speed: 190 });
       break;
     }
     case 'strike': {

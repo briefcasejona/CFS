@@ -1,3 +1,5 @@
+import { Datalink } from '../avionics/datalink.js';
+import { Refueling } from './refuel.js';
 import * as THREE from 'three';
 import { Aircraft, GroundUnit, SamSite, newId, rwrSymbol, type Countermeasure, type RwrContact, type Target } from './entities.js';
 import type { FlightEnv, FMOptions } from './flightModel.js';
@@ -45,6 +47,10 @@ export class World {
   opts: WorldOptions = { unlimitedFuel: false, unlimitedWeapons: false, invulnerable: false, gEffects: true, abDetent: 0.8 };
   env: FlightEnv;
   lastLaunched: Missile | null = null;
+  /** coalition air pictures (Link 16) */
+  datalink = new Datalink();
+  /** player air-to-air refuelling state */
+  refuel = new Refueling();
   private rwrTimer = 0;
   private aiRadarTimer = 0;
 
@@ -115,6 +121,11 @@ export class World {
           else if (m.site) paintRwr(t, this, m.site.radar.id, 'launch', m.site.radar.pos, m.site.params.symbol);
         }
       }
+    }
+    this.datalink.update(dt, this.time, this.aircraft);
+    if (this.player && !this.player.removed) {
+      const msg = this.refuel.step(dt, this.player, this.aircraft);
+      if (msg && this.refuel.status.tanker) this.radio(`${this.refuel.status.tanker.callsign}: ${msg}`, "#9fd8ff");
     }
     this.missiles = this.missiles.filter((m) => m.alive);
     this.bullets.step(dt, this);

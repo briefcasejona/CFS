@@ -4,7 +4,7 @@ This file is the single source of truth for continuing the roadmap across sessio
 session at any time). Update it and `git commit && git push` after every finished step.
 
 ## Heartbeat (lock)
-- heartbeat: 2026-10-10T13:24:32+02:00
+- heartbeat: 2026-10-10T22:14:17+02:00
 - owner: interactive session (wishlist session)
 
 Rule: a session that is actively working updates `heartbeat` (local ISO time, `date -Iseconds`) at least every
@@ -35,7 +35,7 @@ less than 60 minutes old (someone else is working). When taking over, set `owner
 - [x] Phase 2 — foundations: Theater interface + registry, aircraft variant system (`extends`), Nation model, camera-relative rendering hook, campaign save migration (theaterId)
 - [x] Phase 3 — aircraft families: F-14A/B/B(U)/D, F-16A/B blk15, C/D blk40/50/70, F-15C/D, F-15E
 - [x] Phase 4 — cameras + 3D cockpit (orbit chase cam, procedural/GLB cockpit, collimated HUD)
-- [ ] Phase 5 — radar/datalink, AWACS, aerial refueling
+- [x] Phase 5 — radar/datalink, AWACS, aerial refueling
 - [ ] Phase 6 — co-op multiplayer (Trystero WebRTC), then multicrew
 - [ ] Phase 7 — mission editor
 - [ ] Phase 8 — full Europe theater (real DEM via pure-JS bake + streaming) + landscape
@@ -49,20 +49,22 @@ less than 60 minutes old (someone else is working). When taking over, set `owner
 Licence duties if used: attribution (credits screen + `assets/models/CREDITS.md`), non-commercial only, processed model files stay CC BY-NC-SA.
 
 ## Current step / next actions
-Phase 4 done: src/render/cockpit.ts (procedural cockpit: panel + live MFD CanvasTextures, glareshield, consoles, rails, bow for framed canopies,
-seat, tandem rear cockpit, own nose/spine/floor), scene.updatePlayerCockpit (F1 shows own jet minus glass/fuselage; HD F-14/Gripen use their modelled
-cockpit with HdSpec.eye), near plane 0.08 in cockpit, F2-again toggles horizon-level chase. HUD stays screen-space.
-NEXT: Phase 5 — radar/datalink, AWACS, aerial refueling:
-(1) src/avionics/datalink.ts: per-side track table (sources: own radar contacts, wingmen radars, AWACS); stale-out; MFD HSD/SA page shows datalink tracks
-(different symbol from own-radar tracks); radar: show DL tracks on FCR too.
-(2) AWACS entity: AI task 'awacs' (E-3 def: big, slow, radar 400 km, no weapons) flying a racetrack behind the lines; radio calls (picture).
-(3) radar realism: doppler notch (target beaming ±~10 kt radial → lost in look-down), ground clutter in look-down at low PRF, NCTR id when STT & nose-on.
-(4) src/sim/refuel.ts: tanker AI (KC-135 boom / KC-130 drogue def), racetrack; receiver contact envelope (boom: position box behind/below tail;
-drogue: basket point), disconnect on excess closure/angle, fuel transfer ~1000 kg/min; tanker radio; scenario 'Aerial refueling' in Instant Action;
-capabilities 'boom' for F-16/F-15 families, 'probe' for F-14/F/A-18/Rafale/Typhoon/Gripen/Mirage/Su-30/Su-57/Harrier.
-(5) tests: datalink merge/stale, notch, refuel transfer; browser check; commit; release.
+Phase 5 done: src/avionics/datalink.ts (per-side Link 16 picture, world.datalink; HSD hollow off-board tracks, FCR hollow boxes, AWACS dot; NO_DATALINK
+for older jets), E-3 + KC-135R support defs (playable:false, hidden from pickers), AI tasks 'awacs'/'tanker' with racetrack (pilot.ts flyRacetrack),
+src/sim/refuel.ts (boom/drogue envelopes, contact/disconnect, 16 kg/s, HUD director cue, radio), boom/probe capabilities by family,
+'Aerial refueling' Instant Action scenario (FlightSpec.fuelFraction/stationHdg/speed), AWACS 'Magic' in BVR/furball, NCTR on FCR STT. 47 tests.
+NEXT: Phase 6 — co-op multiplayer (2–4 players) over WebRTC without port forwarding:
+(1) vendor Trystero (pure ESM, pick the nostr or torrent strategy; check npm 'trystero' package files for a browser ESM build) into site/vendor and
+dev import map; src/net/net.ts: joinRoom(code) → peers, send/recv channels.
+(2) host-authoritative: host runs World; clients send own-ship state (pos/quat/vel/ctrl/weapons fired) at 20 Hz; host broadcasts snapshots
+(AI aircraft, missiles, ground units, kills) at 15 Hz; clients render remote entities with interpolation (100 ms buffer); remote players are
+Aircraft without AI on the host (state applied from net).
+(3) lobby UI (main menu 'Multiplayer'): host → room code + mission pick (Instant Action scenarios); join → code; chat; WebRTC voice optional.
+(4) multicrew later (back-seat client owns radar/MFD input).
+(5) tests: snapshot encode/decode, interpolation; browser two-tab test (two tabs in the preview, same room).
 
 ## Log
+- 2026-10-10 — Phase 5 done: datalink/AWACS/NCTR + aerial refuelling, 47 tests; release v0.1.6.
 - 2026-10-10 — Phase 4 done: 3D cockpits + chase cam modes, 43 tests; release v0.1.5.
 - 2026-10-10 — Phase 3 done: aircraft families + TF30 stalls, 42 tests; release v0.1.4.
 - 2026-10-10 — Phase 2 done (theater registry, variants, nations), 40 tests; release v0.1.3.
