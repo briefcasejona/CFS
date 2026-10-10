@@ -39,6 +39,12 @@ export class TerrainRenderer {
     this.group.name = 'terrain';
   }
 
+  /** Drop every cached chunk (after a theater switch). */
+  clear() {
+    for (const e of this.chunks.values()) { this.group.remove(e.mesh); e.mesh.geometry.dispose(); }
+    this.chunks.clear();
+  }
+
   private buildChunk(ci: number, cj: number, res: number): THREE.Mesh {
     const x0 = -THEATER_HALF + ci * CHUNK;
     const z0 = -THEATER_HALF + cj * CHUNK;

@@ -1,6 +1,6 @@
 import type { Side } from '../aircraft/types.js';
 import { AIRCRAFT_BY_ID } from '../aircraft/defs.js';
-import { AIRBASES, OBJECTIVES, INITIAL_FRONT, SECTORS, sectorX, frontZAt, airbaseById, type ObjectiveDef } from '../world/theater.js';
+import { AIRBASES, OBJECTIVES, INITIAL_FRONT, SECTORS, sectorX, frontZAt, airbaseById, currentTheater, setTheater, type ObjectiveDef } from '../world/theater.js';
 import { pickLoadout, callsignFor, type FlightSpec, type GroupSpec, type MissionSpec, type MissionGoal, type BuiltMission, type MissionResult } from '../game/mission.js';
 import type { Skill, AITask } from '../ai/pilot.js';
 import { WEAPONS } from '../weapons/stores.js';
@@ -24,7 +24,10 @@ export interface CPackage { id: string; side: Side; task: CampaignTask; targetId
 export interface LogEntry { turn: number; day: number; hour: number; text: string; side?: Side }
 
 export interface CampaignState {
-  version: 1;
+  /** save format: 1 = original (implicit Varnia), 2 = adds theaterId */
+  version: 2;
+  /** theater (map) this campaign is fought in */
+  theaterId: string;
   name: string;
   created: number;
   turn: number;
@@ -94,10 +97,11 @@ function log(st: CampaignState, text: string, side?: Side) {
 }
 
 // ------------------------------------------------------------------ creation
-export function newCampaign(name: string, difficulty: Skill, seed = Math.floor(Math.random() * 100000)): CampaignState {
+export function newCampaign(name: string, difficulty: Skill, seed = Math.floor(Math.random() * 100000), theaterId = 'varnia'): CampaignState {
+  setTheater(theaterId);
   const r = rng(seed);
   const st: CampaignState = {
-    version: 1, name, created: Date.now(), turn: 1, day: 1, hour: 6, playerSide: 'blue', difficulty,
+    version: 2, theaterId: currentTheater().id, name, created: Date.now(), turn: 1, day: 1, hour: 6, playerSide: 'blue', difficulty,
     front: [...INITIAL_FRONT],
     strength: { blue: Array.from({ length: SECTORS }, () => 55 + Math.round(r() * 15)), red: Array.from({ length: SECTORS }, () => 58 + Math.round(r() * 15)) },
     supply: { blue: 1, red: 1 },
@@ -292,6 +296,7 @@ export function missionForFlight(st: CampaignState, f: CFlight, start: 'runway' 
     weather: { visibilityKm: 40 + Math.round(r() * 60), clouds: r() < 0.3 ? 'clear' : r() < 0.8 ? 'scattered' : 'overcast', cloudBase: 2500 + r() * 3000, timeOfDay: clamp(hour % 24, 6, 19) },
     flights, groups, goals,
     campaign: { flightId: f.id, turn: st.turn },
+    theaterId: st.theaterId,
   };
 }
 
@@ -525,6 +530,9 @@ export function deleteSave(slot: number) {
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(listSaves().filter((s) => s.slot !== slot))); } catch { /* storage unavailable */ }
 }
 export function validateState(o: any): CampaignState {
-  if (!o || o.version !== 1 || !Array.isArray(o.front) || !Array.isArray(o.squadrons) || typeof o.turn !== 'number') throw new Error('Not a CFS campaign file');
+  if (!o || (o.version !== 1 && o.version !== 2) || !Array.isArray(o.front) || !Array.isArray(o.squadrons) || typeof o.turn !== 'number') throw new Error('Not a CFS campaign file');
+  // migrations
+  if (o.version === 1) { o.theaterId = 'varnia'; o.version = 2; }
+  if (typeof o.theaterId !== 'string') o.theaterId = 'varnia';
   return o as CampaignState;
 }

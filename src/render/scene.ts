@@ -4,7 +4,7 @@ import type { Aircraft, GroundUnit } from '../sim/entities.js';
 import type { Missile } from '../weapons/missile.js';
 import { TerrainRenderer, buildScenery } from './terrainMesh.js';
 import { buildAircraftModel, updateAircraftModel, syncStores, groundMesh, storeMesh, type AircraftModel } from './models.js';
-import { surfaceHeight } from '../world/theater.js';
+import { surfaceHeight, theaterVersion } from '../world/theater.js';
 import { clamp } from '../core/math.js';
 
 export type ViewMode = 'cockpit' | 'chase' | 'flyby' | 'target' | 'weapon' | 'enemy';
@@ -138,6 +138,7 @@ export class SceneRenderer {
   private sunDir = new THREE.Vector3(0, 1, 0);
   private smoothQuat = new THREE.Quaternion();
   private deadMat = new THREE.MeshLambertMaterial({ color: 0x222018 });
+  private theaterVer = theaterVersion;
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true, powerPreference: 'high-performance' });
@@ -215,6 +216,14 @@ export class SceneRenderer {
   }
 
   reset() {
+    if (this.theaterVer !== theaterVersion) {
+      // a different theater is active: rebuild terrain chunks and airbase scenery
+      this.theaterVer = theaterVersion;
+      this.terrain.clear();
+      this.scene.remove(this.scenery);
+      this.scenery = buildScenery();
+      this.scene.add(this.scenery);
+    }
     for (const m of this.acModels.values()) this.scene.remove(m.root);
     for (const m of this.groundModels.values()) this.scene.remove(m);
     for (const m of this.missileModels.values()) this.scene.remove(m);

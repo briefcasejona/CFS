@@ -4,7 +4,7 @@ import { AIRCRAFT_BY_ID, getAircraft } from '../aircraft/defs.js';
 import { Aircraft, GroundUnit, SamSite, type GroundType } from '../sim/entities.js';
 import { World, type WorldOptions } from '../sim/world.js';
 import { AIPilot, type AITask, type Skill } from '../ai/pilot.js';
-import { airbaseById, runwayEnds, terrainHeight, type SamType } from '../world/theater.js';
+import { airbaseById, runwayEnds, setTheater, terrainHeight, type SamType } from '../world/theater.js';
 import type { Weather } from '../render/scene.js';
 import { WEAPONS } from '../weapons/stores.js';
 import { FT, KT, NM } from '../sim/atmosphere.js';
@@ -60,6 +60,8 @@ export interface MissionSpec {
   groups: GroupSpec[];
   goals: MissionGoal[];
   campaign?: { flightId: string; turn: number };
+  /** theater (map) id; defaults to Varnia */
+  theaterId?: string;
 }
 
 export interface BuiltMission {
@@ -184,6 +186,7 @@ function spawnGroup(world: World, g: GroupSpec, seed: number): GroundUnit[] {
 }
 
 export function buildMission(spec: MissionSpec, opts: WorldOptions): BuiltMission {
+  setTheater(spec.theaterId);
   const world = new World();
   world.opts = { ...opts };
   const groupUnits = new Map<string, GroundUnit[]>();

@@ -1,12 +1,14 @@
-import { THEATER_HALF, terrainHeight, AIRBASES, OBJECTIVES, frontZAt, type ObjectiveDef } from '../world/theater.js';
+import { THEATER_HALF, terrainHeight, AIRBASES, OBJECTIVES, frontZAt, theaterVersion, type ObjectiveDef } from '../world/theater.js';
 import { SAM_PARAMS } from '../sim/entities.js';
 import { WEAPONS } from '../weapons/stores.js';
 
 let BG: HTMLCanvasElement | null = null;
+let BGver = -1;
 
-/** Shaded-relief image of the theater (built once). */
+/** Shaded-relief image of the active theater (built once per theater). */
 export function theaterBackground(): HTMLCanvasElement {
-  if (BG) return BG;
+  if (BG && BGver === theaterVersion) return BG;
+  BGver = theaterVersion;
   const N = 512;
   const cv = document.createElement('canvas');
   cv.width = cv.height = N;

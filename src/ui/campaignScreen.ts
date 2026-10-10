@@ -4,7 +4,7 @@ import {
   playerFlights, flightRoute, squadron, fmtTime,
   type CampaignState, type CFlight,
 } from '../campaign/campaign.js';
-import { AIRBASES, OBJECTIVES, SECTORS, sectorX } from '../world/theater.js';
+import { AIRBASES, OBJECTIVES, SECTORS, sectorX, setTheater } from '../world/theater.js';
 import { drawTheater, s2w, w2s, type MapMarker, type MapView } from './map.js';
 import { briefing, debrief, el, esc, summarizeStores, type AppApi } from './screens.js';
 import type { Skill } from '../ai/pilot.js';
@@ -43,7 +43,10 @@ export function campaignLobby(app: AppApi): HTMLElement {
     const out = s.state.outcome ? ` · ${s.state.outcome === s.state.playerSide ? 'VICTORY' : 'DEFEAT'}` : '';
     const row = el(`<div class="saverow"><div><b>Slot ${s.slot}: ${esc(s.name)}</b><br><span class="muted small">Day ${s.day}, turn ${s.turn} · saved ${esc(new Date(s.savedAt).toLocaleString())}${out}</span></div>
       <div class="nowrap"><button data-a="load" class="primary small">Load</button> <button data-a="del" class="small">Delete</button></div></div>`);
-    row.querySelector('[data-a="load"]')!.addEventListener('click', () => { current = s.state; currentSlot = s.slot; app.show(() => campaignHQ(app)); });
+    row.querySelector('[data-a="load"]')!.addEventListener('click', () => {
+      try { current = validateState(s.state); } catch (err) { app.toast(`Could not load save: ${(err as Error).message}`); return; }
+      currentSlot = s.slot; app.show(() => campaignHQ(app));
+    });
     // two-step delete (window.confirm is unavailable in some embedded viewers)
     const del = row.querySelector('[data-a="del"]') as HTMLButtonElement;
     del.addEventListener('click', () => {
@@ -74,6 +77,7 @@ export function campaignLobby(app: AppApi): HTMLElement {
 
 export function campaignHQ(app: AppApi): HTMLElement {
   const st = current!;
+  setTheater(st.theaterId);
   let tab: 'ato' | 'sq' | 'obj' | 'log' = 'ato';
   let selected: CFlight | null = playerFlights(st).find((f) => !f.flown) ?? null;
   const view: MapView = { cx: 0, cz: 0, mpp: 700, w: 800, h: 700 };
