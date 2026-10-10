@@ -4,7 +4,7 @@ This file is the single source of truth for continuing the roadmap across sessio
 session at any time). Update it and `git commit && git push` after every finished step.
 
 ## Heartbeat (lock)
-- heartbeat: 2026-10-10T23:02:39+02:00
+- heartbeat: 2026-10-10T23:05:23+02:00
 - owner: interactive session (wishlist session)
 
 Rule: a session that is actively working updates `heartbeat` (local ISO time, `date -Iseconds`) at least every
@@ -38,7 +38,7 @@ less than 60 minutes old (someone else is working). When taking over, set `owner
 - [x] Phase 5 — radar/datalink, AWACS, aerial refueling
 - [x] Phase 6 — co-op multiplayer (Trystero WebRTC) [multicrew back-seat still open, optional]
 - [x] Phase 7 — mission editor
-- [ ] Phase 8 — full Europe theater (real DEM via pure-JS bake + streaming) + landscape
+- [x] Phase 8 — full Europe theater (real DEM via pure-JS bake) + landscape (Europe campaign + Earth curvature deferred)
 - [ ] Phase 9 — carriers
 - [ ] Phase 10 — Gulf map + voice commands
 
@@ -60,7 +60,8 @@ DONE step (2): src/world/theaters/europe.ts (DEM rawHeight + fbm micro-relief, 2
 DONE step (3)+(4): theater picker in mission setup (ensureTheater before briefing), Europe load gunzips only if needed, terrain chunk loop windowed around the camera, scenarios adapt via theaterAdapt.ts (commit dee22ce).
 DONE step (5a): Theater.palette (beach/snowLine/rockBelowSnow; Europe snowline by latitude, no sand band), micro-relief fades near sea level so polders stay dry (+test), map: 1024px background on large theaters, Theater.overlay (borders+cities from scripts/terrain/bake-europe-overlay.mjs → overlay.json, 79 KB) drawn on all maps, credits in Settings + assets/theaters/europe/SOURCES.md (commit e79852d). 57 tests.
 DONE (5b): instanced conifers (≤12k, 5 km radius, rebuilt per km, hidden >3000 m AGL) in forest-noise patches, clear of runways.
-NEXT: /app-legal-guard check, PROGRESS, npm run release (v0.1.9). Earth curvature optional.
+DONE: /app-legal-guard check → legal/ (no 🔴; L1–L7 wait for Jonathan: contact address, license, OK for privacy link/lobby notice/licenses link). Release v0.1.9.
+NEXT: Phase 9 — carriers (src/sim/carrier.ts: moving deck as moving airbase, deck-frame ground contact, catapult, 4 arrestor wires + tailhook, simple LSO/ICLS cues; a carrier in the North Sea (Europe) and in Varnia; carrier-capable variants already flagged in defs (F-14, F/A-18 if present); takeoff/landing scenario from the carrier; tests: trap, cat shot, deck contact while ship moves).
 Original plan (for reference):
 (1) scripts/terrain/bake-europe.mjs (pure JS: fetch AWS Terrarium tiles https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png,
 decode with pngjs, height = (R*256 + G + B/256) - 32768) for lon −6…20, lat 42…62 at zoom ~7–8 → resample into a Transverse-Mercator
@@ -76,6 +77,7 @@ terrain vertex positions (h -= d²/(2R) relative to the camera) for the horizon;
 Tiles (Mapzen: SRTM/GMTED/ETOPO1 etc.) and OurAirports (public domain). Tests: projection round trip, baked tile sampling, airbases on land.
 
 ## Log
+- 2026-10-10 — Phase 8 done: Northern Europe theater (1 km DEM, 26 airfields, theater picker, borders/cities map, latitude snowline, forests), legal check; 57 tests; release v0.1.9.
 - 2026-10-10 — Phase 7 done: mission editor + share links, 52 tests; release v0.1.8.
 - 2026-10-10 — Phase 6 co-op multiplayer working (WebRTC, no port forwarding), 49 tests; release v0.1.7.
 - 2026-10-10 — Phase 5 done: datalink/AWACS/NCTR + aerial refuelling, 47 tests; release v0.1.6.
