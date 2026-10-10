@@ -4,7 +4,7 @@ This file is the single source of truth for continuing the roadmap across sessio
 session at any time). Update it and `git commit && git push` after every finished step.
 
 ## Heartbeat (lock)
-- heartbeat: 2026-10-10T10:51:01+02:00
+- heartbeat: 2026-10-10T10:56:15+02:00
 - owner: interactive session (wishlist session)
 
 Rule: a session that is actively working updates `heartbeat` (local ISO time, `date -Iseconds`) at least every
@@ -49,7 +49,20 @@ less than 60 minutes old (someone else is working). When taking over, set `owner
 Licence duties if used: attribution (credits screen + `assets/models/CREDITS.md`), non-commercial only, processed model files stay CC BY-NC-SA.
 
 ## Current step / next actions
-- Running the council on the 3D models (Phase 1c), then Phase 2.
+Phase 1c (3D models) in progress. Council verdict (2026-10-10): F/A-18E OBJ NOT used (no licence, likely ripped; user advised to delete it).
+F-14 + Gripen USED as opt-in 'HD aircraft models' (setting), lazy-loaded (runtime cache, NOT in SW precache), procedural model stays
+as placeholder / far LOD (>~3 km) / hitbox; credits screen + assets/models/cc-by-nc-sa/LICENSE.md; game must stay non-commercial.
+Done: scripts/models/optimize-glb.mjs (pure JS) → assets/models/cc-by-nc-sa/f14.glb (6.4 MB), gripen.glb (3.9 MB); scripts/models/inspect-glb.mjs.
+Findings: models in decimetres (×0.1 → metres); glTF world: axis0 = fore-aft (+x = nose, F-14 x∈[-64.7,126.8]), axis1 = up, axis2 = span (±97.7, wings UNSWEPT 20°).
+F-14 nodes: Object_4 airframe, Object_6 glass canopy, Object_8 cockpit (x 52–96), Object_10/12 gear (one is gearOn/gearOff), Object_14 glass, Object_16 refuel probe.
+Primitives carry TANGENT + TEXCOORD_1..3 — strip unused attrs in optimize-glb to cut ~half the geometry size.
+inspect-glb.mjs grid bug: 'all' only collects nodes whose name contains 'airframe' but meshes are on child nodes (Object_4) — use parent name.
+NEXT: (1) fix inspect grid, find F-14 wing glove pivot (span ≈ ±2.7 m) for shader wing-sweep; (2) src/render/hdModels.ts: GLTFLoader via import map
+'three/examples/jsm/' (copy GLTFLoader.js + utils/BufferGeometryUtils.js into site/vendor via installable.config.json), bake node transforms,
+convert to game frame (nose -Z, span X, up Y, metres), toggle gear nodes by fm.gearPos, hide cockpit outside F1, swing-wing via onBeforeCompile
+(attribute aSwing ±1 on outer-wing verts); (3) setting 'HD aircraft models' + credits screen; (4) site copy of assets/models + runtimeCacheHosts/route;
+(5) verify in browser (cfs dev :5173), tests, commit, then Phase 2.
 
 ## Log
+- 2026-10-10 — 3D model council done; optimized F-14/Gripen GLBs committed with licence file; auto-resume task cfs-roadmap-resume created (every 2 h).
 - 2026-10-10 — Phases 0, 1, 1b done; public: https://briefcasejona.github.io/CFS/ ; installer v0.1.1 on Releases.
