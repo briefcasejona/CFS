@@ -1,0 +1,7 @@
+node_modules/
+build/
+dist/
+site/
+scratch/
+release/
+.claude/settings.local.json

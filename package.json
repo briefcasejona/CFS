@@ -1,0 +1,22 @@
+{
+  "name": "cfs",
+  "private": true,
+  "version": "0.1.0",
+  "description": "CFS - Combat Flight Simulator",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "tsc -p .",
+    "start": "tsc -p . && node scripts/serve.mjs",
+    "test": "tsc -p . && node --test build/tests/*.test.js",
+    "typecheck": "tsc -p . --noEmit"
+  },
+  "dependencies": {
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@types/three": "0.186.0",
+    "typescript": "5.9.3"
+  }
+}

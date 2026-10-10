@@ -1,0 +1,121 @@
+export type FcsType = 'fbw' | 'cas' | 'manual';
+export type Side = 'blue' | 'red';
+
+export interface AeroDef {
+  CLa: number;        // lift curve slope, per rad (low subsonic)
+  CL0: number;        // lift at zero alpha (camber)
+  CLmax: number;      // stall alpha is derived from CLa/CLmax (see aero.ts)
+  CD0: number;        // clean subsonic zero-lift drag
+  k: number;          // induced drag factor  CDi = k * CL^2
+  Mcrit: number;      // drag divergence Mach
+  waveDrag: number;   // CD0 multiplier at Mach ~1.1
+  // Stability & control derivatives (per rad, controls positive in commanded direction)
+  Cma: number; Cmq: number; Cmde: number;
+  Clb: number; Clp: number; Clda: number; Clr: number;
+  Cnb: number; Cnr: number; Cndr: number;
+  CYb: number;
+  flapCL: number; flapCD: number; brakeCD: number; gearCD: number;
+}
+
+export interface EngineDef {
+  name: string;
+  count: number;
+  milThrust: number;  // N, per engine, sea level static
+  abThrust: number;   // N, per engine, sea level static (== mil if no AB)
+  tsfcMil: number;    // kg / (N s)
+  tsfcAB: number;
+  spoolTime: number;  // s, idle -> mil
+  inletMach: number;  // Mach where inlet/engine limits start to cut thrust
+}
+
+export interface LimitsDef {
+  gMax: number; gMin: number;
+  aoaMax: number;       // deg (FBW limiter, or structural/departure for manual)
+  rollRate: number;     // deg/s max commanded (FBW) / typical
+  maxMach: number;
+  vmaxKcas: number;
+}
+
+export interface FcsDef {
+  type: FcsType;
+  tvc?: number;          // thrust vectoring max deflection deg
+  swingWing?: boolean;   // F-14 auto sweep
+  vtol?: boolean;        // Harrier vectored nozzles
+  canard?: boolean;
+}
+
+export interface GearDef {
+  nose: number;   // m forward of CG
+  main: number;   // m aft of CG
+  track: number;  // m between main wheels
+  height: number; // m, CG height above ground when static
+  hook?: boolean;
+}
+
+export interface RadarDef {
+  name: string;
+  range: number;     // m, detection range vs 5 m^2 target
+  azLimit: number;   // deg
+  tws: boolean;
+  irst?: number;     // IRST range m (0/undefined = none)
+}
+
+export interface GunDef {
+  name: string;
+  rounds: number;
+  rpm: number;
+  muzzleVel: number;  // m/s
+  damage: number;     // per hit
+}
+
+export interface Loadout {
+  name: string;
+  stores: string[];   // weapon ids (one per station, '' = empty), plus 'tank' for fuel tanks
+}
+
+export interface ModelDef {
+  wing: 'swept' | 'delta' | 'cdelta' | 'trapezoid' | 'swing' | 'shoulder';
+  canard?: boolean;
+  twinTail?: boolean;
+  tailCant?: number;    // deg outward
+  engines: 1 | 2;
+  intake: 'side' | 'chin' | 'under' | 'shoulder';
+  tailplane?: boolean;  // horizontal tail
+  color: number;
+  sweep: number;        // deg leading edge sweep
+}
+
+export interface AircraftDef {
+  id: string;
+  name: string;
+  fullName: string;
+  role: string;
+  country: string;
+  side: Side;
+  description: string;
+  massEmpty: number;      // kg
+  massMax: number;        // kg MTOW
+  fuelInternal: number;   // kg
+  pylonFuel: number;      // kg per external tank
+  wingArea: number;       // m2
+  span: number;           // m
+  chord: number;          // m MAC
+  length: number;         // m
+  inertia: [number, number, number]; // Ixx, Iyy, Izz kg m2 (at empty + half fuel)
+  aero: AeroDef;
+  engine: EngineDef;
+  limits: LimitsDef;
+  fcs: FcsDef;
+  controls: { elev: number; ail: number; rud: number }; // max deflection deg
+  gear: GearDef;
+  radar: RadarDef | null;
+  rcs: number;            // m2 frontal
+  gun: GunDef | null;
+  stations: number;
+  loadouts: Loadout[];
+  chaff: number;
+  flares: number;
+  model: ModelDef;
+  approachKts: number;    // typical approach speed
+  rotateKts: number;
+}

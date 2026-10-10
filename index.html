@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CFS — Combat Flight Simulator</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script type="importmap">
+    { "imports": { "three": "/node_modules/three/build/three.module.js" } }
+  </script>
+</head>
+<body>
+  <div id="ui"></div>
+  <div id="sim">
+    <canvas id="c3d"></canvas>
+    <canvas id="hud"></canvas>
+    <canvas id="mfdL" class="mfd left" title="Click to change page (Comma)"></canvas>
+    <canvas id="mfdR" class="mfd right" title="Click to change page (Period)"></canvas>
+    <canvas id="map"></canvas>
+    <div id="overlay"></div>
+  </div>
+  <div id="loading"><div><div class="spinner"></div>Loading theater…</div></div>
+  <div id="toast"></div>
+  <noscript>CFS needs JavaScript.</noscript>
+  <script type="module" src="/build/src/main.js"></script>
+</body>
+</html>
