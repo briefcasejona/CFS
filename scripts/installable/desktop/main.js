@@ -59,7 +59,16 @@ function setupUpdater() {
 ipcMain.on('installable:version', (e) => { e.returnValue = app.getVersion(); });
 ipcMain.on('installable:is-ready', (e) => { e.returnValue = updateReady; });
 ipcMain.on('installable:check', () => { if (app.isPackaged) autoUpdater.checkForUpdates().catch(() => {}); });
-ipcMain.on('installable:restart', () => { if (updateReady) autoUpdater.quitAndInstall(true, true); });
+// Non-silent install: the one-click NSIS installer shows a small progress window and then starts the new
+// version itself. The silent variant (quitAndInstall(true, true)) installs fine but often fails to relaunch.
+ipcMain.on('installable:restart', () => {
+  if (!updateReady) return;
+  setImmediate(() => {
+    app.removeAllListeners('window-all-closed');
+    for (const w of BrowserWindow.getAllWindows()) w.removeAllListeners('close');
+    autoUpdater.quitAndInstall(false, true);
+  });
+});
 
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
 app.on('window-all-closed', () => app.quit());
