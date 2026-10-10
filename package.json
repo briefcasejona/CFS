@@ -1,7 +1,7 @@
 {
   "name": "cfs",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "CFS - Combat Flight Simulator",
   "type": "module",
   "scripts": {
