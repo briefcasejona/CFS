@@ -30,6 +30,8 @@ export const WIRES = [-48, -36, -24, -12];
 /** glideslope aim point (between wires 2 and 3) and angle */
 export const AIM_S = -30;
 export const GLIDE_DEG = 3.5;
+/** arresting gear runout (m) */
+const RUNOUT = 100;
 /** bow catapults: start point in the deck frame and stroke length */
 export const CATS = [{ u: 50, v: 8, stroke: 92 }, { u: 50, v: -8, stroke: 92 }];
 const MAIN = { u0: -160, u1: 166, v0: -16, v1: 22 };
@@ -190,11 +192,13 @@ export class CarrierOps {
       const L = c.landingDir();
       const rel = fm.vel.clone().sub(c.vel);
       let along = rel.dot(L);
-      const decel = Math.max(15, (s.v0 * s.v0) / (2 * 100));
-      along = Math.max(0, along - decel * dt);
+      // the arresting engine absorbs whatever energy it must to stop the jet within its ~100 m runout, even at full power
+      const decel = Math.max(25, (along * along) / (2 * Math.max(5, RUNOUT - s.pulled)));
+      along = s.pulled >= RUNOUT ? 0 : Math.max(0, along - decel * dt);
       s.pulled += along * dt;
       const lat = rel.clone().addScaledVector(L, -rel.dot(L)); lat.y = 0;
-      fm.vel.set(c.vel.x + L.x * along + lat.x * 0.9, fm.vel.y, c.vel.z + L.z * along + lat.z * 0.9);
+      // the cable runs from the deck to the hook: it pulls the jet down onto the deck as well as back
+      fm.vel.set(c.vel.x + L.x * along + lat.x * 0.9, Math.min(fm.vel.y, fm.pos.y - fm.def.gear.height > DECK_H + 0.3 ? -2 : 0), c.vel.z + L.z * along + lat.z * 0.9);
       if (along < 0.5) {
         this.st.set(ac.id, { kind: 'trapped', carrier: c, wire: s.wire, t: 0 });
         out.push(`LSO: ${LSO_GRADES[s.wire]}`);

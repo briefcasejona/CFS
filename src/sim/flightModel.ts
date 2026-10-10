@@ -457,7 +457,9 @@ export class FlightModel {
     const eMax = def.controls.elev * DEG, aMax = def.controls.ail * DEG, rMax = def.controls.rud * DEG;
     const S = def.wingArea, b = def.span, cbar = def.chord;
     const att = this.attitude();
-    const pitchIn = clamp(c.pitch + c.trimPitch * 0.25, -1, 1);
+    // stabilator trim: up to half the stick on mechanical/CAS jets (enough to trim out landing flaps); on FBW jets
+    // trim is only a small g/AoA bias
+    const pitchIn = clamp(c.pitch + c.trimPitch * (def.fcs.type === 'fbw' ? 0.25 : 0.5), -1, 1);
     const rollIn = clamp(c.roll + c.trimRoll * 0.1, -1, 1);
     const yawIn = clamp(c.yaw + c.trimYaw * 0.2, -1, 1);
     let de: number, da: number, dr: number;

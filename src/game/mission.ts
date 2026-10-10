@@ -107,6 +107,43 @@ export function startXZ(spec: Pick<MissionSpec, 'carriers'>, f: FlightSpec): { x
   return { x: ab?.x ?? 0, z: ab?.z ?? 0 };
 }
 
+/**
+ * Trim a jet for a stabilised approach (gear, flaps, hook down): finds pitch trim for the requested flight-path angle
+ * and throttle for constant speed by flying a sandbox copy for a few seconds per guess (alternating bisections).
+ */
+function trimApproach(ac: Aircraft, speed: number, gammaDeg: number) {
+  const env = { groundHeight: () => -5000, isWater: () => false, wind: new THREE.Vector3() };
+  const fly = (trim: number, thr: number) => {
+    const t = new Aircraft(ac.def, ac.side, 'trim', [...ac.stores]);
+    t.fm.fuel = ac.fm.fuel; t.fm.updateMass();
+    t.fm.placeInAir(new THREE.Vector3(0, 1000, 0), 0, speed);
+    t.fm.gearPos = 1; t.fm.flapPos = 1; t.fm.core = thr;
+    Object.assign(t.ctrl, { gearDown: true, flaps: 1, throttle: thr, trimPitch: trim });
+    // average over the last 3 s of a 6 s flight, after the start-up transient
+    let gamma = 0, n = 0;
+    for (let k = 0; k < 720; k++) {
+      t.fm.step(1 / 120, t.ctrl, env, {});
+      if (k >= 360) { const v = t.fm.vel; gamma += Math.atan2(v.y, Math.hypot(v.x, v.z)) * 180 / Math.PI; n++; }
+    }
+    return { gamma: gamma / n, dv: t.fm.vel.length() - speed };
+  };
+  let trim = 0, thr = 0.6;
+  for (let round = 0; round < 3; round++) {
+    let lo = -1, hi = 1;
+    for (let i = 0; i < 9; i++) { trim = (lo + hi) / 2; if (fly(trim, thr).gamma > gammaDeg) hi = trim; else lo = trim; }
+    lo = 0.2; hi = 1;
+    for (let i = 0; i < 8; i++) { thr = (lo + hi) / 2; if (fly(trim, thr).dv > 0) hi = thr; else lo = thr; }
+  }
+  // the bisection assumes the flight path rises with nose-up trim; if a jet's trim works the other way, search again
+  if (Math.abs(fly(trim, thr).gamma - gammaDeg) > 2) {
+    let lo = -1, hi = 1;
+    for (let i = 0; i < 9; i++) { trim = (lo + hi) / 2; if (fly(trim, thr).gamma > gammaDeg) lo = trim; else hi = trim; }
+  }
+  ac.ctrl.trimPitch = trim;
+  ac.ctrl.throttle = thr;
+  ac.fm.core = thr;
+}
+
 function ground(x: number, z: number) { return Math.max(0, terrainHeight(x, z)); }
 
 function spawnGroup(world: World, g: GroupSpec, seed: number): GroundUnit[] {
@@ -249,8 +286,9 @@ export function buildMission(spec: MissionSpec, opts: WorldOptions): BuiltMissio
         if (f.approachConfig) {
           ac.ctrl.gearDown = true; ac.fm.gearPos = 1;
           ac.ctrl.flaps = 1; ac.fm.flapPos = 1;
-          ac.ctrl.throttle = 0.62;
           ac.hook = ac.def.capabilities?.includes('carrier') ?? false;
+          trimApproach(ac, s.speed, -GLIDE_DEG);
+          ac.fm.vel.setY(-Math.tan(GLIDE_DEG * Math.PI / 180) * s.speed);   // already descending on the glideslope
         }
       } else if (f.start.kind === 'carrier') {
         const cv = carrierById(f.start.carrierId);
@@ -460,7 +498,12 @@ function carrierScenario(o: CustomOptions): MissionSpec {
     const L = cv.landingDir();
     const dist = 4 * NM;
     const aim = cv.fromLanding(AIM_S, 0);
-    const vAppr = 72;   // ~140 kt approach speed
+    // recovery weight (clean, 35% fuel) and on-speed angle of attack (8.5°) with landing flaps
+    const mass = pdef.massEmpty + pdef.fuelInternal * 0.35;
+    const CL = pdef.aero.CL0 + pdef.aero.CLa * 8.5 * Math.PI / 180 + pdef.aero.flapCL;
+    const vAppr = Math.min(80, Math.max(60, Math.sqrt((2 * mass * 9.81) / (1.2 * pdef.wingArea * CL))));
+    flight.stores = [];
+    flight.fuelFraction = 0.35;
     const alt = DECK_H + dist * Math.tan(GLIDE_DEG * Math.PI / 180);
     flight.start = { kind: 'air', x: aim.x - L.x * dist, z: aim.z - L.z * dist, alt, hdg: deg(L), speed: vAppr };
     flight.approachConfig = true;

@@ -74,6 +74,7 @@ describe('carriers', () => {
     p.fm.vel.copy(L).multiplyScalar(65).add(cv.vel).setY(-3.5);
     p.fm.gearPos = 1; p.ctrl.gearDown = true; p.ctrl.flaps = 1; p.fm.flapPos = 1;
     p.ctrl.throttle = 1;                                                // power up on touchdown, like the real thing
+    p.ctrl.trimPitch = 0;
     return { b, w, cv, p };
   };
 
@@ -93,7 +94,13 @@ describe('carriers', () => {
 
   it('hook up: no wire, the jet bolters off the angled deck', () => {
     const { w, p } = onFinal(false);
-    for (let t = 0; t < 7; t += DT) { w.step(DT); if (!p.fm.wow && p.fm.agl > 5) p.ctrl.pitch = 0; else p.ctrl.pitch = 0.4; }
+    let touched = false;
+    for (let t = 0; t < 7; t += DT) {
+      w.step(DT);
+      if (p.fm.wow) touched = true;
+      p.ctrl.pitch = !touched ? -0.3 : (!p.fm.wow && p.fm.agl > 5) ? 0 : 0.4;   // fly it onto the deck, then rotate
+    }
+    expect(touched).toBe(true);
     expect(w.carrierOps.state(p)).toBe(null);
     expect(p.fm.crashed).toBe(false);
     expect(w.messages.some((m) => /bolter/i.test(m.text))).toBe(true);

@@ -266,7 +266,7 @@ export class Hud {
     if (!world.carriers.length) return;
     const c = this.ctx;
     const op = world.carrierOps.state(p);
-    if (op === 'cat') this.text('ON CATAPULT — FULL POWER, THEN C TO LAUNCH', cx, cy + 100 * scale, col, 14 * scale, 'center');
+    if (op === 'cat') this.text('ON CATAPULT — FULL POWER, THEN C TO LAUNCH', cx, cy - 115 * scale, col, 14 * scale, 'center');
     const a = world.carrierOps.approach(p, world.carriers);
     if (!a || a.range > 6000) return;
     // datum bar with the ball: one cell = 0.4°, ball limited to ±5 cells
