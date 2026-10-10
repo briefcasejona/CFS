@@ -110,7 +110,7 @@ const BASE: AircraftDef[] = [
     engine: eng('2× F110-GE-400', 2, 61.4, 124.7, 2.3),
     limits: { gMax: 7.5, gMin: -3, aoaMax: 30, rollRate: 180, maxMach: 2.34, vmaxKcas: 800 },
     fcs: { type: 'cas', swingWing: true }, controls: { elev: 25, ail: 20, rud: 30 },
-    gear: gear(19.1, 5.0, 2.1, true), radar: { name: 'AN/APG-71', range: 160000, azLimit: 65, tws: true },
+    gear: gear(19.1, 5.0, 2.1, true), radar: { name: 'AN/AWG-9 (upgraded)', range: 160000, azLimit: 65, tws: true },
     rcs: 12, gun: { name: 'M61A1 20mm', rounds: 675, rpm: 6000, muzzleVel: 1030, damage: 9 },
     stations: 10,
     loadouts: [
@@ -377,8 +377,139 @@ const BASE: AircraftDef[] = [
 ];
 
 // ------------------------------------------------------------------ variants
-/** Variants of the base airframes above (families: F-14, F-16, F-15 … — see Phase 3). */
-const VARIANTS: VariantDef[] = [];
+/** Family / variant labels and crew for the base airframes. */
+const META: Record<string, { family: string; variant?: string; seats?: 1 | 2; capabilities?: Capability[] }> = {
+  f14b: { family: 'F-14', variant: 'B(U)', seats: 2, capabilities: ['carrier', 'probe'] },
+  f15c: { family: 'F-15', variant: 'C' },
+  f16c: { family: 'F-16', variant: 'C Block 50' },
+  fa18c: { family: 'F/A-18', variant: 'C', capabilities: ['carrier', 'probe'] },
+  fa18e: { family: 'F/A-18', variant: 'E', capabilities: ['carrier', 'probe'] },
+  jas39: { family: 'JAS 39', variant: 'C' },
+};
+
+const F16_A2A9 = ['aim9m', 'aim9m'];
+/**
+ * Variants of the base airframes (each may extend a base or an earlier variant). Figures are approximate public
+ * data: engine thrust (SL static), empty mass, internal fuel (incl. CFTs), radar generation and weapons clearance.
+ */
+const VARIANTS: VariantDef[] = [
+  // ---------------------------------------------------------------- F-14 Tomcat
+  {
+    id: 'f14a', extends: 'f14b', overrides: {
+      name: 'F-14A', fullName: 'Grumman F-14A Tomcat', variant: 'A',
+      description: 'The original Tomcat with TF30-P-414A engines: slow to spool, underpowered, and prone to compressor stalls at high AoA, in sideslip or with abrupt throttle movements in afterburner — a stall on one engine yaws the jet hard. Fly the engines as carefully as the jet.',
+      massEmpty: 18200,
+      engine: eng('2× TF30-P-414A', 2, 54.9, 93.0, 2.2, { spoolTime: 6.5, stallProne: 1 }),
+      radar: { name: 'AN/AWG-9', range: 150000, azLimit: 65, tws: true },
+      model: { color: 0xa7b0b6 },
+    },
+  },
+  {
+    id: 'f14b1', extends: 'f14b', overrides: {
+      name: 'F-14B', fullName: 'Grumman F-14B Tomcat', variant: 'B',
+      description: 'F-14A airframe re-engined with the F110-GE-400: 30% more thrust, no compressor-stall vice, carrier take-offs without afterburner. Original analogue AWG-9 avionics.',
+      massEmpty: 19400,
+      radar: { name: 'AN/AWG-9', range: 150000, azLimit: 65, tws: true },
+    },
+  },
+  {
+    id: 'f14d', extends: 'f14b', overrides: {
+      name: 'F-14D', fullName: 'Grumman F-14D Super Tomcat', variant: 'D',
+      description: 'The last Tomcat: F110 engines, digital avionics, AN/APG-71 radar and the chin-mounted IRST/TCS — the most capable fleet interceptor of its day.',
+      massEmpty: 19838,
+      radar: { name: 'AN/APG-71 + IRST', range: 175000, azLimit: 65, tws: true, irst: 60000 },
+      model: { color: 0x8f989d },
+    },
+  },
+  // ---------------------------------------------------------------- F-16 Fighting Falcon
+  {
+    id: 'f16a', extends: 'f16c', overrides: {
+      name: 'F-16A', fullName: 'General Dynamics F-16A Fighting Falcon (Block 15)', variant: 'A Block 15',
+      description: 'The original lightweight day fighter: APG-66 radar without beyond-visual-range missiles — Sidewinders, gun and dumb bombs. Light and nimble, but you must get close.',
+      massEmpty: 7390, massMax: 17000, fuelInternal: 3160,
+      engine: eng('F100-PW-200', 1, 64.9, 106, 1.9),
+      radar: { name: 'AN/APG-66', range: 60000, azLimit: 60, tws: false },
+      rcs: 1.2,
+      loadouts: [
+        { name: 'BFM: 2× AIM-9M', stores: [...F16_A2A9] },
+        { name: 'CAP: 4× AIM-9M, 2 tanks', stores: ['aim9m', 'aim9m', 'aim9m', 'aim9m', 'tank', 'tank'] },
+        { name: 'Strike: 6× Mk-82, 2× AIM-9M, 2 tanks', stores: ['mk82', 'mk82', 'mk82', 'mk82', 'mk82', 'mk82', 'aim9m', 'aim9m', 'tank', 'tank'] },
+        { name: 'Strike: 2× Mk-84, 2× AIM-9M, 2 tanks', stores: ['mk84', 'mk84', 'aim9m', 'aim9m', 'tank', 'tank'] },
+        { name: 'Clean', stores: [] },
+      ],
+      allowedStores: ['aim9m', 'mk82', 'mk84', 'bdu33', 'tank'],
+      stations: 10,
+      model: { color: 0x9aa2a8 },
+    },
+  },
+  { id: 'f16b', extends: 'f16a', overrides: { name: 'F-16B', fullName: 'General Dynamics F-16B Fighting Falcon (Block 15)', variant: 'B Block 15', seats: 2, massEmpty: 7720, fuelInternal: 2720, description: 'Two-seat Block 15 — trainer and combat capable, with less internal fuel.' } },
+  {
+    id: 'f16c40', extends: 'f16c', overrides: {
+      name: 'F-16C Blk 40', fullName: 'General Dynamics F-16C Fighting Falcon (Block 40)', variant: 'C Block 40',
+      description: 'Night/precision-attack Viper: F110-GE-100, APG-68(V)5 and LANTIRN pods for laser-guided bombs. AMRAAM-capable, but no HARM targeting system — not a SEAD jet.',
+      massEmpty: 8600,
+      engine: eng('F110-GE-100', 1, 76.3, 128.9, 2.0),
+      radar: { name: 'AN/APG-68(V)5', range: 75000, azLimit: 60, tws: true },
+      loadouts: [
+        { name: 'CAP: 4× AIM-120C, 2× AIM-9M, 2 tanks', stores: ['aim120c', 'aim120c', 'aim120c', 'aim120c', 'aim9m', 'aim9m', 'tank', 'tank'] },
+        { name: 'Precision: 4× GBU-12, 2× AIM-120C, 2× AIM-9M, 2 tanks', stores: ['gbu12', 'gbu12', 'gbu12', 'gbu12', 'aim120c', 'aim120c', 'aim9m', 'aim9m', 'tank', 'tank'] },
+        { name: 'Strike: 4× Mk-82, 2× AIM-120C, 2× AIM-9M', stores: ['mk82', 'mk82', 'mk82', 'mk82', 'aim120c', 'aim120c', 'aim9m', 'aim9m'] },
+        { name: 'CAS: 4× AGM-65D, 2× AIM-9M', stores: ['agm65d', 'agm65d', 'agm65d', 'agm65d', 'aim9m', 'aim9m'] },
+        { name: 'BFM: 2× AIM-9M', stores: [...F16_A2A9] },
+        { name: 'Clean', stores: [] },
+      ],
+      allowedStores: ['aim120c', 'aim7m', 'aim9m', 'mk82', 'mk84', 'bdu33', 'gbu12', 'agm65d', 'tank'],
+      stations: 10,
+    },
+  },
+  { id: 'f16d40', extends: 'f16c40', overrides: { name: 'F-16D Blk 40', fullName: 'General Dynamics F-16D Fighting Falcon (Block 40)', variant: 'D Block 40', seats: 2, massEmpty: 8950, fuelInternal: 2650, description: 'Two-seat Block 40: a second crewman for the targeting pod at night, at the cost of internal fuel.' } },
+  { id: 'f16d', extends: 'f16c', overrides: { name: 'F-16D Blk 50', fullName: 'General Dynamics F-16D Fighting Falcon (Block 50)', variant: 'D Block 50', seats: 2, massEmpty: 8900, fuelInternal: 2650, description: 'Two-seat Block 50 — Wild Weasel and training, less internal fuel.' } },
+  {
+    id: 'f16c70', extends: 'f16c', overrides: {
+      name: 'F-16C Blk 70', fullName: 'Lockheed Martin F-16 Block 70 (F-16V)', variant: 'C Block 70',
+      description: 'The newest Viper: AN/APG-83 AESA radar (longer range, better tracking), modern cockpit and conformal fuel tanks for range without pylon tanks.',
+      massEmpty: 9300, massMax: 21800, fuelInternal: 4560,
+      aero: { CD0: 0.0187 },
+      radar: { name: 'AN/APG-83 SABR (AESA)', range: 110000, azLimit: 70, tws: true },
+      rcs: 1.3,
+      capabilities: ['cft'],
+      loadouts: [
+        { name: 'CAP: 6× AIM-120C, 2× AIM-9X', stores: ['aim120c', 'aim120c', 'aim120c', 'aim120c', 'aim120c', 'aim120c', 'aim9x', 'aim9x'] },
+        { name: 'Strike: 4× Mk-82, 2× AIM-120C, 2× AIM-9X', stores: ['mk82', 'mk82', 'mk82', 'mk82', 'aim120c', 'aim120c', 'aim9x', 'aim9x'] },
+        { name: 'Precision: 4× GBU-12, 2× AIM-120C, 2× AIM-9X', stores: ['gbu12', 'gbu12', 'gbu12', 'gbu12', 'aim120c', 'aim120c', 'aim9x', 'aim9x'] },
+        { name: 'SEAD: 2× AGM-88, 2× AIM-120C, 2× AIM-9X, 2 tanks', stores: ['agm88', 'agm88', 'aim120c', 'aim120c', 'aim9x', 'aim9x', 'tank', 'tank'] },
+        { name: 'CAS: 4× AGM-65D, 2× AIM-9X', stores: ['agm65d', 'agm65d', 'agm65d', 'agm65d', 'aim9x', 'aim9x'] },
+        { name: 'Clean', stores: [] },
+      ],
+      model: { color: 0x7f888e },
+    },
+  },
+  { id: 'f16d70', extends: 'f16c70', overrides: { name: 'F-16D Blk 70', fullName: 'Lockheed Martin F-16D Block 70 (F-16V)', variant: 'D Block 70', seats: 2, massEmpty: 9650, fuelInternal: 4010, description: 'Two-seat Block 70 with CFTs.' } },
+  // ---------------------------------------------------------------- F-15 Eagle
+  { id: 'f15d', extends: 'f15c', overrides: { name: 'F-15D', fullName: 'McDonnell Douglas F-15D Eagle', variant: 'D', seats: 2, massEmpty: 13100, fuelInternal: 5650, description: 'Two-seat Eagle: full air-to-air capability, slightly heavier, less internal fuel.' } },
+  {
+    id: 'f15e', extends: 'f15c', overrides: {
+      name: 'F-15E', fullName: 'McDonnell Douglas F-15E Strike Eagle', role: 'Strike fighter', variant: 'E', seats: 2,
+      description: 'Two-seat dual-role Eagle with conformal fuel tanks, a WSO in the back seat and the AN/APG-82 AESA. Hauls a heavy bomb load deep and still fights its way out with AMRAAMs.',
+      massEmpty: 14300, massMax: 36700, fuelInternal: 10200,
+      aero: { CD0: 0.024 },
+      engine: eng('2× F100-PW-229', 2, 79.2, 129.7, 2.3),
+      radar: { name: 'AN/APG-82(V)1 (AESA)', range: 150000, azLimit: 60, tws: true },
+      rcs: 14,
+      gun: { name: 'M61A1 20mm', rounds: 500, rpm: 6000, muzzleVel: 1030, damage: 9 },
+      capabilities: ['cft'],
+      stations: 12,
+      loadouts: [
+        { name: 'Strike: 6× GBU-12, 2× AIM-120C, 2× AIM-9X', stores: ['gbu12', 'gbu12', 'gbu12', 'gbu12', 'gbu12', 'gbu12', 'aim120c', 'aim120c', 'aim9x', 'aim9x'] },
+        { name: 'Deep strike: 4× Mk-84, 2× AIM-120C, 2× AIM-9X, 2 tanks', stores: ['mk84', 'mk84', 'mk84', 'mk84', 'aim120c', 'aim120c', 'aim9x', 'aim9x', 'tank', 'tank'] },
+        { name: 'CAS: 6× AGM-65D, 2× AIM-120C, 2× AIM-9X', stores: ['agm65d', 'agm65d', 'agm65d', 'agm65d', 'agm65d', 'agm65d', 'aim120c', 'aim120c', 'aim9x', 'aim9x'] },
+        { name: 'Air: 4× AIM-120C, 4× AIM-9X', stores: ['aim120c', 'aim120c', 'aim120c', 'aim120c', 'aim9x', 'aim9x', 'aim9x', 'aim9x'] },
+        { name: 'Clean', stores: [] },
+      ],
+      model: { color: 0x5d6367 },
+    },
+  },
+];
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
@@ -406,7 +537,6 @@ export function deriveCapabilities(d: AircraftDef): Capability[] {
     else if (k === 'arm') caps.add('sead');
   }
   if (d.gun) caps.add('gun');
-  if (d.gear.hook) caps.add('carrier');
   if (d.fcs.swingWing) caps.add('swing-wing');
   if (d.fcs.vtol) caps.add('stovl');
   return [...caps];
@@ -426,15 +556,26 @@ export function resolveVariant(base: AircraftDef, v: VariantDef): AircraftDef {
   return { ...mergeDeep(base, v.overrides), id: v.id };
 }
 
-const BASE_BY_ID = Object.fromEntries(BASE.map((a) => [a.id, a]));
-export const AIRCRAFT: AircraftDef[] = [
-  ...BASE,
-  ...VARIANTS.map((v) => {
-    const base = BASE_BY_ID[v.extends];
-    if (!base) throw new Error(`variant ${v.id} extends unknown aircraft ${v.extends}`);
-    return resolveVariant(base, v);
-  }),
-].map(finalize);
+const RESOLVED: Record<string, AircraftDef> = Object.fromEntries(BASE.map((a) => [a.id, { ...a, ...META[a.id] }]));
+const ORDER = BASE.map((a) => a.id);
+for (const v of VARIANTS) {
+  const base = RESOLVED[v.extends];
+  if (!base) throw new Error(`variant ${v.id} extends unknown aircraft ${v.extends}`);
+  if (RESOLVED[v.id]) throw new Error(`duplicate aircraft id ${v.id}`);
+  // a variant inherits family/seats but not the parent's explicit store list unless it gives none of its own loadouts
+  const inherited = v.overrides.loadouts ? { ...base, allowedStores: undefined } : base;
+  RESOLVED[v.id] = resolveVariant(inherited, v);
+  ORDER.push(v.id);
+}
+// keep families together: each variant is listed right after the last member of its family
+const familyOrder: string[] = [];
+for (const id of ORDER) {
+  const fam = RESOLVED[id].family ?? RESOLVED[id].name;
+  let at = familyOrder.length;
+  for (let i = familyOrder.length - 1; i >= 0; i--) if ((RESOLVED[familyOrder[i]].family ?? RESOLVED[familyOrder[i]].name) === fam) { at = i + 1; break; }
+  familyOrder.splice(at, 0, id);
+}
+export const AIRCRAFT: AircraftDef[] = familyOrder.map((id) => finalize(RESOLVED[id]));
 
 export const AIRCRAFT_BY_ID: Record<string, AircraftDef> = Object.fromEntries(AIRCRAFT.map((a) => [a.id, a]));
 

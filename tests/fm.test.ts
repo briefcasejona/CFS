@@ -52,6 +52,34 @@ describe('flight model', () => {
     expect(maxG).toBeLessThan(10);
   });
 
+  it('F-14A TF30s stall when abused at high AoA with rudder in afterburner; F110 Tomcats do not', () => {
+    const abuse = (id: string) => {
+      let stalls = 0, yawKick = 0;
+      for (let k = 0; k < 6; k++) {
+        const fm = airstart(id, 15000, 300);
+        const c = defaultControls(); c.gearDown = false; c.throttle = 1; c.pitch = 1; c.yaw = 0.8;
+        run(fm, 15, c, (f) => { if (f.stallTimer > 0) yawKick = Math.max(yawKick, Math.abs(f.r)); });
+        stalls += fm.stallCount;
+      }
+      return { stalls, yawKick };
+    };
+    const a = abuse('f14a');
+    expect(a.stalls, 'TF30 stalls').toBeGreaterThan(0);
+    expect(abuse('f14b').stalls, 'F110 never stalls').toBe(0);
+    expect(abuse('f14d').stalls).toBe(0);
+  });
+
+  it('F-14A has less thrust than F-14B/D; F-15E carries more fuel than F-15C; two-seat F-16D carries less than the C', () => {
+    expect(getAircraft('f14a').engine.abThrust).toBeLessThan(getAircraft('f14b').engine.abThrust);
+    expect(getAircraft('f15e').fuelInternal).toBeGreaterThan(getAircraft('f15c').fuelInternal);
+    expect(getAircraft('f16d').fuelInternal).toBeLessThan(getAircraft('f16c').fuelInternal);
+    expect(getAircraft('f16d').seats).toBe(2);
+    expect(getAircraft('f16a').capabilities!.includes('bvr')).toBe(false);
+    expect(getAircraft('f16c40').capabilities!.includes('sead')).toBe(false);
+    expect(getAircraft('f16c70').radar!.range).toBeGreaterThan(getAircraft('f16c').radar!.range);
+    expect(getAircraft('f14d').radar!.irst ?? 0).toBeGreaterThan(0);
+  });
+
   it('F-16 AoA limiter holds ~25 deg at low speed', () => {
     const fm = airstart('f16c', 15000, 220);
     const c = defaultControls(); c.gearDown = false; c.throttle = 0.5; c.pitch = 1;

@@ -26,6 +26,8 @@ export interface EngineDef {
   tsfcAB: number;
   spoolTime: number;  // s, idle -> mil
   inletMach: number;  // Mach where inlet/engine limits start to cut thrust
+  /** compressor-stall susceptibility (TF30 ≈ 1); undefined = robust engine */
+  stallProne?: number;
 }
 
 export interface LimitsDef {

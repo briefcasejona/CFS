@@ -58,6 +58,7 @@ export class FlightSession {
   private goalsAnnounced = false;
   private mouse = { down: false, button: 0, x: 0, y: 0 };
   private lastKillCount = 0;
+  private lastStallCount = 0;
 
   constructor(ui: SessionUI, input: InputManager, audio: AudioSystem, settings: Settings) {
     this.ui = ui;
@@ -137,6 +138,7 @@ export class FlightSession {
     this.last = performance.now();
     this.acc = 0;
     this.lastKillCount = 0;
+    this.lastStallCount = 0;
     this.built.world.radio(`${spec.title}: ${p.callsign}, ${p.fm.wow ? 'cleared for takeoff' : 'you are cleared in'}.`, '#fff');
     if (this.built.steerpoints.length) this.built.world.radio(`Steerpoint 1: ${this.built.steerpoints[0].name}`, '#ccc');
     cancelAnimationFrame(this.raf);
@@ -399,6 +401,10 @@ export class FlightSession {
     const b = this.built;
     const p = b.player;
     const w = b.world;
+    if (p.fm.stallCount > this.lastStallCount) {
+      this.lastStallCount = p.fm.stallCount;
+      w.radio(`Compressor stall — ${p.fm.stallSide < 0 ? 'left' : 'right'} engine! Unload, ease the throttle, rudder against the yaw.`, '#ffb84f');
+    }
     if (!this.goalsAnnounced && b.spec.goals.some((g) => g.kind === 'killAir' || g.kind === 'destroyGroup')) {
       const r = evaluate(b);
       const main = r.lines.filter((l) => !l.includes('Survive') && !l.includes('Land at'));

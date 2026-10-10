@@ -88,6 +88,10 @@ export class FlightModel {
   alpha = 0; beta = 0; mach = 0; tas = 0; ias = 0; qbar = 0;
   nz = 1; ny = 0; nx = 0;
   thrust = 0; fuelFlow = 0;
+  /** compressor stall state: seconds left, which engine (−1 left / +1 right), how many so far */
+  stallTimer = 0; stallSide = 0; stallCount = 0;
+  private asymThrust = 0;
+  private lastThrottle = 0;
   onGround = false;
   wow = false;
   crashed = false;
@@ -208,6 +212,29 @@ export class FlightModel {
     const qLim = 0.5 * 1.225 * vmax * vmax;
     const qCut = clamp(1 - (this.qbar - qLim) / (0.3 * qLim), 0.2, 1);
     this.thrust = (milT + abT) * e.count * inlet * qCut * this.damage.engine;
+    // compressor stall (TF30): high AoA / sideslip / abrupt throttle in AB → one engine stalls for a few seconds
+    this.asymThrust = 0;
+    if (e.stallProne && running && e.count === 2) {
+      if (this.stallTimer > 0) {
+        this.stallTimer -= dt;
+        const lost = this.thrust * 0.5 * clamp(this.stallTimer / 1.0, 0.3, 1);
+        this.thrust -= lost;
+        this.asymThrust = lost * this.stallSide;
+      } else {
+        const a = Math.abs(this.alpha), b = Math.abs(this.beta);
+        const dThr = Math.abs(throttle - this.lastThrottle) / Math.max(dt, 1e-3);
+        const risk = e.stallProne * (
+          smoothstep(16 * DEG, 30 * DEG, a) * (0.15 + smoothstep(3 * DEG, 12 * DEG, b)) * (this.abFrac > 0.1 ? 1.8 : 1)
+          + (dThr > 1.2 && this.abFrac > 0.1 && this.mach > 0.7 ? 0.6 : 0)
+          + smoothstep(8 * DEG, 18 * DEG, b) * 0.25);
+        if (Math.random() < risk * dt) {
+          this.stallTimer = 3 + Math.random() * 3;
+          this.stallSide = Math.random() < 0.5 ? -1 : 1;
+          this.stallCount++;
+        }
+      }
+    }
+    this.lastThrottle = throttle;
     this.fuelFlow = running ? (milT * e.tsfcMil + abT * e.tsfcAB) * e.count + 0.05 : 0;
     if (!opts.unlimitedFuel) {
       const burn = (this.fuelFlow + this.damage.fuelLeak) * dt;
@@ -355,6 +382,8 @@ export class FlightModel {
     let Lm = qbar * S * b * Cl;
     let Mm = qbar * S * cbar * Cm + Mthrust;
     let Nm = qbar * S * b * Cn;
+    // asymmetric thrust (one engine stalled): engines ~7% of span off the centreline
+    if (this.asymThrust) Nm += this.asymThrust * def.span * 0.07;
 
     // Harrier reaction control system (works at zero airspeed)
     if (def.fcs.vtol && this.nozzleAngle > 10 * DEG) {

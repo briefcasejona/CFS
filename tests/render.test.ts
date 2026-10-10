@@ -9,7 +9,7 @@ describe('HD models', () => {
     const tri = (cx: number, cz: number) => [cx - 0.5, 0, cz, cx + 0.5, 0, cz, cx, 0, cz - 0.5];
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute([...tri(6, 0), ...tri(0, 0), ...tri(-6, 0), ...tri(4.5, 6)], 3));
-    addSwingAttribute(g, HD_SPECS.f14b.swing!);
+    addSwingAttribute(g, HD_SPECS['F-14'].swing!);
     const a = Array.from(g.getAttribute('aSwing').array as Float32Array);
     expect(a).toEqual([1, 1, 1, 0, 0, 0, -1, -1, -1, 0, 0, 0]);
   });
@@ -23,7 +23,7 @@ describe('HD models', () => {
     const gear = new THREE.Group(); gear.name = 'Gripen-landingOn_5';
     gear.add(new THREE.Mesh(new THREE.BoxGeometry(10, 20, 10).translate(0, -20, 0), new THREE.MeshStandardMaterial()));
     scene.add(airframe, gear);
-    const root = bake(scene, HD_SPECS.jas39, def);
+    const root = bake(scene, HD_SPECS['JAS 39'], def);
     const box = new THREE.Box3();
     root.children.filter((c) => c.userData.role === 'body').forEach((c) => box.expandByObject(c));
     expect(box.max.z - box.min.z).toBeCloseTo(def.length, 2);            // length along game Z

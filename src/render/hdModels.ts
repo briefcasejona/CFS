@@ -14,14 +14,15 @@ export interface HdSpec {
   swing?: { pivotX: number; pivotZ: number; minAbsX: number; maxZ: number; refSweep: number };
 }
 
+/** HD models per aircraft family (every variant of the family uses it). */
 export const HD_SPECS: Record<string, HdSpec> = {
-  f14b: {
+  'F-14': {
     url: 'assets/models/cc-by-nc-sa/f14.glb', title: 'F-14 Tomcat - Fighter Jet - Free', author: 'bohmerang',
     source: 'https://sketchfab.com/3d-models/f-14-tomcat-fighter-jet-free-497f77c311b5411d9b567d8707a81c33', license: 'CC BY-NC-SA 4.0',
     gearDown: /gearOn/i, gearUp: /gearOff/i, cockpit: /cockpit|instrGlass/i,
     swing: { pivotX: 2.7, pivotZ: -1.5, minAbsX: 3.85, maxZ: 4.5, refSweep: 20 },
   },
-  jas39: {
+  'JAS 39': {
     url: 'assets/models/cc-by-nc-sa/gripen.glb', title: 'Saab JAS 39 Gripen - Fighter Jet - Free', author: 'bohmerang',
     source: 'https://sketchfab.com/3d-models/saab-jas-39-gripen-fighter-jet-free-03d4f4f0f7e94f469299ba7db4c707c4', license: 'CC BY-NC-SA 4.0',
     gearDown: /landingOn/i, gearUp: /landingOff/i, cockpit: /cockpit|hud/i,
@@ -34,7 +35,8 @@ export const HD_RANGE = 3500;
 let enabled = true;
 export function setHdModelsEnabled(on: boolean) { enabled = on; }
 export function hdModelsEnabled() { return enabled; }
-export function hasHdModel(id: string) { return !!HD_SPECS[id]; }
+export function hdSpecFor(def: AircraftDef): HdSpec | undefined { return HD_SPECS[def.family ?? def.name]; }
+export function hasHdModel(def: AircraftDef) { return !!hdSpecFor(def); }
 
 interface Template { root: THREE.Group; spec: HdSpec }
 const templates = new Map<string, Promise<Template | null>>();
@@ -46,7 +48,7 @@ const SRC_TO_GAME = new THREE.Matrix4().set(0, 0, 1, 0, 0, 1, 0, 0, -1, 0, 0, 0,
 function loadTemplate(def: AircraftDef): Promise<Template | null> {
   let p = templates.get(def.id);
   if (p) return p;
-  const spec = HD_SPECS[def.id];
+  const spec = hdSpecFor(def)!;
   loader ??= new GLTFLoader();
   const l = loader;
   p = new Promise<Template | null>((resolve) => {
@@ -162,7 +164,7 @@ function instantiate(t: Template): HdInstance {
 
 /** Start loading (if enabled) and call back with a fresh instance when ready. */
 export function requestHdModel(def: AircraftDef, cb: (inst: HdInstance) => void) {
-  if (!enabled || !HD_SPECS[def.id] || typeof window === 'undefined') return;
+  if (!enabled || !hdSpecFor(def) || typeof window === 'undefined') return;
   void loadTemplate(def).then((t) => { if (t) cb(instantiate(t)); });
 }
 
