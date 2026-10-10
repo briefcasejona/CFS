@@ -1,5 +1,6 @@
 import type { Side } from '../aircraft/types.js';
-import { AIRCRAFT_BY_ID } from '../aircraft/defs.js';
+import { AIRCRAFT_BY_ID, hasCapability } from '../aircraft/defs.js';
+import type { Capability } from '../aircraft/types.js';
 import { AIRBASES, OBJECTIVES, INITIAL_FRONT, SECTORS, sectorX, frontZAt, airbaseById, currentTheater, setTheater, type ObjectiveDef } from '../world/theater.js';
 import { pickLoadout, callsignFor, type FlightSpec, type GroupSpec, type MissionSpec, type MissionGoal, type BuiltMission, type MissionResult } from '../game/mission.js';
 import type { Skill, AITask } from '../ai/pilot.js';
@@ -52,6 +53,8 @@ const SQUADRONS: Array<Pick<Squadron, 'id' | 'name' | 'side' | 'aircraftId' | 'b
   { id: '36fs', name: '36th FS "Flying Fiends"', side: 'blue', aircraftId: 'f16c', baseId: 'halvorsen', aircraft: 18 },
   { id: '44fs', name: '44th FS "Vampire Bats"', side: 'blue', aircraftId: 'f15c', baseId: 'halvorsen', aircraft: 16 },
   { id: 'vf11', name: 'VF-11 "Red Rippers"', side: 'blue', aircraftId: 'f14b', baseId: 'aldren', aircraft: 12 },
+  { id: 'vf2', name: 'VF-2 "Bounty Hunters"', side: 'blue', aircraftId: 'f14d', baseId: 'aldren', aircraft: 10 },
+  { id: '494fs', name: '494th FS "Panthers"', side: 'blue', aircraftId: 'f15e', baseId: 'halvorsen', aircraft: 16 },
   { id: 'vfa87', name: 'VFA-87 "Golden Warriors"', side: 'blue', aircraftId: 'fa18c', baseId: 'aldren', aircraft: 12 },
   { id: 'vfa103', name: 'VFA-103 "Jolly Rogers"', side: 'blue', aircraftId: 'fa18e', baseId: 'aldren', aircraft: 12 },
   { id: 'vma231', name: 'VMA-231 "Ace of Spades"', side: 'blue', aircraftId: 'av8b', baseId: 'kestrel', aircraft: 10 },
@@ -73,9 +76,14 @@ const SQUADRONS: Array<Pick<Squadron, 'id' | 'name' | 'side' | 'aircraftId' | 'b
 const RATING: Record<string, number> = {
   f15c: 1.25, f16c: 1.1, fa18c: 1.05, fa18e: 1.1, f14b: 1.1, f4e: 0.8, t38c: 0.3, av8b: 0.8,
   mig29a: 1.0, su27: 1.15, su30: 1.2, su57: 1.4, m2000: 1.05, rafale: 1.25, jas39: 1.15, ef2000: 1.3,
+  f14a: 1.0, f14b1: 1.05, f14d: 1.2, f16a: 0.85, f16b: 0.8, f16c40: 1.0, f16d40: 0.95, f16d: 1.05, f16c70: 1.25, f16d70: 1.2,
+  f15d: 1.2, f15e: 1.3,
 };
-const FIGHTERS = new Set(['f15c', 'f16c', 'fa18c', 'fa18e', 'f14b', 'm2000', 'rafale', 'jas39', 'ef2000', 'mig29a', 'su27', 'su30', 'su57', 'f4e']);
-const STRIKERS = new Set(['f16c', 'fa18c', 'fa18e', 'f14b', 'f4e', 'av8b', 'rafale', 'jas39', 'ef2000', 'm2000', 'su30', 'su57', 'mig29a', 'su27']);
+export const ratingOf = (id: string) => RATING[id] ?? 1;
+/** Roles follow from what the variant can carry (see aircraft capabilities). */
+const isFighter = (id: string) => { const d = AIRCRAFT_BY_ID[id]; return !!d?.radar && (hasCapability(d, 'bvr') || hasCapability(d, 'ir')); };
+const isStriker = (id: string) => { const d = AIRCRAFT_BY_ID[id]; return !!d && ['bombs', 'lgb', 'agm', 'sead'].some((c) => hasCapability(d, c as Capability)) && d.id !== 't38c'; };
+const isSead = (id: string) => { const d = AIRCRAFT_BY_ID[id]; return !!d && (hasCapability(d, 'sead') || hasCapability(d, 'lgb')); };
 
 const TASK_LOADOUT: Record<CampaignTask, string[]> = {
   CAP: ['CAP', 'Fleet', 'Internal', 'Light'], Sweep: ['Sweep', 'CAP', 'Internal', 'Fleet'], Escort: ['CAP', 'Internal', 'Light', 'Fighter'],
@@ -129,7 +137,7 @@ function planSide(st: CampaignState, side: Side, r: () => number) {
   let pk = 0, fl = 0;
   const take = (pred: (s: Squadron) => boolean, n: number, task: CampaignTask) => {
     const cands = sq.filter((s) => pred(s) && (left.get(s.id) ?? 0) >= n)
-      .sort((a, b) => (RATING[b.aircraftId] ?? 1) - (RATING[a.aircraftId] ?? 1) + (r() - 0.5) * 0.6);
+      .sort((a, b) => ratingOf(b.aircraftId) - ratingOf(a.aircraftId) + (r() - 0.5) * 0.6);
     for (const s of cands) {
       const stores = loadoutFor(s.aircraftId, task);
       if (['Strike', 'OCA', 'CAS', 'SEAD'].includes(task) && !hasAG(stores)) continue;
@@ -155,8 +163,9 @@ function planSide(st: CampaignState, side: Side, r: () => number) {
     }
     st.ato.push({ id: pid, side, task, targetId, targetName, flights: out });
   };
-  const fighter = (s: Squadron) => FIGHTERS.has(s.aircraftId);
-  const striker = (s: Squadron) => STRIKERS.has(s.aircraftId);
+  const fighter = (s: Squadron) => isFighter(s.aircraftId);
+  const striker = (s: Squadron) => isStriker(s.aircraftId);
+  const seader = (s: Squadron) => isSead(s.aircraftId);
   const dir = side === 'blue' ? -1 : 1; // direction of enemy territory in z
 
   for (const x of [-50000, 60000]) {
@@ -168,7 +177,7 @@ function planSide(st: CampaignState, side: Side, r: () => number) {
   }
   const enemySams = OBJECTIVES.filter((o) => o.kind === 'sam' && o.samType !== 'AAA' && st.objectives[o.id].owner === enemy && st.objectives[o.id].hp > 0)
     .sort((a, b) => Math.abs(a.z - frontZAt(st.front, a.x)) - Math.abs(b.z - frontZAt(st.front, b.x)));
-  for (const o of enemySams.slice(0, 2)) addPackage('SEAD', o.id, o.name, o.x, o.z, [{ task: 'SEAD', pred: striker, n: 2 }]);
+  for (const o of enemySams.slice(0, 2)) addPackage('SEAD', o.id, o.name, o.x, o.z, [{ task: 'SEAD', pred: seader, n: 2 }]);
   const strikeTargets = OBJECTIVES.filter((o) => ['factory', 'depot', 'bridge', 'command', 'radar'].includes(o.kind) && st.objectives[o.id].owner === enemy && st.objectives[o.id].hp > 15)
     .map((o) => ({ o, score: o.value * (st.objectives[o.id].hp / 100) / (1 + Math.abs(o.z - frontZAt(st.front, o.x)) / 80000) * (0.7 + r() * 0.6) }))
     .sort((a, b) => b.score - a.score);
@@ -276,7 +285,7 @@ export function missionForFlight(st: CampaignState, f: CFlight, start: 'runway' 
     }
   }
   if (isAA && enemyCount === 0) {
-    const s2 = st.squadrons.find((s) => s.side === enemy && s.aircraft >= 2 && FIGHTERS.has(s.aircraftId));
+    const s2 = st.squadrons.find((s) => s.side === enemy && s.aircraft >= 2 && isFighter(s.aircraftId));
     if (s2) {
       const zOff = enemy === 'red' ? -60000 : 60000;
       flights.push({
@@ -377,7 +386,7 @@ export function resolveTurn(st: CampaignState) {
   };
   const casBonus = { blue: Array(SECTORS).fill(0) as number[], red: Array(SECTORS).fill(0) as number[] };
   const airPower = (side: Side) => st.ato.filter((p) => p.side === side).flatMap((p) => p.flights)
-    .filter((f) => ['CAP', 'Sweep', 'Escort', 'Intercept'].includes(f.task)).reduce((a, f) => a + f.count * (RATING[f.aircraftId] ?? 1), 0);
+    .filter((f) => ['CAP', 'Sweep', 'Escort', 'Intercept'].includes(f.task)).reduce((a, f) => a + f.count * ratingOf(f.aircraftId), 0);
   const bluePow = airPower('blue') + 0.1, redPow = airPower('red') + 0.1;
   const fights = Math.round(2 + r() * 3);
   for (let i = 0; i < fights; i++) {
@@ -385,7 +394,7 @@ export function resolveTurn(st: CampaignState) {
     const pool = st.ato.filter((p) => p.side === loserSide).flatMap((p) => p.flights).filter((f) => !f.flown);
     const victim = pool[Math.floor(r() * pool.length)];
     if (victim && lose(victim, 1)) {
-      const winner = st.ato.filter((p) => p.side !== loserSide).flatMap((p) => p.flights).find((f) => FIGHTERS.has(f.aircraftId) && !f.flown);
+      const winner = st.ato.filter((p) => p.side !== loserSide).flatMap((p) => p.flights).find((f) => isFighter(f.aircraftId) && !f.flown);
       if (winner) squadron(st, winner.squadronId).kills++;
       log(st, `Air combat: a ${AIRCRAFT_BY_ID[victim.aircraftId].name} of ${squadron(st, victim.squadronId).name} was shot down.`, loserSide);
     }
@@ -402,7 +411,7 @@ export function resolveTurn(st: CampaignState) {
       const hasEscort = p.flights.some((x) => x.task === 'Escort');
       const enemyAir = (p.side === 'blue' ? redPow : bluePow) / ((p.side === 'blue' ? bluePow : redPow) + 0.1);
       const base: Record<string, number> = { Strike: 0.6, SEAD: 0.5, OCA: 0.5, CAS: 0.65 };
-      let pS = base[f.task] * (RATING[f.aircraftId] ?? 1);
+      let pS = base[f.task] * ratingOf(f.aircraftId);
       pS -= sams * (hasSead ? 0.05 : 0.12);
       pS -= clamp(enemyAir - 1, 0, 1) * (hasEscort ? 0.05 : 0.15);
       pS = clamp(pS, 0.1, 0.9);

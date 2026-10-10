@@ -146,10 +146,21 @@ export function missionSetup(app: AppApi, advanced: boolean): HTMLElement {
   };
   const renderAc = () => {
     grid.innerHTML = '';
-    for (const a of AIRCRAFT) {
-      const b = el(`<button class="accard ${a.id === o.aircraftId ? 'sel' : ''}"><b>${esc(a.name)}</b><span>${esc(a.role)}</span><small>${esc(a.country)}</small></button>`);
-      b.addEventListener('click', () => { o.aircraftId = a.id; o.loadoutIndex = 0; renderAc(); renderLoad(); });
-      grid.append(b);
+    // one card per family; variants as chips inside the card
+    for (const [fam, list] of families()) {
+      const cur = list.find((a) => a.id === o.aircraftId);
+      const shown = cur ?? list[0];
+      const card = el(`<div class="accard ${cur ? 'sel' : ''}" role="button" tabindex="0">
+        <b>${esc(list.length > 1 ? fam : shown.name)}</b><span>${esc(shown.role)}${shown.seats === 2 ? ' · 2-seat' : ''}</span><small>${esc(shown.country)}</small>
+        ${list.length > 1 ? `<div class="variants">${list.map((a) => `<button class="vchip ${a.id === o.aircraftId ? 'on' : ''}" data-id="${a.id}" title="${esc(a.fullName)}">${esc(a.variant ?? a.name)}</button>`).join('')}</div>` : ''}
+      </div>`);
+      const pick = (id: string) => { o.aircraftId = id; o.loadoutIndex = 0; renderAc(); renderLoad(); };
+      card.addEventListener('click', (ev) => {
+        const chip = (ev.target as HTMLElement).closest('.vchip') as HTMLElement | null;
+        pick(chip?.dataset.id ?? shown.id);
+      });
+      card.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pick(shown.id); } });
+      grid.append(card);
     }
   };
   const renderScen = () => {
@@ -368,14 +379,27 @@ export function settingsScreen(app: AppApi): HTMLElement {
 }
 
 // ------------------------------------------------------------------ aircraft database
+/** Aircraft grouped by family, in definition order. */
+export function families(): Map<string, typeof AIRCRAFT> {
+  const m = new Map<string, typeof AIRCRAFT>();
+  for (const a of AIRCRAFT) { const f = a.family ?? a.name; if (!m.has(f)) m.set(f, []); m.get(f)!.push(a); }
+  // within a family: by block number, then variant letter (A, B, B(U), C, D, E)
+  const key = (a: (typeof AIRCRAFT)[number]) => {
+    const v = a.variant ?? '';
+    return Number(/Block (\d+)/.exec(v)?.[1] ?? 0) * 100 + (v.charCodeAt(0) || 0) + (v.includes('(') ? 0.5 : 0);
+  };
+  for (const list of m.values()) list.sort((a, b) => key(a) - key(b));
+  return m;
+}
+
 export function aircraftDb(app: AppApi): HTMLElement {
-  const rows = AIRCRAFT.map((a) => {
+  const rows = [...families()].map(([fam, list]) => (list.length > 1 ? `<tr class="famrow"><td colspan="10">${esc(fam)} family</td></tr>` : '') + list.map((a) => {
     const tw = (a.engine.abThrust * a.engine.count) / ((a.massEmpty + a.fuelInternal * 0.5) * 9.81);
-    return `<tr><td><b>${esc(a.name)}</b><br><span class="muted small">${esc(a.fullName)}</span></td><td>${esc(a.role)}</td><td>${esc(a.country)}</td>
+    return `<tr><td><b>${esc(a.name)}</b>${a.seats === 2 ? ' <span class="muted small">2-seat</span>' : ''}<br><span class="muted small">${esc(a.fullName)}</span><br><span class="muted small caps">${esc((a.capabilities ?? []).join(' · '))}</span></td><td>${esc(a.role)}</td><td>${esc(a.country)}</td>
       <td>${a.fcs.type.toUpperCase()}${a.fcs.tvc ? ' + TVC' : ''}${a.fcs.vtol ? ' V/STOL' : ''}${a.fcs.swingWing ? ' swing-wing' : ''}${a.fcs.canard ? ' canard' : ''}</td>
       <td>${esc(a.engine.name)}</td><td>${tw.toFixed(2)}</td><td>M${a.limits.maxMach.toFixed(2)}</td><td>+${a.limits.gMax} / ${a.limits.gMin}</td>
       <td>${a.radar ? `${esc(a.radar.name)} (${Math.round(a.radar.range / NM)} nm)` : '—'}</td><td>${a.rcs} m²</td></tr>`;
-  }).join('');
+  }).join('')).join('');
   const e = el(`
     <div class="screen db">
       <div class="header"><button data-a="back">◀ Back</button><h2>Aircraft Database</h2></div>
