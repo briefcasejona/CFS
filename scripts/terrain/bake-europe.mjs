@@ -92,6 +92,55 @@ for (let j = 0; j < N; j++) {
     if (h > 0) land++;
   }
 }
+// ---- land mask (Natural Earth 10 m land minus lakes, public domain): polders and low coasts below sea level stay
+// land, so e.g. Friesland and Holland don't flood. Rasterised by scanline even-odd fill in grid coordinates.
+async function geojson(name) {
+  const file = join('.cache', `${name}.geojson`);
+  if (!existsSync(file)) {
+    const r = await fetch(`https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/${name}.geojson`);
+    if (!r.ok) throw new Error(`${name}: HTTP ${r.status}`);
+    mkdirSync('.cache', { recursive: true });
+    writeFileSync(file, Buffer.from(await r.arrayBuffer()));
+  }
+  return JSON.parse(readFileSync(file, 'utf8'));
+}
+function rasterize(gj, mask, value) {
+  const rings = [];
+  for (const f of gj.features) {
+    const g = f.geometry;
+    const polys = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
+    for (const poly of polys) for (const ring of poly) {
+      // quick reject: rings entirely outside the theater's lon/lat window
+      if (ring.every(([lon, lat]) => lon < -20 || lon > 40 || lat < 35 || lat > 70)) continue;
+      rings.push(ring.map(([lon, lat]) => { const p = lcc.forward(lat, lon); return [(p.x + HALF) / RES, (p.z + HALF) / RES]; }));
+    }
+  }
+  // even-odd scanline fill over all rings together (holes and islands handled by parity)
+  const xs = Array.from({ length: N }, () => []);
+  for (const r of rings) for (let k = 0; k < r.length; k++) {
+    const [x1, y1] = r[k], [x2, y2] = r[(k + 1) % r.length];
+    if (y1 === y2) continue;
+    const ya = Math.ceil(Math.min(y1, y2)), yb = Math.floor(Math.max(y1, y2) - 1e-9);
+    for (let y = Math.max(0, ya); y <= Math.min(N - 1, yb); y++) xs[y].push(x1 + ((y - y1) / (y2 - y1)) * (x2 - x1));
+  }
+  for (let y = 0; y < N; y++) {
+    const row = xs[y].sort((a, b) => a - b);
+    for (let k = 0; k + 1 < row.length; k += 2) {
+      const a = Math.max(0, Math.ceil(row[k])), b = Math.min(N - 1, Math.floor(row[k + 1]));
+      for (let x = a; x <= b; x++) mask[y * N + x] = value;
+    }
+  }
+}
+const mask = new Uint8Array(N * N);          // 1 = land
+rasterize(await geojson('ne_10m_land'), mask, 1);
+rasterize(await geojson('ne_10m_lakes'), mask, 0);
+let raised = 0, sunk = 0;
+for (let k = 0; k < N * N; k++) {
+  if (mask[k] && out[k] <= 0) { out[k] = 1; raised++; }
+  else if (!mask[k] && out[k] > 0 && out[k] < 3) { out[k] = -2; sunk++; }
+}
+console.log(`land mask: ${raised} low-land cells raised above sea level, ${sunk} coastal cells lowered`);
+
 mkdirSync(OUT, { recursive: true });
 const gz = gzipSync(Buffer.from(out.buffer), { level: 9 });
 writeFileSync(join(OUT, 'height.bin.gz'), gz);

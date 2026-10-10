@@ -1,6 +1,7 @@
 import { clamp, smoothstep } from '../core/math.js';
 import type { Side } from '../aircraft/types.js';
 import { VARNIA } from './theaters/varnia.js';
+import { EUROPE } from './theaters/europe.js';
 
 export { fbm } from './noise.js';
 
@@ -49,6 +50,12 @@ export interface Theater {
   /** campaign frontline: number of sectors across x and the initial front z per sector */
   sectors: number;
   initialFront: number[];
+  /** false when the dynamic campaign is not available here yet */
+  campaign?: boolean;
+  /** Instant Action engagement area: centre, bearing towards the enemy (deg), and the bases scenarios use */
+  iaAnchor?: { x: number; z: number; enemyHdg: number; blueBase: string; redBase: string };
+  /** asynchronous data load (e.g. a DEM) — call ensureTheater() before flying here */
+  load?: () => Promise<void>;
 }
 
 const REGISTRY = new Map<string, Theater>();
@@ -87,6 +94,14 @@ export function setTheater(id: string | undefined): Theater {
 }
 
 registerTheater(VARNIA);
+registerTheater(EUROPE);
+
+/** Load a theater's data if needed (DEM download) — resolves when it can be flown. */
+export async function ensureTheater(id: string | undefined): Promise<Theater> {
+  const t = (id && REGISTRY.get(id)) || VARNIA;
+  if (t.load) await t.load();
+  return t;
+}
 
 export const sectorX = (i: number) => -THEATER_HALF + (i + 0.5) * (2 * THEATER_HALF / SECTORS);
 
