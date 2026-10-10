@@ -4,7 +4,7 @@ This file is the single source of truth for continuing the roadmap across sessio
 session at any time). Update it and `git commit && git push` after every finished step.
 
 ## Heartbeat (lock)
-- heartbeat: 2026-10-10T13:17:27+02:00
+- heartbeat: 2026-10-10T13:17:49+02:00
 - owner: interactive session (wishlist session)
 
 Rule: a session that is actively working updates `heartbeat` (local ISO time, `date -Iseconds`) at least every
@@ -33,7 +33,7 @@ less than 60 minutes old (someone else is working). When taking over, set `owner
 - [x] Phase 1b — `ship-installable` user skill (~/.claude/skills/ship-installable)
 - [x] Phase 1c — 3D models: council verdict on the user's models, then integrate the usable ones (see below)
 - [x] Phase 2 — foundations: Theater interface + registry, aircraft variant system (`extends`), Nation model, camera-relative rendering hook, campaign save migration (theaterId)
-- [ ] Phase 3 — aircraft families: F-14A/B/B(U)/D, F-16A/B blk15, C/D blk40/50/70, F-15C/D, F-15E
+- [x] Phase 3 — aircraft families: F-14A/B/B(U)/D, F-16A/B blk15, C/D blk40/50/70, F-15C/D, F-15E
 - [ ] Phase 4 — cameras + 3D cockpit (orbit chase cam, procedural/GLB cockpit, collimated HUD)
 - [ ] Phase 5 — radar/datalink, AWACS, aerial refueling
 - [ ] Phase 6 — co-op multiplayer (Trystero WebRTC), then multicrew
@@ -49,19 +49,18 @@ less than 60 minutes old (someone else is working). When taking over, set `owner
 Licence duties if used: attribution (credits screen + `assets/models/CREDITS.md`), non-commercial only, processed model files stay CC BY-NC-SA.
 
 ## Current step / next actions
-Phase 2 done: Theater registry (src/world/theater.ts, theaters/varnia.ts, noise.ts), aircraft variant system (types.ts VariantDef/Capability,
-defs.ts BASE+VARIANTS→finalize), Nation model (src/world/nations.ts; Theater.nations; FlightSpec.nation → Aircraft.nation), terrain chunks already
-chunk-local (precision OK). NOTE for Phase 8: TerrainRenderer.update loops over ALL chunks — window it around the camera for Europe.
-NEXT: Phase 3 aircraft families via VARIANTS in src/aircraft/defs.ts:
-- F-14: f14a (TF30-P-414A 2×~93 kN AB / 2×~55 kN mil, AWG-9, compressor-stall flag), f14b (F110-GE-400 2×~124 kN AB / ~71 kN mil, AWG-9), keep f14b as B(U)
-  (rename id? keep 'f14b' = F-14B(U) for saves), f14d (F110, APG-71 + IRST, digital). All seats 2, family 'F-14', HD model shared (HD_SPECS keyed by family).
-- F-16: f16a (blk15 APG-66, no AMRAAM: AIM-9 + bombs, F100-PW-200), f16c40 (F110-GE-100, LANTIRN → lgb), f16c (=blk50, HTS/AGM-88), f16c70 (APG-83 AESA, CFTs: +fuel +drag),
-  two-seat B/D variants (+~400 kg, −~500 kg fuel, seats 2).
-- F-15: f15d (two-seat C), f15e (CFT, WSO, APG-82, F100-PW-229, strike loadouts: GBU-12/31?, AGM-65, AIM-120/9).
-- Make HD_SPECS lookup by family (F-14 GLB for all F-14s, Gripen for jas39 family). Aircraft DB + Instant Action grids grouped by family.
-- Campaign/ATO: only assign tasks the variant has capabilities for (hasCapability). Envelope test per variant in tests/fm.test.ts.
+Phase 3 done: 12 variants in src/aircraft/defs.ts VARIANTS (F-14A/B/D, F-16A/B blk15, C/D blk40, D blk50, C/D blk70, F-15D/E), META families,
+TF30 compressor stall (EngineDef.stallProne → FlightModel stallTimer/asym yaw, radio call), capability-driven campaign roles (isFighter/isStriker/isSead,
+ratingOf), family-grouped picker (screens.ts families()) + DB. Refuel capability 'probe' set for F-14/F/A-18; 'boom' still TODO in Phase 5.
+NEXT: Phase 4 — cameras + 3D cockpit:
+(1) chase/orbit camera: spring-damped follow, mouse-drag orbit + wheel zoom, own jet always visible, ground clip avoidance (scene.ts view 'chase').
+(2) src/render/cockpit.ts: procedural cockpit per family (tub, glareshield, canopy bow/frame, seat headrest, side consoles; tandem rear seat when seats=2),
+parented to the camera rig in F1; MFD canvases as CanvasTexture on cockpit displays; HD GLB cockpit nodes (F-14 'cockpit', Gripen 'cockpit') used when HD on.
+(3) HUD stays screen-space (collimated), clipped to the projected combiner outline. Pointer-lock head look (mouse).
+(4) verify F1/F2 in the browser, tests (camera math), commit, release.
 
 ## Log
+- 2026-10-10 — Phase 3 done: aircraft families + TF30 stalls, 42 tests; release v0.1.4.
 - 2026-10-10 — Phase 2 done (theater registry, variants, nations), 40 tests; release v0.1.3.
 - 2026-10-10 — Phase 1c done: HD models in game (F-14 swing-wing shader, Gripen), runway-start landing bug fixed, 30 tests.
 - 2026-10-10 — 3D model council done; optimized F-14/Gripen GLBs committed with licence file; auto-resume task cfs-roadmap-resume created (every 2 h).
