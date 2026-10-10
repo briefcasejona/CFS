@@ -65,7 +65,8 @@ ipcMain.on('installable:restart', () => {
   if (!updateReady) return;
   setImmediate(() => {
     app.removeAllListeners('window-all-closed');
-    for (const w of BrowserWindow.getAllWindows()) w.removeAllListeners('close');
+    // hide at once so the app doesn't look frozen while it shuts down and hands over to the installer
+    for (const w of BrowserWindow.getAllWindows()) { w.removeAllListeners('close'); w.hide(); }
     autoUpdater.quitAndInstall(false, true);
   });
 });
