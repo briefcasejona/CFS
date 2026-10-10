@@ -12,6 +12,8 @@ export interface HdSpec {
   gearDown: RegExp; gearUp: RegExp; cockpit: RegExp; hide?: RegExp;
   /** swing wing (F-14): outer-wing vertices beyond |x| > minAbsX (game metres) and forward of maxZ rotate around (±pivotX, *, pivotZ) */
   swing?: { pivotX: number; pivotZ: number; minAbsX: number; maxZ: number; refSweep: number };
+  /** pilot eye position in game metres (body frame); default derived from the cockpit node's bounds */
+  eye?: { y: number; z: number };
 }
 
 /** HD models per aircraft family (every variant of the family uses it). */
@@ -21,6 +23,7 @@ export const HD_SPECS: Record<string, HdSpec> = {
     source: 'https://sketchfab.com/3d-models/f-14-tomcat-fighter-jet-free-497f77c311b5411d9b567d8707a81c33', license: 'CC BY-NC-SA 4.0',
     gearDown: /gearOn/i, gearUp: /gearOff/i, cockpit: /cockpit|instrGlass/i,
     swing: { pivotX: 2.7, pivotZ: -1.5, minAbsX: 3.85, maxZ: 4.5, refSweep: 20 },
+    eye: { y: 1.6, z: -5.0 },
   },
   'JAS 39': {
     url: 'assets/models/cc-by-nc-sa/gripen.glb', title: 'Saab JAS 39 Gripen - Fighter Jet - Free', author: 'bohmerang',
@@ -125,12 +128,16 @@ export interface HdInstance {
   gearDown: THREE.Object3D[];
   gearUp: THREE.Object3D[];
   cockpit: THREE.Object3D[];
+  /** transparent canopy glass (hidden from inside) */
+  glass: THREE.Object3D[];
+  /** pilot eye in the body frame */
+  eye: THREE.Vector3;
 }
 
 function instantiate(t: Template): HdInstance {
   const root = new THREE.Group();
   const sw = t.spec.swing;
-  const inst: HdInstance = { root, sweep: null, refSweep: sw?.refSweep ?? 0, gearDown: [], gearUp: [], cockpit: [] };
+  const inst: HdInstance = { root, sweep: null, refSweep: sw?.refSweep ?? 0, gearDown: [], gearUp: [], cockpit: [], glass: [], eye: new THREE.Vector3() };
   const uSweep = { value: 0 };
   for (const src of t.root.children as THREE.Mesh[]) {
     const role = src.userData.role as string;
@@ -157,8 +164,16 @@ function instantiate(t: Template): HdInstance {
     if (role === 'gearDown') inst.gearDown.push(m);
     if (role === 'gearUp') inst.gearUp.push(m);
     if (role === 'cockpit') inst.cockpit.push(m);
+    const mm = m.material as THREE.Material;
+    if (mm.transparent || /glass|canopy/i.test(mm.name)) inst.glass.push(m);
     root.add(m);
   }
+  // eye: explicit, else front part of the cockpit volume
+  const cb = new THREE.Box3();
+  for (const c of inst.cockpit) { const mesh = c as THREE.Mesh; mesh.geometry.computeBoundingBox(); cb.union(mesh.geometry.boundingBox!); }
+  const e = t.spec.eye;
+  if (e) inst.eye.set(0, e.y, e.z);
+  else if (!cb.isEmpty()) inst.eye.set(0, cb.max.y - 0.45, cb.min.z + (cb.max.z - cb.min.z) * 0.55);
   return inst;
 }
 

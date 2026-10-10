@@ -40,6 +40,10 @@ export interface AircraftModel {
   gear: THREE.Group;
   wingL: THREE.Object3D | null;
   wingR: THREE.Object3D | null;
+  /** procedural canopy (hidden from inside in the cockpit view) */
+  canopy: THREE.Object3D;
+  /** fuselage parts around the cockpit (hidden in the F1 view, where the cockpit model takes over) */
+  fuselage: THREE.Object3D[];
   /** procedural parts (hidden while the HD model is shown) */
   proc: THREE.Object3D[];
   /** optional high-detail glTF model (see hdModels.ts) */
@@ -99,22 +103,23 @@ export function buildAircraftModel(def: AircraftDef, side: 'blue' | 'red'): Airc
   const root = new THREE.Group();
   const body = new THREE.Group();
   root.add(body);
+  const fuselage: THREE.Object3D[] = [];
 
   const R = Math.max(0.55, L * 0.042) * (md.engines === 2 ? 1.15 : 1);
   const fus = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.9, R * 0.8, L * 0.62, 12), mat);
   fus.rotation.x = Math.PI / 2;
   fus.position.z = L * 0.02;
   if (md.engines === 2) fus.scale.set(1.35, 1, 0.85);
-  body.add(fus);
+  body.add(fus); fuselage.push(fus);
   const nose = new THREE.Mesh(new THREE.ConeGeometry(R * 0.85, L * 0.28, 12), mat);
   nose.rotation.x = -Math.PI / 2;
   nose.position.z = -L * 0.41;
-  body.add(nose);
+  body.add(nose); fuselage.push(nose);
   const tailCone = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.8, R * 0.6, L * 0.12, 12), dark);
   tailCone.rotation.x = Math.PI / 2;
   tailCone.position.z = L * 0.39;
   if (md.engines === 2) tailCone.scale.set(1.4, 1, 0.8);
-  body.add(tailCone);
+  body.add(tailCone); fuselage.push(tailCone);
   const canopy = new THREE.Mesh(new THREE.SphereGeometry(R * 0.65, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), glass);
   canopy.scale.set(0.8, 0.9, 2.6);
   canopy.position.set(0, R * 0.6, -L * 0.22);
@@ -124,17 +129,17 @@ export function buildAircraftModel(def: AircraftDef, side: 'blue' | 'red'): Airc
     for (const s of [-1, 1]) {
       const it = new THREE.Mesh(new THREE.BoxGeometry(R * 0.6, R * 1.1, L * 0.32), dark);
       it.position.set(s * R * 1.05, md.intake === 'shoulder' ? R * 0.2 : -R * 0.1, -L * 0.04);
-      body.add(it);
+      body.add(it); fuselage.push(it);
     }
   } else if (md.intake === 'chin') {
     const it = new THREE.Mesh(new THREE.BoxGeometry(R * 1.1, R * 0.7, L * 0.3), dark);
     it.position.set(0, -R * 0.95, -L * 0.03);
-    body.add(it);
+    body.add(it); fuselage.push(it);
   } else {
     for (const s of [-1, 1]) {
       const it = new THREE.Mesh(new THREE.BoxGeometry(R * 0.7, R * 0.75, L * 0.3), dark);
       it.position.set(s * R * 0.75, -R * 0.85, -L * 0.02);
-      body.add(it);
+      body.add(it); fuselage.push(it);
     }
   }
 
@@ -185,7 +190,7 @@ export function buildAircraftModel(def: AircraftDef, side: 'blue' | 'red'): Airc
   body.add(wingR, wingL);
   if (md.wing === 'swing') {
     const glove = planform([[-R * 2.4, L * 0.05], [R * 2.4, L * 0.05], [R * 1.6, L * 0.12 + 1], [-R * 1.6, L * 0.12 + 1]], 0.25, mat);
-    body.add(glove);
+    body.add(glove); fuselage.push(glove);
   }
   if (md.canard) {
     for (const sgn of [-1, 1]) {
@@ -235,7 +240,7 @@ export function buildAircraftModel(def: AircraftDef, side: 'blue' | 'red'): Airc
   wheel(gd.track / 2, gd.main);
   body.add(gear);
 
-  const model: AircraftModel = { root, body, stores: [], burners, gear, wingL, wingR, proc: body.children.filter((c) => !burners.includes(c as THREE.Mesh)), hd: null };
+  const model: AircraftModel = { root, body, stores: [], burners, gear, wingL, wingR, canopy, fuselage, proc: body.children.filter((c) => !burners.includes(c as THREE.Mesh)), hd: null };
   requestHdModel(def, (inst) => { model.hd = inst; body.add(inst.root); });
   return model;
 }

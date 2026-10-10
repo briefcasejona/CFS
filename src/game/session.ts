@@ -66,6 +66,7 @@ export class FlightSession {
     this.audio = audio;
     this.settings = settings;
     this.scene = new SceneRenderer(ui.canvas3d);
+    this.scene.mfdCanvases = [ui.mfdL, ui.mfdR];
     this.hud = new Hud(ui.hud);
     this.mfds = new Mfds(ui.mfdL, ui.mfdR);
     window.addEventListener('resize', () => this.resize());
@@ -232,7 +233,10 @@ export class FlightSession {
     if (i.pressed('labels')) this.labels = !this.labels;
     const views: Array<[string, ViewMode]> = [['viewCockpit', 'cockpit'], ['viewChase', 'chase'], ['viewFlyby', 'flyby'], ['viewTarget', 'target'], ['viewEnemy', 'enemy'], ['viewWeapon', 'weapon']];
     for (const [a, v] of views) if (i.pressed(a)) {
-      if (v === 'chase' && this.scene.view === 'chase') { this.scene.chaseYaw = 0; this.scene.chasePitch = 0.15; }
+      if (v === 'chase' && this.scene.view === 'chase') {
+        this.scene.chaseLevel = !this.scene.chaseLevel; this.scene.chaseYaw = 0; this.scene.chasePitch = 0.15;
+        this.built.world.radio(`External view: ${this.scene.chaseLevel ? 'horizon level' : 'locked to aircraft'}`, '#ccc');
+      }
       this.scene.view = v;
     }
     if (i.pressed('mfdLeft')) this.mfds.cycle('left');

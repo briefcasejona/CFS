@@ -4,7 +4,7 @@ This file is the single source of truth for continuing the roadmap across sessio
 session at any time). Update it and `git commit && git push` after every finished step.
 
 ## Heartbeat (lock)
-- heartbeat: 2026-10-10T13:17:49+02:00
+- heartbeat: 2026-10-10T13:24:32+02:00
 - owner: interactive session (wishlist session)
 
 Rule: a session that is actively working updates `heartbeat` (local ISO time, `date -Iseconds`) at least every
@@ -34,7 +34,7 @@ less than 60 minutes old (someone else is working). When taking over, set `owner
 - [x] Phase 1c — 3D models: council verdict on the user's models, then integrate the usable ones (see below)
 - [x] Phase 2 — foundations: Theater interface + registry, aircraft variant system (`extends`), Nation model, camera-relative rendering hook, campaign save migration (theaterId)
 - [x] Phase 3 — aircraft families: F-14A/B/B(U)/D, F-16A/B blk15, C/D blk40/50/70, F-15C/D, F-15E
-- [ ] Phase 4 — cameras + 3D cockpit (orbit chase cam, procedural/GLB cockpit, collimated HUD)
+- [x] Phase 4 — cameras + 3D cockpit (orbit chase cam, procedural/GLB cockpit, collimated HUD)
 - [ ] Phase 5 — radar/datalink, AWACS, aerial refueling
 - [ ] Phase 6 — co-op multiplayer (Trystero WebRTC), then multicrew
 - [ ] Phase 7 — mission editor
@@ -49,17 +49,21 @@ less than 60 minutes old (someone else is working). When taking over, set `owner
 Licence duties if used: attribution (credits screen + `assets/models/CREDITS.md`), non-commercial only, processed model files stay CC BY-NC-SA.
 
 ## Current step / next actions
-Phase 3 done: 12 variants in src/aircraft/defs.ts VARIANTS (F-14A/B/D, F-16A/B blk15, C/D blk40, D blk50, C/D blk70, F-15D/E), META families,
-TF30 compressor stall (EngineDef.stallProne → FlightModel stallTimer/asym yaw, radio call), capability-driven campaign roles (isFighter/isStriker/isSead,
-ratingOf), family-grouped picker (screens.ts families()) + DB. Refuel capability 'probe' set for F-14/F/A-18; 'boom' still TODO in Phase 5.
-NEXT: Phase 4 — cameras + 3D cockpit:
-(1) chase/orbit camera: spring-damped follow, mouse-drag orbit + wheel zoom, own jet always visible, ground clip avoidance (scene.ts view 'chase').
-(2) src/render/cockpit.ts: procedural cockpit per family (tub, glareshield, canopy bow/frame, seat headrest, side consoles; tandem rear seat when seats=2),
-parented to the camera rig in F1; MFD canvases as CanvasTexture on cockpit displays; HD GLB cockpit nodes (F-14 'cockpit', Gripen 'cockpit') used when HD on.
-(3) HUD stays screen-space (collimated), clipped to the projected combiner outline. Pointer-lock head look (mouse).
-(4) verify F1/F2 in the browser, tests (camera math), commit, release.
+Phase 4 done: src/render/cockpit.ts (procedural cockpit: panel + live MFD CanvasTextures, glareshield, consoles, rails, bow for framed canopies,
+seat, tandem rear cockpit, own nose/spine/floor), scene.updatePlayerCockpit (F1 shows own jet minus glass/fuselage; HD F-14/Gripen use their modelled
+cockpit with HdSpec.eye), near plane 0.08 in cockpit, F2-again toggles horizon-level chase. HUD stays screen-space.
+NEXT: Phase 5 — radar/datalink, AWACS, aerial refueling:
+(1) src/avionics/datalink.ts: per-side track table (sources: own radar contacts, wingmen radars, AWACS); stale-out; MFD HSD/SA page shows datalink tracks
+(different symbol from own-radar tracks); radar: show DL tracks on FCR too.
+(2) AWACS entity: AI task 'awacs' (E-3 def: big, slow, radar 400 km, no weapons) flying a racetrack behind the lines; radio calls (picture).
+(3) radar realism: doppler notch (target beaming ±~10 kt radial → lost in look-down), ground clutter in look-down at low PRF, NCTR id when STT & nose-on.
+(4) src/sim/refuel.ts: tanker AI (KC-135 boom / KC-130 drogue def), racetrack; receiver contact envelope (boom: position box behind/below tail;
+drogue: basket point), disconnect on excess closure/angle, fuel transfer ~1000 kg/min; tanker radio; scenario 'Aerial refueling' in Instant Action;
+capabilities 'boom' for F-16/F-15 families, 'probe' for F-14/F/A-18/Rafale/Typhoon/Gripen/Mirage/Su-30/Su-57/Harrier.
+(5) tests: datalink merge/stale, notch, refuel transfer; browser check; commit; release.
 
 ## Log
+- 2026-10-10 — Phase 4 done: 3D cockpits + chase cam modes, 43 tests; release v0.1.5.
 - 2026-10-10 — Phase 3 done: aircraft families + TF30 stalls, 42 tests; release v0.1.4.
 - 2026-10-10 — Phase 2 done (theater registry, variants, nations), 40 tests; release v0.1.3.
 - 2026-10-10 — Phase 1c done: HD models in game (F-14 swing-wing shader, Gripen), runway-start landing bug fixed, 30 tests.

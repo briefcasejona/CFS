@@ -5,6 +5,7 @@ import type { Missile } from '../weapons/missile.js';
 import { TerrainRenderer, buildScenery } from './terrainMesh.js';
 import { buildAircraftModel, updateAircraftModel, syncStores, groundMesh, storeMesh, type AircraftModel } from './models.js';
 import { surfaceHeight, theaterVersion } from '../world/theater.js';
+import { buildCockpit, type Cockpit } from './cockpit.js';
 import { clamp } from '../core/math.js';
 
 export type ViewMode = 'cockpit' | 'chase' | 'flyby' | 'target' | 'weapon' | 'enemy';
@@ -122,6 +123,8 @@ export class SceneRenderer {
   view: ViewMode = 'cockpit';
   headYaw = 0; headPitch = 0;
   chaseYaw = 0; chasePitch = 0.15; chaseDist = 30;
+  /** chase camera keeps the horizon level instead of rolling with the jet (toggle: F2 again) */
+  chaseLevel = false;
   fovBase = 75;
   zoom = 1;
   viewDist = 150000;
@@ -139,6 +142,10 @@ export class SceneRenderer {
   private smoothQuat = new THREE.Quaternion();
   private deadMat = new THREE.MeshLambertMaterial({ color: 0x222018 });
   private theaterVer = theaterVersion;
+  /** MFD canvases shown as live screens in the 3D cockpit (set by the flight session) */
+  mfdCanvases: HTMLCanvasElement[] = [];
+  private cockpit: Cockpit | null = null;
+  private cockpitDef = '';
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true, powerPreference: 'high-performance' });
@@ -241,7 +248,8 @@ export class SceneRenderer {
       if (!m) { m = buildAircraftModel(ac.def, ac.side); this.acModels.set(ac.id, m); this.scene.add(m.root); }
       syncStores(m, ac, (i) => world.stationOffset(ac, i));
       updateAircraftModel(m, ac, t, m.root.position.distanceTo(this.camera.position));
-      m.root.visible = !(ac.isPlayer && this.view === 'cockpit');
+      m.root.visible = true;
+      if (ac.isPlayer) this.updatePlayerCockpit(m, ac, this.view === 'cockpit');
     }
     for (const [id, m] of this.acModels) if (!seen.has(id)) { this.scene.remove(m.root); this.acModels.delete(id); }
     for (const g of world.ground) {
@@ -333,7 +341,38 @@ export class SceneRenderer {
     (this.tracerGeo.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true;
   }
 
+  /**
+   * F1 view: keep your own jet visible (nose, wings) but hide canopy glass from inside, and show a cockpit —
+   * the HD model's own cockpit when it is loaded, otherwise the procedural one (with live MFD screens).
+   */
+  private updatePlayerCockpit(m: AircraftModel, ac: Aircraft, inside: boolean) {
+    const hdOn = !!m.hd && m.hd.root.visible;
+    m.canopy.visible = !inside && !hdOn;
+    if (m.hd) for (const gl of m.hd.glass) gl.visible = !inside;
+    const useHdPit = hdOn && m.hd!.cockpit.length > 0;
+    // the procedural fuselage encloses the eye: the cockpit model provides nose/spine/floor instead
+    const hideFus = inside && !useHdPit;
+    if (!hdOn) for (const f of m.fuselage) f.visible = !hideFus;
+    if (inside && !useHdPit) {
+      if (!this.cockpit || this.cockpitDef !== ac.def.id) {
+        if (this.cockpit) this.cockpit.group.parent?.remove(this.cockpit.group);
+        this.cockpit = buildCockpit(ac.def, this.mfdCanvases);
+        this.cockpitDef = ac.def.id;
+      }
+      if (this.cockpit.group.parent !== m.body) m.body.add(this.cockpit.group);
+      this.cockpit.group.position.copy(this.eyeOffset(ac));
+      this.cockpit.group.visible = true;
+      for (const s of this.cockpit.screens) s.needsUpdate = true;
+    } else if (this.cockpit) {
+      this.cockpit.group.visible = false;
+    }
+  }
+
   eyeOffset(ac: Aircraft) {
+    if (ac.isPlayer) {
+      const m = this.acModels.get(ac.id);
+      if (m?.hd && m.hd.root.visible && m.hd.cockpit.length) return m.hd.eye.clone();
+    }
     const L = ac.def.length;
     const R = Math.max(0.55, L * 0.042) * (ac.def.model.engines === 2 ? 1.15 : 1);
     return new THREE.Vector3(0, R * 0.95, -L * 0.22);
@@ -361,14 +400,20 @@ export class SceneRenderer {
       }
       case 'chase': case 'enemy': {
         const tgt = view === 'enemy' ? this.pickEnemy(world, focus)! : focus;
-        this.smoothQuat.slerp(tgt.quat, 1 - Math.exp(-dt * 4));
+        // 'level' mode follows the heading only (world-up horizon); 'locked' rolls and pitches with the jet
+        let goal = tgt.quat;
+        if (this.chaseLevel) {
+          const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(tgt.quat);
+          goal = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.atan2(-fwd.x, -fwd.z), 0, 'YXZ'));
+        }
+        this.smoothQuat.slerp(goal, 1 - Math.exp(-dt * 4));
         const rot = new THREE.Quaternion().setFromEuler(new THREE.Euler(-this.chasePitch, this.chaseYaw, 0, 'YXZ'));
         const q = this.smoothQuat.clone().multiply(rot);
         const dist = this.chaseDist * Math.max(1, tgt.def.length / 15);
         cam.position.copy(tgt.pos).add(new THREE.Vector3(0, 0, dist).applyQuaternion(q));
         const gh = surfaceHeight(cam.position.x, cam.position.z) + 2;
         if (cam.position.y < gh) cam.position.y = gh;
-        cam.up.set(0, 1, 0).applyQuaternion(this.smoothQuat);
+        cam.up.set(0, 1, 0).applyQuaternion(this.chaseLevel ? new THREE.Quaternion() : this.smoothQuat);
         cam.lookAt(tgt.pos);
         fov = 60 / this.zoom;
         break;
@@ -406,7 +451,9 @@ export class SceneRenderer {
         break;
       }
     }
-    if (Math.abs(cam.fov - fov) > 0.01) { cam.fov = fov; cam.updateProjectionMatrix(); }
+    // closer near plane inside the cockpit (panel and frames are within a metre of the eye)
+    const near = view === 'cockpit' ? 0.08 : 0.3;
+    if (Math.abs(cam.fov - fov) > 0.01 || cam.near !== near) { cam.fov = fov; cam.near = near; cam.updateProjectionMatrix(); }
   }
 
   pickTarget(world: World, focus: Aircraft): Aircraft | GroundUnit | null {
