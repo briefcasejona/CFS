@@ -1,7 +1,7 @@
 import { InputManager, shortDev } from './input/input.js';
 import { AudioSystem } from './core/audio.js';
 import { loadSettings, type Settings } from './core/settings.js';
-import { FlightSession, type EndCallback } from './game/session.js';
+import { FlightSession, type EndCallback, type NetHook } from './game/session.js';
 import { mainMenu, type AppApi } from './ui/screens.js';
 import { controlsScreen } from './ui/controls.js';
 import { openCampaign } from './ui/campaignScreen.js';
@@ -50,7 +50,7 @@ class App implements AppApi {
     this.toastTimer = window.setTimeout(() => t.classList.remove('show'), 3500);
   }
 
-  fly(spec: MissionSpec, onEnd: EndCallback) {
+  fly(spec: MissionSpec, onEnd: EndCallback, net?: NetHook) {
     this.audio.init(this.settings.volume);
     this.audio.setVolume(this.settings.volume);
     const loading = document.getElementById('loading')!;
@@ -71,6 +71,7 @@ class App implements AppApi {
           }, this.input, this.audio, this.settings);
         }
         this.session.settings = this.settings;
+        this.session.netHook = net ?? null;
         this.session.start(spec, (r, b) => {
           this.root.style.display = 'block';
           onEnd(r, b);

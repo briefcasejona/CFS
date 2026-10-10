@@ -7,6 +7,8 @@ import { drawTheater, type MapMarker } from './map.js';
 import { airbaseById } from '../world/theater.js';
 import { NM } from '../sim/atmosphere.js';
 import { renderInstallLinks } from './installLinks.js';
+import type { NetHook } from '../game/session.js';
+import { multiplayerScreen } from './multiplayer.js';
 import { hdCredits, setHdModelsEnabled } from '../render/hdModels.js';
 
 export interface AppApi {
@@ -14,7 +16,7 @@ export interface AppApi {
   settings: Settings;
   show(screen: () => HTMLElement): void;
   mainMenu(): void;
-  fly(spec: MissionSpec, onEnd: (r: MissionResult | null, b: BuiltMission) => void): void;
+  fly(spec: MissionSpec, onEnd: (r: MissionResult | null, b: BuiltMission) => void, net?: NetHook): void;
   controls(): void;
   campaign(): void;
   toast(msg: string): void;
@@ -40,6 +42,7 @@ export function mainMenu(app: AppApi): HTMLElement {
         <button data-a="quick" class="primary">⚡ Quick Fight <small class="muted">— F-16C vs MiG-29, guns + heaters</small></button>
         <button data-a="instant">Instant Action</button>
         <button data-a="setup">Mission Setup</button>
+        <button data-a="mp">Multiplayer (co-op)</button>
         <button data-a="campaign">Dynamic Campaign</button>
         <button data-a="controls">Controls / HOTAS</button>
         <button data-a="settings">Settings</button>
@@ -74,6 +77,7 @@ export function mainMenu(app: AppApi): HTMLElement {
       }
       case 'instant': app.show(() => missionSetup(app, false)); break;
       case 'setup': app.show(() => missionSetup(app, true)); break;
+      case 'mp': app.show(() => multiplayerScreen(app)); break;
       case 'campaign': app.campaign(); break;
       case 'controls': app.controls(); break;
       case 'settings': app.show(() => settingsScreen(app)); break;

@@ -158,3 +158,6 @@ table.binds .bind { display: inline-block; background: #0b1218; border: 1px soli
 @keyframes spin { to { transform: rotate(360deg); } }
 #toast { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); background: #1f4a6a; border: 1px solid var(--accent); padding: 8px 18px; border-radius: 4px; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 30; }
 #toast.show { opacity: 1; }
+
+.mp .chatlog { height: 140px; overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 3px; padding: 6px 8px; margin-bottom: 6px; }
+.mp .code { font-family: Consolas, monospace; font-size: 22px; letter-spacing: 4px; color: var(--accent2); }

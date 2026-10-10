@@ -4,7 +4,7 @@ This file is the single source of truth for continuing the roadmap across sessio
 session at any time). Update it and `git commit && git push` after every finished step.
 
 ## Heartbeat (lock)
-- heartbeat: 2026-10-10T22:22:59+02:00
+- heartbeat: 2026-10-10T22:27:52+02:00
 - owner: interactive session (wishlist session)
 
 Rule: a session that is actively working updates `heartbeat` (local ISO time, `date -Iseconds`) at least every
@@ -49,21 +49,20 @@ less than 60 minutes old (someone else is working). When taking over, set `owner
 Licence duties if used: attribution (credits screen + `assets/models/CREDITS.md`), non-commercial only, processed model files stay CC BY-NC-SA.
 
 ## Current step / next actions
-Phase 5 done: src/avionics/datalink.ts (per-side Link 16 picture, world.datalink; HSD hollow off-board tracks, FCR hollow boxes, AWACS dot; NO_DATALINK
-for older jets), E-3 + KC-135R support defs (playable:false, hidden from pickers), AI tasks 'awacs'/'tanker' with racetrack (pilot.ts flyRacetrack),
-src/sim/refuel.ts (boom/drogue envelopes, contact/disconnect, 16 kg/s, HUD director cue, radio), boom/probe capabilities by family,
-'Aerial refueling' Instant Action scenario (FlightSpec.fuelFraction/stationHdg/speed), AWACS 'Magic' in BVR/furball, NCTR on FCR STT. 47 tests.
-NEXT: Phase 6 — co-op multiplayer (2–4 players) over WebRTC without port forwarding:
-(1) vendor Trystero (pure ESM, pick the nostr or torrent strategy; check npm 'trystero' package files for a browser ESM build) into site/vendor and
-dev import map; src/net/net.ts: joinRoom(code) → peers, send/recv channels.
-(2) host-authoritative: host runs World; clients send own-ship state (pos/quat/vel/ctrl/weapons fired) at 20 Hz; host broadcasts snapshots
-(AI aircraft, missiles, ground units, kills) at 15 Hz; clients render remote entities with interpolation (100 ms buffer); remote players are
-Aircraft without AI on the host (state applied from net).
-(3) lobby UI (main menu 'Multiplayer'): host → room code + mission pick (Instant Action scenarios); join → code; chat; WebRTC voice optional.
-(4) multicrew later (back-seat client owns radar/MFD input).
-(5) tests: snapshot encode/decode, interpolation; browser two-tab test (two tabs in the preview, same room).
+Phase 6 core done (co-op multiplayer): src/net/protocol.ts (pack/apply/Interpolator/room codes), src/net/coop.ts (CoopHost authoritative world;
+CoopClient: own jet local, others = interpolated ghosts, missiles = ghost list, fire requests via world.netFire, RWR relayed), src/net/link.ts
+(Trystero torrent strategy, @trystero-p2p/torrent + core vendored via import map / site copy), src/ui/multiplayer.ts lobby (host code, join,
+chat, optional voice), FlightSession.netHook, main menu 'Multiplayer (co-op)'. Verified: two browser tabs connected over real WebRTC via public
+trackers and flew a co-op BVR mission; tests/net.test.ts (in-memory end-to-end). launch.json now autoPort (another project uses :5173).
+Phase 6 remaining (multicrew, reduced): second client in the back seat of a two-seater owning radar/MFD input — deferred; do it after Phase 7
+if time allows (plan said 'last').
+NEXT: Phase 7 — mission editor: src/ui/editor.ts — 2D canvas over theaterBackground() (pan/zoom like campaignScreen map), palette to place
+flights (side, aircraft, count, task, start air/runway, waypoints by clicking), ground groups (GroupSpec kinds incl. SAM types), goals;
+reads/writes MissionSpec; save to localStorage list, JSON export/import file, share URL (#m=base64 of deflate via CompressionStream);
+'Fly' launches via app.fly with the briefing; tests: MissionSpec JSON round-trip + validateMissionSpec.
 
 ## Log
+- 2026-10-10 — Phase 6 co-op multiplayer working (WebRTC, no port forwarding), 49 tests; release v0.1.7.
 - 2026-10-10 — Phase 5 done: datalink/AWACS/NCTR + aerial refuelling, 47 tests; release v0.1.6.
 - 2026-10-10 — Phase 4 done: 3D cockpits + chase cam modes, 43 tests; release v0.1.5.
 - 2026-10-10 — Phase 3 done: aircraft families + TF30 stalls, 42 tests; release v0.1.4.

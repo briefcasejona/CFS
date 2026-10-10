@@ -25,6 +25,7 @@ export interface SessionUI {
 
 /** null result = player quit to menu without debrief. */
 export type EndCallback = (r: MissionResult | null, b: BuiltMission) => void;
+export interface NetHook { attach(b: BuiltMission): void; frame(dt: number): void; end(): void }
 
 /** One flight: owns the world, renderer, HUD and the player's controls. */
 export class FlightSession {
@@ -37,6 +38,8 @@ export class FlightSession {
   settings: Settings;
   built!: BuiltMission;
   private onEnd: EndCallback | null = null;
+  /** multiplayer: attached after the mission is built, ticked every frame, notified when the flight ends */
+  netHook: NetHook | null = null;
   private running = false;
   private paused = false;
   private timeAccel = 1;
@@ -109,6 +112,7 @@ export class FlightSession {
       unlimitedFuel: s.unlimitedFuel, unlimitedWeapons: s.unlimitedWeapons, invulnerable: s.invulnerable,
       gEffects: s.gEffects, abDetent: s.abDetent,
     });
+    this.netHook?.attach(this.built);
     this.scene.reset();
     this.scene.setWeather({ ...spec.weather, visibilityKm: Math.min(spec.weather.visibilityKm, s.visibilityKm) });
     this.scene.fovBase = s.fov;
@@ -147,6 +151,8 @@ export class FlightSession {
   }
 
   stop() {
+    this.netHook?.end();
+    this.netHook = null;
     this.running = false;
     this.input.flightKeys = false;
     cancelAnimationFrame(this.raf);
@@ -176,6 +182,7 @@ export class FlightSession {
         steps++;
         this.processCms(world.time);
       }
+      if (this.netHook) { this.timeAccel = 1; this.netHook.frame(dt); }
       this.checkMissionState();
     }
     this.scene.render(world, this.paused ? 0 : dt);

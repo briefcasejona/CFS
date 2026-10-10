@@ -10,7 +10,7 @@ const PROJECT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const SITE_MODE = process.argv.includes('--site');
 const ROOT = SITE_MODE ? join(PROJECT, 'site') : PROJECT;
 const PORT = Number(process.env.PORT || (SITE_MODE ? 5174 : 5173));
-const ALLOWED = SITE_MODE ? [''] : ['index.html', 'styles.css', 'favicon.ico', `build${sep}`, `node_modules${sep}three${sep}`, `assets${sep}`];
+const ALLOWED = SITE_MODE ? [''] : ['index.html', 'styles.css', 'favicon.ico', `build${sep}`, `node_modules${sep}three${sep}`, `assets${sep}`, `node_modules${sep}@trystero-p2p${sep}`];
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.map': 'application/json', '.png': 'image/png',
