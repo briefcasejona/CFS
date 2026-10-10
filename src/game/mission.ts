@@ -116,14 +116,14 @@ function trimApproach(ac: Aircraft, speed: number, gammaDeg: number) {
   const fly = (trim: number, thr: number) => {
     const t = new Aircraft(ac.def, ac.side, 'trim', [...ac.stores]);
     t.fm.fuel = ac.fm.fuel; t.fm.updateMass();
-    t.fm.placeInAir(new THREE.Vector3(0, 1000, 0), 0, speed);
+    t.fm.placeInAir(new THREE.Vector3(0, 1000, 0), 0, speed, ac.def.aero.flapCL, gammaDeg * Math.PI / 180);
     t.fm.gearPos = 1; t.fm.flapPos = 1; t.fm.core = thr;
     Object.assign(t.ctrl, { gearDown: true, flaps: 1, throttle: thr, trimPitch: trim });
-    // average over the last 3 s of a 6 s flight, after the start-up transient
+    // average over the last 5 s of a 10 s flight: past the start-up transient, and long enough to see slow drift
     let gamma = 0, n = 0;
-    for (let k = 0; k < 720; k++) {
+    for (let k = 0; k < 1200; k++) {
       t.fm.step(1 / 120, t.ctrl, env, {});
-      if (k >= 360) { const v = t.fm.vel; gamma += Math.atan2(v.y, Math.hypot(v.x, v.z)) * 180 / Math.PI; n++; }
+      if (k >= 600) { const v = t.fm.vel; gamma += Math.atan2(v.y, Math.hypot(v.x, v.z)) * 180 / Math.PI; n++; }
     }
     return { gamma: gamma / n, dv: t.fm.vel.length() - speed };
   };
@@ -287,8 +287,10 @@ export function buildMission(spec: MissionSpec, opts: WorldOptions): BuiltMissio
           ac.ctrl.gearDown = true; ac.fm.gearPos = 1;
           ac.ctrl.flaps = 1; ac.fm.flapPos = 1;
           ac.hook = ac.def.capabilities?.includes('carrier') ?? false;
+          // on the glideslope at the landing-flap attitude, trimmed
+          ac.fm.placeInAir(pos, h, s.speed, ac.def.aero.flapCL, -GLIDE_DEG * Math.PI / 180);
+          ac.fm.gearPos = 1; ac.fm.flapPos = 1;
           trimApproach(ac, s.speed, -GLIDE_DEG);
-          ac.fm.vel.setY(-Math.tan(GLIDE_DEG * Math.PI / 180) * s.speed);   // already descending on the glideslope
         }
       } else if (f.start.kind === 'carrier') {
         const cv = carrierById(f.start.carrierId);

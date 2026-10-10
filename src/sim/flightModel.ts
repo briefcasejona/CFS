@@ -135,17 +135,22 @@ export class FlightModel {
     this.onGround = true; this.wow = true;
   }
 
-  /** Airstart at altitude and speed (m/s), roughly trimmed. */
-  placeInAir(pos: THREE.Vector3, hdgRad: number, speed: number) {
+  /**
+   * Airstart at altitude and speed (m/s), roughly trimmed. `clExtra` is lift already provided by high-lift devices
+   * (landing flaps) and `gamma` the flight-path angle (rad, negative = descending).
+   */
+  placeInAir(pos: THREE.Vector3, hdgRad: number, speed: number, clExtra = 0, gamma = 0) {
     this.pos.copy(pos);
     this.quat.setFromEuler(new THREE.Euler(0, -hdgRad, 0, 'YXZ'));
+    const X = new THREE.Vector3(1, 0, 0);
+    this.quat.multiply(new THREE.Quaternion().setFromAxisAngle(X, gamma));
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(this.quat);
     this.vel.copy(fwd).multiplyScalar(speed);
     const at = atmosphere(pos.y);
     const qb = 0.5 * at.rho * speed * speed;
-    const cl = (this.mass * G0) / Math.max(1, qb * this.def.wingArea);
-    const a = clamp((cl - this.def.aero.CL0) / this.def.aero.CLa, -0.1, 0.25);
-    this.quat.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), a));
+    const cl = (this.mass * G0 * Math.cos(gamma)) / Math.max(1, qb * this.def.wingArea);
+    const a = clamp((cl - this.def.aero.CL0 - clExtra) / this.def.aero.CLa, -0.1, 0.25);
+    this.quat.multiply(new THREE.Quaternion().setFromAxisAngle(X, a));
     this.gearPos = 0; this.flapPos = 0;
     this.core = 0.85; this.p = this.q = this.r = 0;
     this.alphaInt = 0;
@@ -473,7 +478,8 @@ export class FlightModel {
       const nCmd = pitchIn >= 0 ? 1 + pitchIn * (L.gMax - 1) : 1 + -pitchIn * (L.gMin - 1);
       const W = this.mass * G0;
       const clReq = (nCmd * W) / Math.max(qbar * S, 1);
-      let aCmd = (clReq - A.CL0) / CLa;
+      // the flaps' share of the lift is subtracted, so the law doesn't over-command AoA in the landing configuration
+      let aCmd = (clReq - A.CL0 - A.flapCL * this.flapPos) / CLa;
       this.alphaInt = clamp(this.alphaInt + (nCmd - this.nz) * 0.03 * dt, -0.08, 0.08);
       aCmd += this.alphaInt;
       if (aCmd > aoaMax) { aCmd = aoaMax; this.alphaInt = Math.min(this.alphaInt, 0.0); }

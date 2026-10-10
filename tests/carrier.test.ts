@@ -98,7 +98,9 @@ describe('carriers', () => {
     for (let t = 0; t < 7; t += DT) {
       w.step(DT);
       if (p.fm.wow) touched = true;
-      p.ctrl.pitch = !touched ? -0.3 : (!p.fm.wow && p.fm.agl > 5) ? 0 : 0.4;   // fly it onto the deck, then rotate
+      // approach power until the wheels hit, then full power and rotate (a bolter is flown off at full power)
+      p.ctrl.throttle = touched ? 1 : 0.4;
+      p.ctrl.pitch = !touched ? -0.1 : (!p.fm.wow && p.fm.agl > 5) ? 0 : 0.4;
     }
     expect(touched).toBe(true);
     expect(w.carrierOps.state(p)).toBe(null);
