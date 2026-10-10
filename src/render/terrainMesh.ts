@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { terrainHeight, AIRBASES, OBJECTIVES, THEATER_HALF, runwayEnds, fbm, terrainPalette, type TerrainPalette } from '../world/theater.js';
 
 const CHUNK = 16000; // m
@@ -29,6 +30,22 @@ function terrainColor(h: number, slope: number, x: number, z: number, pal: Terra
   return out.setRGB(0.32 + field * 0.08 + h * 0.00004, 0.36 + field * 0.06, 0.2 + h * 0.00003);
 }
 
+/** forest patches: the same noise that paints the dark-green forest colour in terrainColor */
+function isForest(x: number, z: number) { return fbm(x * 0.0007, z * 0.0007, 3) * 0.5 + 0.5 > 0.55; }
+
+const TREE_CELL = 70, TREE_RADIUS = 5000, TREE_MAX = 12000;
+/** deterministic 0..1 hash of an integer cell */
+function hash2(i: number, j: number) {
+  let h = Math.imul(i, 374761393) ^ Math.imul(j, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+/** keep airfields clear of trees */
+function nearRunway(x: number, z: number) {
+  for (const ab of AIRBASES) if (Math.abs(x - ab.x) < ab.length / 2 + 1500 && Math.abs(z - ab.z) < ab.length / 2 + 1500) return true;
+  return false;
+}
+
 interface ChunkEntry { mesh: THREE.Mesh; lod: number; used: number }
 
 /** Chunked LOD terrain with skirts. Geometry is generated lazily and cached. */
@@ -48,6 +65,7 @@ export class TerrainRenderer {
   clear() {
     for (const e of this.chunks.values()) { this.group.remove(e.mesh); e.mesh.geometry.dispose(); }
     this.chunks.clear();
+    this.treeAt.set(Infinity, Infinity);
   }
 
   private buildChunk(ci: number, cj: number, res: number): THREE.Mesh {
@@ -152,6 +170,50 @@ export class TerrainRenderer {
         if (this.frame - e.used > 600) { this.group.remove(e.mesh); e.mesh.geometry.dispose(); this.chunks.delete(key); }
       }
     }
+  }
+
+  /** Forest trees near the camera (instanced); rebuilt when the camera has moved ~1 km. */
+  private trees: THREE.InstancedMesh | null = null;
+  private treeAt = new THREE.Vector2(Infinity, Infinity);
+  updateTrees(camPos: THREE.Vector3) {
+    const agl = camPos.y - Math.max(0, terrainHeight(camPos.x, camPos.z));
+    if (!this.trees) {
+      // one merged low-poly conifer: trunk + two cones, ~16 m tall, origin at the foot
+      const parts = [
+        new THREE.CylinderGeometry(0.5, 0.7, 3, 5).translate(0, 1.5, 0),
+        new THREE.ConeGeometry(4.2, 9, 6).translate(0, 7, 0),
+        new THREE.ConeGeometry(3.0, 7, 6).translate(0, 12, 0),
+      ];
+      const geo = mergeGeometries(parts);
+      this.trees = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ color: 0x2d4a24 }), TREE_MAX);
+      this.trees.frustumCulled = false;
+      this.trees.count = 0;
+      this.group.add(this.trees);
+    }
+    // invisible (and not worth rebuilding) above ~3000 m AGL
+    this.trees.visible = agl < 3000;
+    if (!this.trees.visible || Math.hypot(camPos.x - this.treeAt.x, camPos.z - this.treeAt.y) < 1000) return;
+    this.treeAt.set(camPos.x, camPos.z);
+    const pal = terrainPalette();
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+    const ci = Math.floor(camPos.x / TREE_CELL), cj = Math.floor(camPos.z / TREE_CELL), r = Math.ceil(TREE_RADIUS / TREE_CELL);
+    let k = 0;
+    for (let j = cj - r; j <= cj + r && k < TREE_MAX; j++) {
+      for (let i = ci - r; i <= ci + r && k < TREE_MAX; i++) {
+        const hsh = hash2(i, j);
+        const x = (i + hsh) * TREE_CELL, z = (j + hash2(j, i)) * TREE_CELL;
+        if ((x - camPos.x) ** 2 + (z - camPos.z) ** 2 > TREE_RADIUS * TREE_RADIUS) continue;
+        if (!isForest(x, z)) continue;
+        const h = terrainHeight(x, z);
+        if (h < 2 || h > pal.snowLine(x, z) - pal.rockBelowSnow - 150 || nearRunway(x, z)) continue;
+        const sc = 0.7 + hsh * 0.7;
+        q.setFromAxisAngle(up, hsh * 6.283);
+        m.compose(p.set(x, h - 0.5, z), q, s.set(sc, sc * (0.85 + hash2(i + 7, j) * 0.4), sc));
+        this.trees.setMatrixAt(k++, m);
+      }
+    }
+    this.trees.count = k;
+    this.trees.instanceMatrix.needsUpdate = true;
   }
 
   /** Pre-build chunks around a point (during loading). */

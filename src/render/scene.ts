@@ -479,6 +479,7 @@ export class SceneRenderer {
     const cp = this.camera.position;
     this.sky.position.copy(cp);
     this.terrain.update(cp, this.viewDist);
+    this.terrain.updateTrees(cp);
     this.clouds.position.x = cp.x; this.clouds.position.z = cp.z;
     const tex = (this.clouds.material as THREE.MeshLambertMaterial).map!;
     tex.offset.set(cp.x / 10000, -cp.z / 10000);

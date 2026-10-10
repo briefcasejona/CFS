@@ -4,7 +4,7 @@ This file is the single source of truth for continuing the roadmap across sessio
 session at any time). Update it and `git commit && git push` after every finished step.
 
 ## Heartbeat (lock)
-- heartbeat: 2026-10-10T22:49:37+02:00
+- heartbeat: 2026-10-10T23:02:39+02:00
 - owner: interactive session (wishlist session)
 
 Rule: a session that is actively working updates `heartbeat` (local ISO time, `date -Iseconds`) at least every
@@ -57,7 +57,11 @@ DONE step (1): src/world/lcc.ts (Lambert Conformal Conic, lat0 52 lon0 10, std p
 PLAN for Europe campaign: the campaign frontline model assumes an east-west front (z per x-sector); Europe needs a north-south front → add Theater.frontAxis or defer the Europe campaign; Instant Action/editor/MP first via a scenario transform (rotate+translate Varnia-frame scenario coordinates to a theater anchor, map halvorsen/volsk to nearest blue/red base).
 NOTE: a user hook asks to run /app-legal-guard check after network/data-flow changes — do it at the end of Phase 8 (attribution for AWS Terrain Tiles/OurAirports in credits).
 DONE step (2): src/world/theaters/europe.ts (DEM rawHeight + fbm micro-relief, 26 real airfields with grid-converted runway headings, 10 objectives, nations NATO vs ru/by, iaAnchor over NE Poland, campaign:false, async load via fetch+DecompressionStream; setEuropeGrid for tests), Theater.campaign/iaAnchor/load + ensureTheater() in theater.ts, land mask in the bake (Natural Earth 10m land minus lakes → polders stay land), tests/europe.test.ts. 55 tests.
-Remaining steps (next = 3):
+DONE step (3)+(4): theater picker in mission setup (ensureTheater before briefing), Europe load gunzips only if needed, terrain chunk loop windowed around the camera, scenarios adapt via theaterAdapt.ts (commit dee22ce).
+DONE step (5a): Theater.palette (beach/snowLine/rockBelowSnow; Europe snowline by latitude, no sand band), micro-relief fades near sea level so polders stay dry (+test), map: 1024px background on large theaters, Theater.overlay (borders+cities from scripts/terrain/bake-europe-overlay.mjs → overlay.json, 79 KB) drawn on all maps, credits in Settings + assets/theaters/europe/SOURCES.md (commit e79852d). 57 tests.
+DONE (5b): instanced conifers (≤12k, 5 km radius, rebuilt per km, hidden >3000 m AGL) in forest-noise patches, clear of runways.
+NEXT: /app-legal-guard check, PROGRESS, npm run release (v0.1.9). Earth curvature optional.
+Original plan (for reference):
 (1) scripts/terrain/bake-europe.mjs (pure JS: fetch AWS Terrarium tiles https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png,
 decode with pngjs, height = (R*256 + G + B/256) - 32768) for lon −6…20, lat 42…62 at zoom ~7–8 → resample into a Transverse-Mercator
 (centre 7°E 52°N) local grid ~1 km/px → write Int16 binary tiles site-ready under assets/theaters/europe/ (+ a meta.json with extent, projection);
