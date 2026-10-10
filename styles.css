@@ -57,6 +57,25 @@ a { color: var(--accent); cursor: pointer; }
 .menu-buttons { display: flex; flex-direction: column; gap: 8px; width: 300px; }
 .menu-buttons button { padding: 11px 11px 11px 20px; font-size: 16px; text-align: left; }
 .menu .hint { position: absolute; bottom: 18px; }
+.screen.menu { overflow-y: auto; justify-content: safe center; }
+.menu .hint { position: static; margin-top: 14px; text-align: center; }
+@media (max-height: 820px) {
+  .menu h1 { font-size: 60px; letter-spacing: 12px; }
+  .menu .title { margin-bottom: 14px; }
+  .menu-buttons { gap: 5px; }
+  .menu-buttons button { padding: 7px 11px 7px 20px; font-size: 15px; }
+}
+.menu .howto { width: 300px; margin-top: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 3px; padding: 6px 12px; }
+.menu .howto summary { cursor: pointer; color: var(--accent); }
+.menu .howto table { margin: 6px 0; }
+.menu .install { margin-top: 12px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.install-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+a.btnlink { display: inline-block; text-decoration: none; color: var(--text); background: var(--panel2); border: 1px solid var(--accent); padding: 7px 14px; border-radius: 3px; }
+a.btnlink:hover { background: #22384a; }
+#errbox { position: fixed; right: 12px; bottom: 12px; z-index: 100000; width: min(520px, calc(100vw - 24px)); max-height: 50vh; overflow: auto;
+  background: #2a1416; border: 1px solid var(--bad); border-radius: 4px; padding: 10px 12px; font-size: 12px; }
+#errbox pre { white-space: pre-wrap; margin: 6px 0; max-height: 26vh; overflow: auto; color: #ffc9c9; }
+#errbox .row { display: flex; gap: 8px; justify-content: flex-end; }
 
 .acgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
 .accard, .scen { display: flex; flex-direction: column; align-items: flex-start; text-align: left; padding: 8px 10px; }

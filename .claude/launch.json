@@ -1,6 +1,23 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "cfs", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 5173 }
+    {
+      "name": "cfs",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 5173
+    },
+    {
+      "name": "cfs-site",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "site"
+      ],
+      "port": 5174
+    }
   ]
 }

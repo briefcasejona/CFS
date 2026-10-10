@@ -5,3 +5,5 @@ site/
 scratch/
 release/
 .claude/settings.local.json
+desktop-build/
+smoke-*.png

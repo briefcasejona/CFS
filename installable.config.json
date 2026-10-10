@@ -1,0 +1,29 @@
+{
+  "name": "CFS — Combat Flight Simulator",
+  "shortName": "CFS",
+  "description": "Combat flight simulator in the spirit of Falcon BMS and DCS: 6-DOF flight model, radar, missiles, dynamic campaign, HOTAS.",
+  "themeColor": "#0d1720",
+  "backgroundColor": "#0d1720",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "entry": "index.html",
+  "outDir": "site",
+  "copy": [
+    { "from": "build/src", "to": "js", "include": "\\.js$", "stripSourceMaps": true },
+    { "from": "styles.css", "to": "styles.css" },
+    { "from": "node_modules/three/build/three.module.js", "to": "vendor/three/three.module.js" },
+    { "from": "node_modules/three/build/three.core.js", "to": "vendor/three/three.core.js" }
+  ],
+  "replace": [
+    ["/node_modules/three/build/three.module.js", "./vendor/three/three.module.js"],
+    ["href=\"/styles.css\"", "href=\"./styles.css\""],
+    ["src=\"/build/src/main.js\"", "src=\"./js/main.js\""]
+  ],
+  "icon": {
+    "background": "#14283a",
+    "foreground": "#9fd8ff",
+    "polygon": [[0.5,0.02],[0.555,0.2],[0.57,0.42],[0.97,0.68],[0.97,0.74],[0.6,0.72],[0.6,0.82],[0.78,0.93],[0.78,0.98],[0.53,0.95],[0.5,0.99],[0.47,0.95],[0.22,0.98],[0.22,0.93],[0.4,0.82],[0.4,0.72],[0.03,0.74],[0.03,0.68],[0.43,0.42],[0.445,0.2]]
+  },
+  "desktopAsset": "CFS-Setup.exe",
+  "desktop": { "productName": "CFS", "appId": "io.github.cfs.flightsim" }
+}

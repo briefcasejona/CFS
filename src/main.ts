@@ -6,6 +6,7 @@ import { mainMenu, type AppApi } from './ui/screens.js';
 import { controlsScreen } from './ui/controls.js';
 import { openCampaign } from './ui/campaignScreen.js';
 import type { MissionSpec } from './game/mission.js';
+import { installErrorOverlay } from './ui/errorOverlay.js';
 
 class App implements AppApi {
   root: HTMLElement;
@@ -84,6 +85,7 @@ class App implements AppApi {
 }
 
 function boot() {
+  installErrorOverlay();
   try {
     (window as unknown as { cfs: App }).cfs = new App();
   } catch (err) {

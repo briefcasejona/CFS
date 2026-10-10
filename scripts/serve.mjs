@@ -5,13 +5,17 @@ import { createReadStream, statSync } from 'node:fs';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
-const PORT = Number(process.env.PORT || 5173);
-const ALLOWED = ['index.html', 'styles.css', 'favicon.ico', `build${sep}`, `node_modules${sep}three${sep}`];
+// `node scripts/serve.mjs --site` serves the built, installable site/ instead (PWA testing, CI smoke test).
+const PROJECT = resolve(fileURLToPath(new URL('..', import.meta.url)));
+const SITE_MODE = process.argv.includes('--site');
+const ROOT = SITE_MODE ? join(PROJECT, 'site') : PROJECT;
+const PORT = Number(process.env.PORT || (SITE_MODE ? 5174 : 5173));
+const ALLOWED = SITE_MODE ? [''] : ['index.html', 'styles.css', 'favicon.ico', `build${sep}`, `node_modules${sep}three${sep}`];
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.map': 'application/json', '.png': 'image/png',
-  '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.wasm': 'application/wasm',
+  '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.wasm': 'application/wasm', '.webmanifest': 'application/manifest+json',
+  '.bin': 'application/octet-stream',
 };
 
 const server = http.createServer((req, res) => {

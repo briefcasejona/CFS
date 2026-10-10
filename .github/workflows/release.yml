@@ -1,0 +1,44 @@
+# Builds the Windows installer (Electron + NSIS) in the cloud and publishes it to GitHub Releases.
+# Installed copies auto-update from the latest release (electron-updater reads latest.yml).
+# Trigger: push a version tag, e.g. `npm run release` (npm version patch + git push --follow-tags).
+name: Release desktop app (Windows)
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: Build installable site
+        run: node scripts/installable/build-site.mjs
+      - name: Assemble Electron project
+        run: node scripts/installable/make-desktop.mjs
+        env:
+          RELEASE_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+      - name: Install Electron + builder
+        working-directory: desktop-build
+        run: npm install --no-audit --no-fund
+      - name: Build and publish installer
+        working-directory: desktop-build
+        run: npx electron-builder --win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: |
+            desktop-build/dist/*.exe
+            desktop-build/dist/latest.yml

@@ -6,6 +6,7 @@ import { DEFAULT_SETTINGS, realismLabel, saveSettings, type Settings } from '../
 import { drawTheater, type MapMarker } from './map.js';
 import { airbaseById } from '../world/theater.js';
 import { NM } from '../sim/atmosphere.js';
+import { renderInstallLinks } from './installLinks.js';
 
 export interface AppApi {
   root: HTMLElement;
@@ -35,7 +36,8 @@ export function mainMenu(app: AppApi): HTMLElement {
         <div class="muted">Varnia Peninsula theater · 16 aircraft · ${realismLabel(app.settings)}</div>
       </div>
       <div class="menu-buttons">
-        <button data-a="instant" class="primary">Instant Action</button>
+        <button data-a="quick" class="primary">⚡ Quick Fight <small class="muted">— F-16C vs MiG-29, guns + heaters</small></button>
+        <button data-a="instant">Instant Action</button>
         <button data-a="setup">Mission Setup</button>
         <button data-a="campaign">Dynamic Campaign</button>
         <button data-a="controls">Controls / HOTAS</button>
@@ -43,10 +45,32 @@ export function mainMenu(app: AppApi): HTMLElement {
         <button data-a="db">Aircraft Database</button>
         <button data-a="help">Flight Manual</button>
       </div>
+      <details class="howto">
+        <summary>How to fly (60 seconds)</summary>
+        <table class="kv small">
+          <tr><td>Arrow keys</td><td>Stick: pitch and roll</td></tr>
+          <tr><td>Z / X</td><td>Rudder</td></tr>
+          <tr><td>PgUp / PgDn</td><td>Throttle (full up = afterburner)</td></tr>
+          <tr><td>Enter</td><td>Lock the target in front of you</td></tr>
+          <tr><td>D</td><td>Next weapon (missiles ↔ gun)</td></tr>
+          <tr><td>Space</td><td>Fire — wait for the tone / IN RNG cue</td></tr>
+          <tr><td>Q / E</td><td>Flares / chaff when the RWR warns of a missile</td></tr>
+          <tr><td>F1 / F2</td><td>Cockpit / outside view (mouse-drag to look around)</td></tr>
+          <tr><td>Esc</td><td>Pause, debrief, quit</td></tr>
+        </table>
+        <div class="muted small">Tip: Settings → realism lets you switch on easier radar, unlimited weapons or invulnerability.</div>
+      </details>
+      <div class="install"></div>
       <div class="hint muted">HOTAS / joystick: press any button on the device once so the browser exposes it, then open <b>Controls / HOTAS</b>.</div>
     </div>`);
-  e.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+  renderInstallLinks(e.querySelector('.install') as HTMLElement);
+  e.querySelectorAll('.menu-buttons button').forEach((b) => b.addEventListener('click', () => {
     switch ((b as HTMLElement).dataset.a) {
+      case 'quick': {
+        const spec = buildScenario({ ...defaultCustom(), scenario: 'bfm_ir', aircraftId: 'f16c', loadoutIndex: 0 });
+        app.fly(spec, (r, bm) => app.show(() => debrief(app, spec, r, bm, () => app.mainMenu())));
+        break;
+      }
       case 'instant': app.show(() => missionSetup(app, false)); break;
       case 'setup': app.show(() => missionSetup(app, true)); break;
       case 'campaign': app.campaign(); break;

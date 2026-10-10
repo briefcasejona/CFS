@@ -9,7 +9,11 @@
     "build": "tsc -p .",
     "start": "tsc -p . && node scripts/serve.mjs",
     "test": "tsc -p . && node --test build/tests/*.test.js",
-    "typecheck": "tsc -p . --noEmit"
+    "typecheck": "tsc -p . --noEmit",
+    "build:site": "tsc -p . && node scripts/installable/build-site.mjs",
+    "serve:site": "node scripts/serve.mjs --site",
+    "release": "npm version patch && git push --follow-tags",
+    "site": "npm run build:site && node scripts/serve.mjs --site"
   },
   "dependencies": {
     "three": "0.186.1"
