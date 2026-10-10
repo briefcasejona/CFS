@@ -31,11 +31,19 @@ jobs:
       - name: Install Electron + builder
         working-directory: desktop-build
         run: npm install --no-audit --no-fund
-      - name: Build and publish installer
+      - name: Build installer
         working-directory: desktop-build
-        run: npx electron-builder --win --publish always
+        run: npx electron-builder --win --publish never
+      # One release, created in one step (electron-builder's own publishing can race and create duplicates,
+      # leaving latest.yml on a different release than the one GitHub marks "Latest").
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" desktop-build/dist/*.exe desktop-build/dist/*.blockmap desktop-build/dist/latest.yml \
+            --title "${GITHUB_REF_NAME#v}" --generate-notes --latest
       - uses: actions/upload-artifact@v4
         with:
           name: windows-installer
