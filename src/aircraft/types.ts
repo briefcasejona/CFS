@@ -118,4 +118,38 @@ export interface AircraftDef {
   model: ModelDef;
   approachKts: number;    // typical approach speed
   rotateKts: number;
+  // ---- variant system (filled in by defs.ts when not given explicitly)
+  /** aircraft family, e.g. "F-16" — variants of one family share a model and menu group */
+  family?: string;
+  /** variant label within the family, e.g. "Block 50" */
+  variant?: string;
+  /** crew seats (2 = two-seater: pilot + WSO/RIO or trainer) */
+  seats?: 1 | 2;
+  /** what the jet can do — used for loadouts, campaign tasking and AI */
+  capabilities?: Capability[];
+  /** stores this airframe may carry (default: everything used in its loadouts) */
+  allowedStores?: string[];
 }
+
+export type Capability =
+  | 'bvr'         // radar-guided air-to-air missiles
+  | 'ir'          // IR missiles
+  | 'gun'
+  | 'bombs'       // unguided bombs
+  | 'lgb'         // laser-guided bombs (needs a targeting pod)
+  | 'agm'         // air-to-ground missiles
+  | 'sead'        // anti-radiation missiles
+  | 'carrier'     // carrier capable (hook + catapult gear)
+  | 'probe'       // probe-and-drogue refuelling
+  | 'boom'        // flying-boom refuelling receptacle
+  | 'swing-wing'
+  | 'stovl'
+  | 'cft';        // conformal fuel tanks
+
+/** A variant: a base airframe plus overrides (deep-merged objects; arrays replace). */
+export interface VariantDef {
+  id: string;
+  extends: string;
+  overrides: DeepPartial<AircraftDef>;
+}
+export type DeepPartial<T> = { [K in keyof T]?: T[K] extends (infer U)[] ? U[] : T[K] extends object | null ? DeepPartial<T[K]> | null : T[K] };

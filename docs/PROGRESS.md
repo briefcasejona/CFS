@@ -4,7 +4,7 @@ This file is the single source of truth for continuing the roadmap across sessio
 session at any time). Update it and `git commit && git push` after every finished step.
 
 ## Heartbeat (lock)
-- heartbeat: 2026-10-10T13:05:00+02:00
+- heartbeat: 2026-10-10T13:07:26+02:00
 - owner: interactive session (wishlist session)
 
 Rule: a session that is actively working updates `heartbeat` (local ISO time, `date -Iseconds`) at least every
@@ -51,7 +51,7 @@ Licence duties if used: attribution (credits screen + `assets/models/CREDITS.md`
 ## Current step / next actions
 Phase 1c done (HD F-14 with shader wing-sweep + HD Gripen, opt-in setting 'HD aircraft models' on by default, credits in Settings,
 models in runtime cache not precache). Phase 2 in progress. DONE (1) Theater interface: src/world/theater.ts = Theater type + registry (registerTheater/setTheater/currentTheater/listTheaters, live-binding exports, theaterVersion), Varnia in src/world/theaters/varnia.ts, noise in src/world/noise.ts; MissionSpec.theaterId (buildMission activates it); CampaignState v2 with theaterId + v1 migration; terrain/map caches rebuild on theater switch; tests/theater.test.ts.
-NEXT (2) aircraft variant system: AircraftDef gains extends/family/variant/seats/capabilities/allowedStores, resolved in defs.ts.
+DONE (2) aircraft variant system: types.ts (family/variant/seats/capabilities/allowedStores, VariantDef, DeepPartial), defs.ts (BASE + VARIANTS → mergeDeep/resolveVariant → finalize; familyOf/hasCapability), tests/aircraft.test.ts. NEXT:
 (3) Nation model + coalition per scenario (Side stays blue/red). (4) camera-relative rendering hook. Tests for each.
 Known cosmetic issue for Phase 8: dashed stripe artifacts along the horizon (distant clouds/terrain).
 

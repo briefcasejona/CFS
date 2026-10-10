@@ -1,4 +1,5 @@
-import type { AeroDef, AircraftDef, EngineDef, GearDef } from './types.js';
+import type { AeroDef, AircraftDef, Capability, DeepPartial, EngineDef, GearDef, VariantDef } from './types.js';
+import { WEAPONS } from '../weapons/stores.js';
 
 // Approximate public-domain figures (Wikipedia, NATOPS/-1 excerpts, manufacturer data).
 // Aerodynamic derivatives are generic fighter values tuned so the performance envelope
@@ -31,7 +32,7 @@ function gear(length: number, track: number, height: number, hook = false): Gear
   return { nose: 0.3 * length, main: 0.045 * length, track, height, hook };
 }
 
-export const AIRCRAFT: AircraftDef[] = [
+const BASE: AircraftDef[] = [
   // ------------------------------------------------------------------ USA
   {
     id: 'f15c', name: 'F-15C', fullName: 'McDonnell Douglas F-15C Eagle', role: 'Air superiority', country: 'USA', side: 'blue',
@@ -375,7 +376,71 @@ export const AIRCRAFT: AircraftDef[] = [
   },
 ];
 
+// ------------------------------------------------------------------ variants
+/** Variants of the base airframes above (families: F-14, F-16, F-15 … — see Phase 3). */
+const VARIANTS: VariantDef[] = [];
+
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** Deep merge: plain objects merge recursively, arrays and primitives replace, `null` clears. */
+export function mergeDeep<T>(base: T, over: DeepPartial<T>): T {
+  if (!isObj(base) || !isObj(over)) return (over === undefined ? base : over) as T;
+  const out: Record<string, unknown> = { ...base };
+  for (const [k, v] of Object.entries(over)) {
+    if (v === undefined) continue;
+    out[k] = isObj(v) && isObj(out[k]) ? mergeDeep(out[k], v as DeepPartial<unknown>) : v;
+  }
+  return out as T;
+}
+
+/** Capabilities implied by loadouts and systems (explicit `capabilities` are added on top). */
+export function deriveCapabilities(d: AircraftDef): Capability[] {
+  const caps = new Set<Capability>(d.capabilities ?? []);
+  for (const id of d.allowedStores ?? []) {
+    const k = WEAPONS[id]?.kind;
+    if (k === 'arh' || k === 'sarh') caps.add('bvr');
+    else if (k === 'ir') caps.add('ir');
+    else if (k === 'bomb') caps.add('bombs');
+    else if (k === 'lgb') caps.add('lgb');
+    else if (k === 'agm') caps.add('agm');
+    else if (k === 'arm') caps.add('sead');
+  }
+  if (d.gun) caps.add('gun');
+  if (d.gear.hook) caps.add('carrier');
+  if (d.fcs.swingWing) caps.add('swing-wing');
+  if (d.fcs.vtol) caps.add('stovl');
+  return [...caps];
+}
+
+/** Fill in variant-system defaults (family, seats, allowed stores, capabilities). */
+function finalize(d: AircraftDef): AircraftDef {
+  const allowed = d.allowedStores ?? [...new Set(d.loadouts.flatMap((l) => l.stores).filter(Boolean))];
+  const out: AircraftDef = { ...d, family: d.family ?? d.name, seats: d.seats ?? 1, allowedStores: allowed };
+  out.capabilities = deriveCapabilities(out);
+  // loadouts may only use allowed stores
+  out.loadouts = out.loadouts.filter((l) => l.stores.every((s) => !s || allowed.includes(s)));
+  return out;
+}
+
+export function resolveVariant(base: AircraftDef, v: VariantDef): AircraftDef {
+  return { ...mergeDeep(base, v.overrides), id: v.id };
+}
+
+const BASE_BY_ID = Object.fromEntries(BASE.map((a) => [a.id, a]));
+export const AIRCRAFT: AircraftDef[] = [
+  ...BASE,
+  ...VARIANTS.map((v) => {
+    const base = BASE_BY_ID[v.extends];
+    if (!base) throw new Error(`variant ${v.id} extends unknown aircraft ${v.extends}`);
+    return resolveVariant(base, v);
+  }),
+].map(finalize);
+
 export const AIRCRAFT_BY_ID: Record<string, AircraftDef> = Object.fromEntries(AIRCRAFT.map((a) => [a.id, a]));
+
+/** All aircraft of a family, in definition order. */
+export function familyOf(family: string): AircraftDef[] { return AIRCRAFT.filter((a) => a.family === family); }
+export function hasCapability(d: AircraftDef, c: Capability) { return d.capabilities?.includes(c) ?? false; }
 export function getAircraft(id: string): AircraftDef {
   const d = AIRCRAFT_BY_ID[id];
   if (!d) throw new Error(`Unknown aircraft ${id}`);
