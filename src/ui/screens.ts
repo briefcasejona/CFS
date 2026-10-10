@@ -9,6 +9,7 @@ import { NM } from '../sim/atmosphere.js';
 import { renderInstallLinks } from './installLinks.js';
 import type { NetHook } from '../game/session.js';
 import { multiplayerScreen } from './multiplayer.js';
+import { editorScreen } from './editor.js';
 import { hdCredits, setHdModelsEnabled } from '../render/hdModels.js';
 
 export interface AppApi {
@@ -43,6 +44,7 @@ export function mainMenu(app: AppApi): HTMLElement {
         <button data-a="instant">Instant Action</button>
         <button data-a="setup">Mission Setup</button>
         <button data-a="mp">Multiplayer (co-op)</button>
+        <button data-a="editor">Mission Editor</button>
         <button data-a="campaign">Dynamic Campaign</button>
         <button data-a="controls">Controls / HOTAS</button>
         <button data-a="settings">Settings</button>
@@ -78,6 +80,7 @@ export function mainMenu(app: AppApi): HTMLElement {
       case 'instant': app.show(() => missionSetup(app, false)); break;
       case 'setup': app.show(() => missionSetup(app, true)); break;
       case 'mp': app.show(() => multiplayerScreen(app)); break;
+      case 'editor': app.show(() => editorScreen(app)); break;
       case 'campaign': app.campaign(); break;
       case 'controls': app.controls(); break;
       case 'settings': app.show(() => settingsScreen(app)); break;

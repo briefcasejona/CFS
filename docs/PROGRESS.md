@@ -4,7 +4,7 @@ This file is the single source of truth for continuing the roadmap across sessio
 session at any time). Update it and `git commit && git push` after every finished step.
 
 ## Heartbeat (lock)
-- heartbeat: 2026-10-10T22:27:52+02:00
+- heartbeat: 2026-10-10T22:40:26+02:00
 - owner: interactive session (wishlist session)
 
 Rule: a session that is actively working updates `heartbeat` (local ISO time, `date -Iseconds`) at least every
@@ -36,8 +36,8 @@ less than 60 minutes old (someone else is working). When taking over, set `owner
 - [x] Phase 3 — aircraft families: F-14A/B/B(U)/D, F-16A/B blk15, C/D blk40/50/70, F-15C/D, F-15E
 - [x] Phase 4 — cameras + 3D cockpit (orbit chase cam, procedural/GLB cockpit, collimated HUD)
 - [x] Phase 5 — radar/datalink, AWACS, aerial refueling
-- [ ] Phase 6 — co-op multiplayer (Trystero WebRTC), then multicrew
-- [ ] Phase 7 — mission editor
+- [x] Phase 6 — co-op multiplayer (Trystero WebRTC) [multicrew back-seat still open, optional]
+- [x] Phase 7 — mission editor
 - [ ] Phase 8 — full Europe theater (real DEM via pure-JS bake + streaming) + landscape
 - [ ] Phase 9 — carriers
 - [ ] Phase 10 — Gulf map + voice commands
@@ -49,19 +49,25 @@ less than 60 minutes old (someone else is working). When taking over, set `owner
 Licence duties if used: attribution (credits screen + `assets/models/CREDITS.md`), non-commercial only, processed model files stay CC BY-NC-SA.
 
 ## Current step / next actions
-Phase 6 core done (co-op multiplayer): src/net/protocol.ts (pack/apply/Interpolator/room codes), src/net/coop.ts (CoopHost authoritative world;
-CoopClient: own jet local, others = interpolated ghosts, missiles = ghost list, fire requests via world.netFire, RWR relayed), src/net/link.ts
-(Trystero torrent strategy, @trystero-p2p/torrent + core vendored via import map / site copy), src/ui/multiplayer.ts lobby (host code, join,
-chat, optional voice), FlightSession.netHook, main menu 'Multiplayer (co-op)'. Verified: two browser tabs connected over real WebRTC via public
-trackers and flew a co-op BVR mission; tests/net.test.ts (in-memory end-to-end). launch.json now autoPort (another project uses :5173).
-Phase 6 remaining (multicrew, reduced): second client in the back seat of a two-seater owning radar/MFD input — deferred; do it after Phase 7
-if time allows (plan said 'last').
-NEXT: Phase 7 — mission editor: src/ui/editor.ts — 2D canvas over theaterBackground() (pan/zoom like campaignScreen map), palette to place
-flights (side, aircraft, count, task, start air/runway, waypoints by clicking), ground groups (GroupSpec kinds incl. SAM types), goals;
-reads/writes MissionSpec; save to localStorage list, JSON export/import file, share URL (#m=base64 of deflate via CompressionStream);
-'Fly' launches via app.fly with the briefing; tests: MissionSpec JSON round-trip + validateMissionSpec.
+Phase 7 done: src/ui/editor.ts (map placement of flights/ground groups/waypoints, property panels, goals, weather, briefing, saved-mission library,
+JSON export/import, share link #mission=… copied to clipboard, Briefing → fly), src/game/missionFile.ts (validateMissionSpec, encode/decodeMission
+deflate-raw+base64url, localStorage library cfs.missions.v1), main.ts opens #mission= links in the editor, tests/editor.test.ts. 52 tests.
+NEXT: Phase 8 — full Europe theater + landscape (biggest phase; do it in steps, commit after each):
+(1) scripts/terrain/bake-europe.mjs (pure JS: fetch AWS Terrarium tiles https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png,
+decode with pngjs, height = (R*256 + G + B/256) - 32768) for lon −6…20, lat 42…62 at zoom ~7–8 → resample into a Transverse-Mercator
+(centre 7°E 52°N) local grid ~1 km/px → write Int16 binary tiles site-ready under assets/theaters/europe/ (+ a meta.json with extent, projection);
+check total size (< ~60 MB) and that GitHub Pages can serve it; mark assets/theaters/ as noPrecache in installable.config.json.
+(2) src/world/theaters/europe.ts: Theater whose rawHeight samples the baked grid (bilinear; async load before missions: theater 'ready' promise),
+airbases from OurAirports (bake a curated list of ~40 military fields with real runway headings/lengths into the theater file), nations per side
+(NATO: nl, be, de, fr, uk, dk, no, se, pl, us vs OPFOR: ru, by — hypothetical scenario), objectives, frontline sectors along the east.
+(3) TerrainRenderer: window the chunk loop around the camera (currently loops all chunks!), camera-relative is OK; earth-curvature drop in the
+terrain vertex positions (h -= d²/(2R) relative to the camera) for the horizon; land/water colours from the DEM.
+(4) Theater picker in Instant Action / Mission Setup / Campaign lobby; map drawing for Europe (theaterBackground from DEM).
+(5) landscape: splat-style vertex colours by height/slope/latitude, instanced trees near the camera, haze; credits screen entries for AWS Terrain
+Tiles (Mapzen: SRTM/GMTED/ETOPO1 etc.) and OurAirports (public domain). Tests: projection round trip, baked tile sampling, airbases on land.
 
 ## Log
+- 2026-10-10 — Phase 7 done: mission editor + share links, 52 tests; release v0.1.8.
 - 2026-10-10 — Phase 6 co-op multiplayer working (WebRTC, no port forwarding), 49 tests; release v0.1.7.
 - 2026-10-10 — Phase 5 done: datalink/AWACS/NCTR + aerial refuelling, 47 tests; release v0.1.6.
 - 2026-10-10 — Phase 4 done: 3D cockpits + chase cam modes, 43 tests; release v0.1.5.

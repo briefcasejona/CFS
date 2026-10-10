@@ -30,6 +30,21 @@ class App implements AppApi {
     window.addEventListener('pointerdown', unlock);
     window.addEventListener('keydown', unlock);
     this.mainMenu();
+    void this.openSharedMission();
+  }
+
+  /** #mission=… links (shared from the mission editor) open straight into the editor. */
+  private async openSharedMission() {
+    const m = /#mission=([\w-]+)/.exec(location.hash);
+    if (!m) return;
+    try {
+      const { decodeMission } = await import('./game/missionFile.js');
+      const { editorScreen } = await import('./ui/editor.js');
+      const spec = await decodeMission(m[1]);
+      history.replaceState(null, '', location.pathname + location.search);
+      this.show(() => editorScreen(this, spec));
+      this.toast(`Shared mission loaded: ${spec.title}`);
+    } catch (err) { this.toast(`Could not open the shared mission: ${(err as Error).message}`); }
   }
 
   show(screen: () => HTMLElement) {
