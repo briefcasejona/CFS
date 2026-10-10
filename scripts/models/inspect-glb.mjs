@@ -6,7 +6,7 @@ const mul=(m,p)=>[m[0]*p[0]+m[4]*p[1]+m[8]*p[2]+m[12], m[1]*p[0]+m[5]*p[1]+m[9]*
 const all=[];
 for (const node of doc.getRoot().listNodes()) { const mesh=node.getMesh(); if(!mesh) continue; const M=node.getWorldMatrix();
   for (const prim of mesh.listPrimitives()) { const pos=prim.getAttribute('POSITION'); const n=pos.getCount(); let mn=[1e9,1e9,1e9],mx=[-1e9,-1e9,-1e9]; const el=[0,0,0];
-    for(let i=0;i<n;i++){const w=mul(M,pos.getElement(i,el)); for(let k=0;k<3;k++){mn[k]=Math.min(mn[k],w[k]);mx[k]=Math.max(mx[k],w[k]);} if(node.getName().includes('airframe')) all.push(w);}
+    for(let i=0;i<n;i++){const w=mul(M,pos.getElement(i,el)); for(let k=0;k<3;k++){mn[k]=Math.min(mn[k],w[k]);mx[k]=Math.max(mx[k],w[k]);} if((node.getName()+(node.getParentNode()?.getName()??'')).includes('airframe')&&prim.getMaterial()?.getName().includes('airframe')&&n>20000) all.push(w);}
     console.log(node.getName(), 'attrs', prim.listSemantics().join(','), 'n',n, 'min',mn.map(v=>v.toFixed(1)).join(' '),'max',mx.map(v=>v.toFixed(1)).join(' '), 'mat', prim.getMaterial()?.getName()); } }
 // top view occupancy of airframe: X (span? ) vs fore-aft. print grid of axis0 vs axis2 and axis0 vs axis1
 const grid=(a,b,W=70,H=40)=>{let mna=1e9,mxa=-1e9,mnb=1e9,mxb=-1e9;for(const p of all){mna=Math.min(mna,p[a]);mxa=Math.max(mxa,p[a]);mnb=Math.min(mnb,p[b]);mxb=Math.max(mxb,p[b]);}

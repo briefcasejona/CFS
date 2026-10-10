@@ -231,7 +231,7 @@ export class SceneRenderer {
       let m = this.acModels.get(ac.id);
       if (!m) { m = buildAircraftModel(ac.def, ac.side); this.acModels.set(ac.id, m); this.scene.add(m.root); }
       syncStores(m, ac, (i) => world.stationOffset(ac, i));
-      updateAircraftModel(m, ac, t);
+      updateAircraftModel(m, ac, t, m.root.position.distanceTo(this.camera.position));
       m.root.visible = !(ac.isPlayer && this.view === 'cockpit');
     }
     for (const [id, m] of this.acModels) if (!seen.has(id)) { this.scene.remove(m.root); this.acModels.delete(id); }

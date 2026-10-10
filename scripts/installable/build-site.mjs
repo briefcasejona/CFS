@@ -117,12 +117,15 @@ writeFileSync(join(out, 'version.json'), JSON.stringify(version, null, 2));
 
 // ---- service worker
 const prefix = (cfg.cachePrefix ?? (cfg.shortName ?? 'app').toLowerCase().replace(/[^a-z0-9]+/g, '-')) + '-';
-const assets = ['./', ...files.map((f) => './' + f)];
+// big optional files (e.g. 3D models) are not precached; the worker caches them on first use instead
+const noPrecache = cfg.noPrecache ?? [];
+const assets = ['./', ...files.filter((f) => !noPrecache.some((p) => f.startsWith(p))).map((f) => './' + f)];
 const sw = readFileSync(join(here, 'sw-template.js'), 'utf8')
   .replace('__PREFIX__', prefix)
   .replace('__CACHE__', prefix + build)
   .replace('__ASSETS__', JSON.stringify(assets))
-  .replace('__RUNTIME_HOSTS__', JSON.stringify(cfg.runtimeCacheHosts ?? []));
+  .replace('__RUNTIME_HOSTS__', JSON.stringify(cfg.runtimeCacheHosts ?? []))
+  .replace('__RUNTIME_PATHS__', JSON.stringify(noPrecache));
 writeFileSync(join(out, 'sw.js'), sw);
 // GitHub Pages: don't run Jekyll over the output
 writeFileSync(join(out, '.nojekyll'), '');

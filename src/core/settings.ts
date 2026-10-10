@@ -14,6 +14,8 @@ export interface Settings {
   // graphics
   fov: number;
   visibilityKm: number;
+  /** high-detail glTF models where available (F-14, Gripen) */
+  hdModels: boolean;
   // audio
   volume: number;
   // HUD
@@ -31,6 +33,7 @@ export const DEFAULT_SETTINGS: Settings = {
   keyboardSensitivity: 1,
   fov: 75,
   visibilityKm: 80,
+  hdModels: true,
   volume: 0.6,
   hudColor: '#3dff7a',
 };

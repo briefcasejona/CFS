@@ -30,6 +30,8 @@ function finSurface(points: P2[], thickness: number, mat: THREE.Material): THREE
   return new THREE.Mesh(g, mat);
 }
 
+import { HD_RANGE, hdModelsEnabled, requestHdModel, updateHdInstance, type HdInstance } from './hdModels.js';
+
 export interface AircraftModel {
   root: THREE.Group;
   body: THREE.Group;
@@ -38,6 +40,10 @@ export interface AircraftModel {
   gear: THREE.Group;
   wingL: THREE.Object3D | null;
   wingR: THREE.Object3D | null;
+  /** procedural parts (hidden while the HD model is shown) */
+  proc: THREE.Object3D[];
+  /** optional high-detail glTF model (see hdModels.ts) */
+  hd: HdInstance | null;
 }
 
 const storeMats = {
@@ -229,7 +235,9 @@ export function buildAircraftModel(def: AircraftDef, side: 'blue' | 'red'): Airc
   wheel(gd.track / 2, gd.main);
   body.add(gear);
 
-  return { root, body, stores: [], burners, gear, wingL, wingR };
+  const model: AircraftModel = { root, body, stores: [], burners, gear, wingL, wingR, proc: body.children.filter((c) => !burners.includes(c as THREE.Mesh)), hd: null };
+  requestHdModel(def, (inst) => { model.hd = inst; body.add(inst.root); });
+  return model;
 }
 
 /** Rebuild / show-hide store meshes to match the aircraft's stores. */
@@ -250,7 +258,7 @@ export function syncStores(model: AircraftModel, ac: Aircraft, stationOffset: (i
   }
 }
 
-export function updateAircraftModel(model: AircraftModel, ac: Aircraft, t: number) {
+export function updateAircraftModel(model: AircraftModel, ac: Aircraft, t: number, camDist = 0) {
   const fm = ac.fm;
   model.root.position.copy(fm.pos);
   model.root.quaternion.copy(fm.quat);
@@ -265,6 +273,13 @@ export function updateAircraftModel(model: AircraftModel, ac: Aircraft, t: numbe
     const sw = (fm.sweep - 20) * DEG;
     model.wingR.rotation.y = sw;
     model.wingL.rotation.y = -sw;
+  }
+  if (model.hd) {
+    const useHd = hdModelsEnabled() && camDist < HD_RANGE;
+    model.hd.root.visible = useHd;
+    for (const p of model.proc) p.visible = !useHd;
+    if (useHd) { model.gear.visible = false; updateHdInstance(model.hd, fm.gearPos, fm.sweep); }
+    else model.gear.visible = fm.gearPos > 0.3;
   }
 }
 

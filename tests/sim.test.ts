@@ -116,6 +116,13 @@ describe('dynamic campaign', () => {
     }
   });
 
+  it('a runway start does not count as a landing', () => {
+    const b = buildMission(buildScenario({ ...defaultCustom(), scenario: 'takeoff', aircraftId: 'jas39' }), OPTS);
+    for (let t = 0; t < 3; t += DT) b.world.step(DT);
+    expect(b.player.fm.wow).toBe(true);
+    expect(b.player.landed).toBe(false);
+  });
+
   it('applies mission results and resolves 20 turns', () => {
     const st = newCampaign('test', 'regular', 99);
     const f = playerFlights(st)[0];

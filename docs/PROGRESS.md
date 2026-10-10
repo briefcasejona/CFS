@@ -4,7 +4,7 @@ This file is the single source of truth for continuing the roadmap across sessio
 session at any time). Update it and `git commit && git push` after every finished step.
 
 ## Heartbeat (lock)
-- heartbeat: 2026-10-10T10:56:15+02:00
+- heartbeat: 2026-10-10T12:59:47+02:00
 - owner: interactive session (wishlist session)
 
 Rule: a session that is actively working updates `heartbeat` (local ISO time, `date -Iseconds`) at least every
@@ -31,7 +31,7 @@ less than 60 minutes old (someone else is working). When taking over, set `owner
 - [x] Phase 0 — baseline verified in browser, quick-tap input fix, git init
 - [x] Phase 1 — installable PWA + Electron installer + CI (Pages + Releases), Quick Fight, how-to-fly, error overlay; auto-update verified on the user's PC (v0.1.0 → v0.1.1)
 - [x] Phase 1b — `ship-installable` user skill (~/.claude/skills/ship-installable)
-- [ ] Phase 1c — 3D models: council verdict on the user's models, then integrate the usable ones (see below)
+- [x] Phase 1c — 3D models: council verdict on the user's models, then integrate the usable ones (see below)
 - [ ] Phase 2 — foundations: Theater interface + registry, aircraft variant system (`extends`), Nation model, camera-relative rendering hook, campaign save migration (theaterId)
 - [ ] Phase 3 — aircraft families: F-14A/B/B(U)/D, F-16A/B blk15, C/D blk40/50/70, F-15C/D, F-15E
 - [ ] Phase 4 — cameras + 3D cockpit (orbit chase cam, procedural/GLB cockpit, collimated HUD)
@@ -49,20 +49,16 @@ less than 60 minutes old (someone else is working). When taking over, set `owner
 Licence duties if used: attribution (credits screen + `assets/models/CREDITS.md`), non-commercial only, processed model files stay CC BY-NC-SA.
 
 ## Current step / next actions
-Phase 1c (3D models) in progress. Council verdict (2026-10-10): F/A-18E OBJ NOT used (no licence, likely ripped; user advised to delete it).
-F-14 + Gripen USED as opt-in 'HD aircraft models' (setting), lazy-loaded (runtime cache, NOT in SW precache), procedural model stays
-as placeholder / far LOD (>~3 km) / hitbox; credits screen + assets/models/cc-by-nc-sa/LICENSE.md; game must stay non-commercial.
-Done: scripts/models/optimize-glb.mjs (pure JS) → assets/models/cc-by-nc-sa/f14.glb (6.4 MB), gripen.glb (3.9 MB); scripts/models/inspect-glb.mjs.
-Findings: models in decimetres (×0.1 → metres); glTF world: axis0 = fore-aft (+x = nose, F-14 x∈[-64.7,126.8]), axis1 = up, axis2 = span (±97.7, wings UNSWEPT 20°).
-F-14 nodes: Object_4 airframe, Object_6 glass canopy, Object_8 cockpit (x 52–96), Object_10/12 gear (one is gearOn/gearOff), Object_14 glass, Object_16 refuel probe.
-Primitives carry TANGENT + TEXCOORD_1..3 — strip unused attrs in optimize-glb to cut ~half the geometry size.
-inspect-glb.mjs grid bug: 'all' only collects nodes whose name contains 'airframe' but meshes are on child nodes (Object_4) — use parent name.
-NEXT: (1) fix inspect grid, find F-14 wing glove pivot (span ≈ ±2.7 m) for shader wing-sweep; (2) src/render/hdModels.ts: GLTFLoader via import map
-'three/examples/jsm/' (copy GLTFLoader.js + utils/BufferGeometryUtils.js into site/vendor via installable.config.json), bake node transforms,
-convert to game frame (nose -Z, span X, up Y, metres), toggle gear nodes by fm.gearPos, hide cockpit outside F1, swing-wing via onBeforeCompile
-(attribute aSwing ±1 on outer-wing verts); (3) setting 'HD aircraft models' + credits screen; (4) site copy of assets/models + runtimeCacheHosts/route;
-(5) verify in browser (cfs dev :5173), tests, commit, then Phase 2.
+Phase 1c done (HD F-14 with shader wing-sweep + HD Gripen, opt-in setting 'HD aircraft models' on by default, credits in Settings,
+models in runtime cache not precache). NEXT: Phase 2 foundations — start with the Theater interface:
+(1) src/world/theater.ts → Theater type + registry (setTheater/currentTheater) with today's map moved to src/world/theaters/varnia.ts;
+keep exported helper names as delegates; AIRBASES/OBJECTIVES constants → currentTheater() accessors in campaign.ts, map.ts, terrainMesh.ts,
+world.ts, campaignScreen.ts; campaign state gets theaterId + migration in validateState (version 1 → 2).
+(2) aircraft variant system: AircraftDef gains extends/family/variant/seats/capabilities/allowedStores, resolved in defs.ts.
+(3) Nation model + coalition per scenario (Side stays blue/red). (4) camera-relative rendering hook. Tests for each.
+Known cosmetic issue for Phase 8: dashed stripe artifacts along the horizon (distant clouds/terrain).
 
 ## Log
+- 2026-10-10 — Phase 1c done: HD models in game (F-14 swing-wing shader, Gripen), runway-start landing bug fixed, 30 tests.
 - 2026-10-10 — 3D model council done; optimized F-14/Gripen GLBs committed with licence file; auto-resume task cfs-roadmap-resume created (every 2 h).
 - 2026-10-10 — Phases 0, 1, 1b done; public: https://briefcasejona.github.io/CFS/ ; installer v0.1.1 on Releases.

@@ -12,9 +12,15 @@
     { "from": "build/src", "to": "js", "include": "\\.js$", "stripSourceMaps": true },
     { "from": "styles.css", "to": "styles.css" },
     { "from": "node_modules/three/build/three.module.js", "to": "vendor/three/three.module.js" },
-    { "from": "node_modules/three/build/three.core.js", "to": "vendor/three/three.core.js" }
+    { "from": "node_modules/three/build/three.core.js", "to": "vendor/three/three.core.js" },
+    { "from": "node_modules/three/examples/jsm/loaders/GLTFLoader.js", "to": "vendor/three/examples/jsm/loaders/GLTFLoader.js" },
+    { "from": "node_modules/three/examples/jsm/utils/BufferGeometryUtils.js", "to": "vendor/three/examples/jsm/utils/BufferGeometryUtils.js" },
+    { "from": "node_modules/three/examples/jsm/utils/SkeletonUtils.js", "to": "vendor/three/examples/jsm/utils/SkeletonUtils.js" },
+    { "from": "assets/models", "to": "assets/models" }
   ],
+  "noPrecache": ["assets/models/"],
   "replace": [
+    ["\"/node_modules/three/examples/jsm/\"", "\"./vendor/three/examples/jsm/\""],
     ["/node_modules/three/build/three.module.js", "./vendor/three/three.module.js"],
     ["href=\"/styles.css\"", "href=\"./styles.css\""],
     ["src=\"/build/src/main.js\"", "src=\"./js/main.js\""]

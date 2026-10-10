@@ -7,6 +7,7 @@ import { drawTheater, type MapMarker } from './map.js';
 import { airbaseById } from '../world/theater.js';
 import { NM } from '../sim/atmosphere.js';
 import { renderInstallLinks } from './installLinks.js';
+import { hdCredits, setHdModelsEnabled } from '../render/hdModels.js';
 
 export interface AppApi {
   root: HTMLElement;
@@ -342,6 +343,8 @@ export function settingsScreen(app: AppApi): HTMLElement {
           <h3>Graphics</h3>
           <label>Field of view (deg) <input data-n="fov" type="number" min="40" max="110" value="${s.fov}"></label>
           <label>Max visibility (km) <input data-n="visibilityKm" type="number" min="10" max="150" value="${s.visibilityKm}"></label>
+          ${chk('hdModels', 'HD aircraft models', 'detailed 3D models where available (F-14, Gripen); loaded on demand, ~4–7 MB each')}
+          <div class="muted small credits">3D models: ${hdCredits().map((c) => `"${esc(c.title)}" by ${esc(c.author)} (<a href="${c.source}" target="_blank" rel="noopener">Sketchfab</a>), ${c.license}, textures re-encoded`).join(' · ')}</div>
           <h3>Audio & HUD</h3>
           <label>Volume (0–1) <input data-n="volume" type="number" min="0" max="1" step="0.05" value="${s.volume}"></label>
           <label>HUD color <input data-c="hudColor" type="color" value="${s.hudColor}"></label>
@@ -357,6 +360,7 @@ export function settingsScreen(app: AppApi): HTMLElement {
     e.querySelectorAll<HTMLInputElement>('input[data-n]').forEach((i) => { const v = Number(i.value); if (Number.isFinite(v)) rec[i.dataset.n!] = v; });
     e.querySelectorAll<HTMLInputElement>('input[data-c]').forEach((i) => { rec[i.dataset.c!] = i.value; });
     saveSettings(app.settings);
+    setHdModelsEnabled(app.settings.hdModels);
     app.toast('Settings saved');
     app.mainMenu();
   });

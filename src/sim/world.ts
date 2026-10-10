@@ -102,7 +102,8 @@ export class World {
         if (ac.isPlayer || aiTick) this.updateSeekers(ac);
         if (ac.isPlayer) this.updateGEffects(ac, dt);
       }
-      if (ac.isPlayer) ac.landed = ac.alive && !ac.fm.crashed && ac.fm.wow && ac.fm.tas < 2 && this.onRunway(ac);
+      if (!ac.fm.wow) ac.everAirborne = true;
+      if (ac.isPlayer) ac.landed = ac.everAirborne && ac.alive && !ac.fm.crashed && ac.fm.wow && ac.fm.tas < 2 && this.onRunway(ac);
     }
     for (const m of this.missiles) {
       m.step(dt, this);

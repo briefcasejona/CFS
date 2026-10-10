@@ -65,6 +65,8 @@ export class Aircraft {
   gLoc = 0;                 // 0..1 vision loss
   gStress = 0;
   landed = false;
+  /** has left the ground at least once (a runway start isn't a landing) */
+  everAirborne = false;
   infiniteWeapons = false;
   squadronId = '';
 

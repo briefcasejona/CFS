@@ -7,6 +7,7 @@ import { controlsScreen } from './ui/controls.js';
 import { openCampaign } from './ui/campaignScreen.js';
 import type { MissionSpec } from './game/mission.js';
 import { installErrorOverlay } from './ui/errorOverlay.js';
+import { setHdModelsEnabled } from './render/hdModels.js';
 
 class App implements AppApi {
   root: HTMLElement;
@@ -19,6 +20,7 @@ class App implements AppApi {
   constructor() {
     this.root = document.getElementById('ui')!;
     this.settings = loadSettings();
+    setHdModelsEnabled(this.settings.hdModels);
     this.input.onDeviceConnected = (id, auto) => this.toast(`Controller connected: ${shortDev(id)}${auto ? ' — default HOTAS profile applied (check Controls)' : ''}`);
     const unlock = () => {
       this.audio.init(this.settings.volume);

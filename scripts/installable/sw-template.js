@@ -7,6 +7,16 @@ const CACHE = '__CACHE__';
 const ASSETS = __ASSETS__;
 const RUNTIME = PREFIX + 'runtime';
 const RUNTIME_HOSTS = __RUNTIME_HOSTS__;
+const RUNTIME_PATHS = __RUNTIME_PATHS__; // same-origin path prefixes (relative to the scope) cached on first use
+
+async function runtimeCached(req) {
+  const c = await caches.open(RUNTIME);
+  const hit = await c.match(req);
+  if (hit) return hit;
+  const res = await fetch(req);
+  if (res.ok) c.put(req, res.clone());
+  return res;
+}
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS.map((a) => new Request(a, { cache: 'reload' })))));
@@ -30,18 +40,12 @@ self.addEventListener('fetch', (e) => {
   if (url.origin === self.location.origin) {
     // version.json is always fetched live (used for update checks / download links)
     if (url.pathname.endsWith('/version.json')) return;
+    const rel = url.href.startsWith(self.registration.scope) ? url.href.slice(self.registration.scope.length) : '';
+    if (RUNTIME_PATHS.some((p) => rel.startsWith(p))) { e.respondWith(runtimeCached(req)); return; }
     const key = req.mode === 'navigate' ? new URL('./index.html', self.registration.scope).href : req;
     e.respondWith(caches.open(CACHE).then((c) => c.match(key, { ignoreSearch: true })).then((hit) => hit || fetch(req)));
     return;
   }
   // optional runtime cache for big third-party data (e.g. map tiles): cache-first, filled on demand
-  if (RUNTIME_HOSTS.includes(url.host)) {
-    e.respondWith(caches.open(RUNTIME).then(async (c) => {
-      const hit = await c.match(req);
-      if (hit) return hit;
-      const res = await fetch(req);
-      if (res.ok) c.put(req, res.clone());
-      return res;
-    }));
-  }
+  if (RUNTIME_HOSTS.includes(url.host)) e.respondWith(runtimeCached(req));
 });
