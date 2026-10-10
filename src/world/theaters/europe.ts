@@ -107,8 +107,11 @@ export const EUROPE: Theater = {
   load: async () => {
     if (grid) return;
     const res = await fetch('assets/theaters/europe/height.bin.gz');
-    if (!res.ok || !res.body) throw new Error(`Europe terrain not available (${res.status})`);
-    const bytes = await new Response(res.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+    if (!res.ok) throw new Error(`Europe terrain not available (${res.status})`);
+    let bytes = await res.arrayBuffer();
+    const head = new Uint8Array(bytes, 0, 2);
+    // gunzip unless a server already did (Content-Encoding: gzip)
+    if (head[0] === 0x1f && head[1] === 0x8b) bytes = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
     setEuropeGrid(new Int16Array(bytes));
   },
 };

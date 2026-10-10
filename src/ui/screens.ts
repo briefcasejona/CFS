@@ -4,7 +4,7 @@ import { SAM_PARAMS } from '../sim/entities.js';
 import { SCENARIOS, buildScenario, defaultCustom, type CustomOptions, type MissionResult, type MissionSpec, type BuiltMission } from '../game/mission.js';
 import { DEFAULT_SETTINGS, realismLabel, saveSettings, type Settings } from '../core/settings.js';
 import { drawTheater, type MapMarker } from './map.js';
-import { airbaseById } from '../world/theater.js';
+import { airbaseById, ensureTheater, listTheaters, setTheater, theaterById } from '../world/theater.js';
 import { NM } from '../sim/atmosphere.js';
 import { renderInstallLinks } from './installLinks.js';
 import type { NetHook } from '../game/session.js';
@@ -105,6 +105,9 @@ export function missionSetup(app: AppApi, advanced: boolean): HTMLElement {
           <div class="acgrid"></div>
         </div>
         <div class="col">
+          <h3>Theater</h3>
+          <select class="theater">${listTheaters().map((t) => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select>
+          <div class="muted small theaterdesc"></div>
           <h3>Scenario</h3>
           <div class="scenarios"></div>
           <h3>Loadout</h3>
@@ -179,6 +182,10 @@ export function missionSetup(app: AppApi, advanced: boolean): HTMLElement {
     }
   };
   loadSel.addEventListener('change', () => { o.loadoutIndex = Number(loadSel.value); renderLoad(); });
+  const thSel = e.querySelector('.theater') as HTMLSelectElement;
+  const renderTheater = () => { const t = theaterById(o.theaterId); thSel.value = t.id; e.querySelector('.theaterdesc')!.textContent = t.description; };
+  thSel.addEventListener('change', () => { o.theaterId = thSel.value; renderTheater(); });
+  renderTheater();
   renderAc(); renderLoad(); renderScen();
   e.querySelector('[data-a="back"]')!.addEventListener('click', () => app.mainMenu());
   e.querySelector('[data-a="fly"]')!.addEventListener('click', () => {
@@ -194,8 +201,12 @@ export function missionSetup(app: AppApi, advanced: boolean): HTMLElement {
       o.clouds = q<HTMLSelectElement>('.clouds').value as CustomOptions['clouds'];
     }
     lastCustom = { ...o };
-    const spec = buildScenario(o);
-    app.show(() => briefing(app, spec, () => app.show(() => missionSetup(app, advanced))));
+    void (async () => {
+      try { await ensureTheater(o.theaterId); } catch (err) { app.toast(`Could not load the map: ${(err as Error).message}`); return; }
+      const spec = buildScenario(o);
+      setTheater(spec.theaterId);
+      app.show(() => briefing(app, spec, () => app.show(() => missionSetup(app, advanced))));
+    })();
   });
   return e;
 }

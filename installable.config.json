@@ -52,10 +52,15 @@
       "from": "node_modules/@trystero-p2p/torrent/dist",
       "to": "vendor/trystero/torrent",
       "include": ".mjs$"
+    },
+    {
+      "from": "assets/theaters",
+      "to": "assets/theaters"
     }
   ],
   "noPrecache": [
-    "assets/models/"
+    "assets/models/",
+    "assets/theaters/"
   ],
   "replace": [
     [

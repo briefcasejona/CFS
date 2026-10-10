@@ -113,8 +113,11 @@ export class TerrainRenderer {
     const nC = Math.ceil((2 * THEATER_HALF) / CHUNK);
     const want = new Map<string, number>();
     const maxDist = Math.min(viewDist, LODS[LODS.length - 1].dist);
-    for (let cj = 0; cj < nC; cj++) {
-      for (let ci = 0; ci < nC; ci++) {
+    // only chunks that can be within view distance (large theaters have tens of thousands of chunks)
+    const span = Math.ceil(maxDist / CHUNK) + 1;
+    const ic = Math.floor((camPos.x + THEATER_HALF) / CHUNK), jc = Math.floor((camPos.z + THEATER_HALF) / CHUNK);
+    for (let cj = Math.max(0, jc - span); cj <= Math.min(nC - 1, jc + span); cj++) {
+      for (let ci = Math.max(0, ic - span); ci <= Math.min(nC - 1, ic + span); ci++) {
         const cx = -THEATER_HALF + (ci + 0.5) * CHUNK;
         const cz = -THEATER_HALF + (cj + 0.5) * CHUNK;
         const d = Math.max(0, Math.hypot(cx - camPos.x, cz - camPos.z) - CHUNK * 0.7);
