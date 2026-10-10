@@ -77,6 +77,7 @@ export function registerTheater(t: Theater) {
 }
 export function listTheaters(): Theater[] { return [...REGISTRY.values()]; }
 export function currentTheater(): Theater { return current; }
+export function theaterById(id: string | undefined): Theater { return (id && REGISTRY.get(id)) || VARNIA; }
 
 /** Make `id` the active theater (no-op if it already is). Unknown ids fall back to Varnia. */
 export function setTheater(id: string | undefined): Theater {

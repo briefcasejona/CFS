@@ -4,6 +4,7 @@ import { gunzipSync } from 'node:zlib';
 import { Lcc } from '../src/world/lcc.js';
 import { EUROPE, setEuropeGrid, europeLcc } from '../src/world/theaters/europe.js';
 import * as T from '../src/world/theater.js';
+import { buildMission, buildScenario, defaultCustom, SCENARIOS } from '../src/game/mission.js';
 
 const loadGrid = () => {
   const buf = gunzipSync(readFileSync('assets/theaters/europe/height.bin.gz'));
@@ -33,6 +34,26 @@ describe('Europe theater', () => {
     expect(h(52.1, 5.1)).toBeGreaterThan(-15);  // Utrecht (polder country, around sea level)
     for (const ab of EUROPE.airbases) expect(EUROPE.rawHeight(ab.x, ab.z) > 0, `${ab.name} on land`).toBe(true);
     for (const ab of EUROPE.airbases) expect(Math.abs(ab.x) < EUROPE.half && Math.abs(ab.z) < EUROPE.half, `${ab.id} inside`).toBe(true);
+  });
+
+  it('every Instant Action scenario can be flown over Europe', () => {
+    loadGrid();
+    const OPTS = { unlimitedFuel: false, unlimitedWeapons: false, invulnerable: false, gEffects: true, abDetent: 0.8 };
+    try {
+      for (const s of SCENARIOS) {
+        const spec = buildScenario({ ...defaultCustom(), scenario: s.id, theaterId: 'europe' });
+        expect(spec.theaterId).toBe('europe');
+        const b = buildMission(spec, OPTS);
+        expect(T.currentTheater().id).toBe('europe');
+        for (let t = 0; t < 3; t += 1 / 120) b.world.step(1 / 120);
+        expect(b.player.alive, `${s.id}: player alive`).toBe(true);
+        for (const a of b.world.aircraft) expect(Math.abs(a.pos.x) < EUROPE.half && Math.abs(a.pos.z) < EUROPE.half, `${s.id}: ${a.callsign} inside`).toBe(true);
+      }
+      // the takeoff scenario starts on a real NATO runway
+      const tk = buildMission(buildScenario({ ...defaultCustom(), scenario: 'takeoff', theaterId: 'europe' }), OPTS);
+      expect(tk.player.fm.wow).toBe(true);
+      expect(T.nearestAirbase(tk.player.pos.x, tk.player.pos.z).id).toBe('malbork');
+    } finally { T.setTheater('varnia'); }
   });
 
   it('switching to Europe uses the DEM through the shared terrain functions', () => {

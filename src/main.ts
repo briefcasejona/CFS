@@ -8,6 +8,7 @@ import { openCampaign } from './ui/campaignScreen.js';
 import type { MissionSpec } from './game/mission.js';
 import { installErrorOverlay } from './ui/errorOverlay.js';
 import { setHdModelsEnabled } from './render/hdModels.js';
+import { ensureTheater } from './world/theater.js';
 
 class App implements AppApi {
   root: HTMLElement;
@@ -72,8 +73,9 @@ class App implements AppApi {
     loading.style.display = 'flex';
     this.root.style.display = 'none';
     // let the loading screen paint before the terrain prewarm
-    setTimeout(() => {
+    setTimeout(async () => {
       try {
+        await ensureTheater(spec.theaterId); // real-world theaters download their terrain first
         if (!this.session) {
           this.session = new FlightSession({
             root: document.getElementById('sim')!,

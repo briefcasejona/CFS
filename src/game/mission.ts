@@ -4,7 +4,8 @@ import { AIRCRAFT_BY_ID, getAircraft } from '../aircraft/defs.js';
 import { Aircraft, GroundUnit, SamSite, type GroundType } from '../sim/entities.js';
 import { World, type WorldOptions } from '../sim/world.js';
 import { AIPilot, type AITask, type Skill } from '../ai/pilot.js';
-import { airbaseById, defaultNation, runwayEnds, setTheater, terrainHeight, type SamType } from '../world/theater.js';
+import { airbaseById, defaultNation, runwayEnds, setTheater, terrainHeight, theaterById, type SamType } from '../world/theater.js';
+import { adaptSpecToTheater } from './theaterAdapt.js';
 import type { Weather } from '../render/scene.js';
 import { WEAPONS } from '../weapons/stores.js';
 import { FT, KT, NM } from '../sim/atmosphere.js';
@@ -373,6 +374,8 @@ export interface CustomOptions {
   timeOfDay: number;
   visibilityKm: number;
   clouds: 'clear' | 'scattered' | 'overcast';
+  /** theater (map) to fly in; default Varnia */
+  theaterId?: string;
 }
 
 export function defaultCustom(): CustomOptions {
@@ -511,5 +514,5 @@ export function buildScenario(o: CustomOptions): MissionSpec {
       break;
     }
   }
-  return { title, briefing: brief, weather, flights, groups, goals };
+  return adaptSpecToTheater({ title, briefing: brief, weather, flights, groups, goals }, theaterById(o.theaterId));
 }
