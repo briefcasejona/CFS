@@ -2,6 +2,7 @@ import { clamp, smoothstep } from '../core/math.js';
 import type { Side } from '../aircraft/types.js';
 import { VARNIA } from './theaters/varnia.js';
 import { EUROPE } from './theaters/europe.js';
+import type { CarrierSpec } from '../sim/carrier.js';
 
 export { fbm } from './noise.js';
 
@@ -58,6 +59,8 @@ export interface Theater {
   load?: () => Promise<void>;
   /** terrain colouring overrides (defaults suit the fictional Varnia) */
   palette?: Partial<TerrainPalette>;
+  /** carrier groups at sea (positions at mission start, open water for at least an hour's steaming) */
+  carriers?: CarrierSpec[];
   /** map overlay (real-world theaters): border polylines as flat x,z pairs in 100 m units; cities [name, x, z, capital] */
   overlay?: { borders: number[][]; cities: Array<[string, number, number, number]> };
 }

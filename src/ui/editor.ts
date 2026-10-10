@@ -4,6 +4,7 @@
 import { AIRCRAFT, AIRCRAFT_BY_ID } from '../aircraft/defs.js';
 import type { Side } from '../aircraft/types.js';
 import type { MissionSpec, FlightSpec, GroupKind, MissionGoal } from '../game/mission.js';
+import { startXZ as flightStartXZ } from '../game/mission.js';
 import { validateMissionSpec, encodeMission, listMissions, saveMission, deleteMission } from '../game/missionFile.js';
 import { AIRBASES, THEATER_HALF, airbaseById, type SamType } from '../world/theater.js';
 import { drawTheater, s2w, type MapMarker, type MapView } from './map.js';
@@ -71,10 +72,7 @@ export function editorScreen(app: AppApi, load?: MissionSpec): HTMLElement {
   view.mpp = (2 * THEATER_HALF) / cv.height;
 
   // ---------------------------------------------------------------- drawing
-  const startXZ = (f: FlightSpec) => {
-    if (f.start.kind === 'air') return { x: f.start.x, z: f.start.z };
-    const ab = airbaseById(f.start.airbaseId); return { x: ab?.x ?? 0, z: ab?.z ?? 0 };
-  };
+  const startXZ = (f: FlightSpec) => flightStartXZ(m, f);
   const draw = () => {
     const markers: MapMarker[] = [];
     const routes: Array<{ pts: Array<{ x: number; z: number }>; color: string; dashed?: boolean }> = [];

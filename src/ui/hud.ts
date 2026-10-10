@@ -240,6 +240,7 @@ export class Hud {
     if (fm.brakePos > 0.05) cfg.push('SPDBRK');
     if (p.ctrl.brakes > 0.1) cfg.push('BRK');
     if (st.autopilot) cfg.push('A/P');
+    if (p.hook) cfg.push('HOOK');
     if (p.def.fcs.vtol) cfg.push(`NOZ ${(fm.nozzleAngle * RAD).toFixed(0)}`);
     if (p.def.fcs.swingWing) cfg.push(`SWP ${fm.sweep.toFixed(0)}`);
     this.text(cfg.join(' '), hx1 - 10 * scale, bl + 18 * scale, col, fs, 'right');
@@ -256,7 +257,29 @@ export class Hud {
     // air-to-air refuelling director cue (like tanker director lights)
     const cue = this.world?.refuel.cue();
     if (cue) this.text(cue, cx, (hy0 + hy1) / 2 + 100 * scale, col, 14 * scale, 'center');
+    if (this.world) this.drawCarrierCues(this.world, p, cx, (hy0 + hy1) / 2, hx1, scale, col);
     c.shadowBlur = 0;
+  }
+
+  /** catapult prompt and the "meatball" (IFLOLS-style glideslope + lineup) on approach to the carrier */
+  private drawCarrierCues(world: World, p: Aircraft, cx: number, cy: number, hx1: number, scale: number, col: string) {
+    if (!world.carriers.length) return;
+    const c = this.ctx;
+    const op = world.carrierOps.state(p);
+    if (op === 'cat') this.text('ON CATAPULT — FULL POWER, THEN C TO LAUNCH', cx, cy + 100 * scale, col, 14 * scale, 'center');
+    const a = world.carrierOps.approach(p, world.carriers);
+    if (!a || a.range > 6000) return;
+    // datum bar with the ball: one cell = 0.4°, ball limited to ±5 cells
+    const x = hx1 - 40 * scale, y = cy, cell = 9 * scale;
+    c.strokeStyle = col; c.lineWidth = 1.5;
+    c.beginPath(); c.moveTo(x - 30 * scale, y); c.lineTo(x - 10 * scale, y); c.moveTo(x + 10 * scale, y); c.lineTo(x + 30 * scale, y); c.stroke();
+    const k = clamp(a.glideDev / 0.4, -5, 5);
+    const low = a.glideDev < -0.8;
+    c.fillStyle = low ? '#ff5040' : '#ffc040';
+    c.beginPath(); c.arc(x, y - k * cell, 5 * scale, 0, Math.PI * 2); c.fill();
+    const lu = Math.abs(a.lineup) < 4 ? 'LINEUP OK' : a.lineup > 0 ? `◀ ${a.lineup.toFixed(0)} m` : `${(-a.lineup).toFixed(0)} m ▶`;
+    this.text(lu, x, y + 60 * scale, col, 12 * scale, 'center');
+    this.text(`${(a.range / NM).toFixed(1)} NM`, x, y - 60 * scale, col, 12 * scale, 'center');
   }
 
   warnings(p: Aircraft): string[] {

@@ -33,6 +33,8 @@ export function defaultControls(): Controls {
 export interface FlightEnv {
   groundHeight(x: number, z: number): number;
   isWater(x: number, z: number): boolean;
+  /** velocity of a moving surface (carrier deck) at a point, null for solid ground */
+  groundVelocity?(x: number, z: number): THREE.Vector3 | null;
   wind: THREE.Vector3;
 }
 
@@ -533,7 +535,9 @@ export class FlightModel {
     let contact = false;
     const fTot = new THREE.Vector3();
     const torque = new THREE.Vector3();
-    const speed = this.vel.length();
+    // on a moving deck, tyre friction works on the velocity relative to the deck
+    const gv = env.groundVelocity?.(this.pos.x, this.pos.z) ?? null;
+    const speed = gv ? this.vel.clone().sub(gv).length() : this.vel.length();
     if (wheelsDown && !water) {
       const steer = (speed < 20 ? 55 : 6) * DEG * clamp(c.yaw, -1, 1);
       const pts: Array<[number, number, number, number]> = [
@@ -549,6 +553,7 @@ export class FlightModel {
         contact = true;
         if (type === 1) this.wow = true;
         const vp = new THREE.Vector3().crossVectors(wWorld, rW).add(this.vel);
+        if (gv) vp.sub(gv);
         if (-vp.y > 7.5) { this.crash('Landing gear collapse (hard landing)'); return true; }
         const kk = type === 0 ? kNose : kMain;
         let Fn = kk * Math.min(pen, 0.6) - cDamp * (type === 0 ? 0.5 : 1) * vp.y;
@@ -581,6 +586,7 @@ export class FlightModel {
       if (env.isWater(P.x, P.z)) h = Math.max(h, 0);
       if (P.y < h) {
         const vp = new THREE.Vector3().crossVectors(wWorld, rW).add(this.vel);
+        if (gv) vp.sub(gv);
         if (i === 1 && vp.y > -6 && !water) {
           // tail scrape: hurts, but survivable
           const Fs = new THREE.Vector3(0, kSpring * 2 * Math.min(h - P.y, 0.4) - cDamp * vp.y, 0);

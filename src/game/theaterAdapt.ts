@@ -25,7 +25,7 @@ export function adaptSpecToTheater(spec: MissionSpec, t: Theater): MissionSpec {
     if (f.start.kind === 'air') {
       const p = rot(f.start.x, f.start.z);
       f.start = { ...f.start, x: p.x, z: p.z, hdg: wrap(f.start.hdg + a.enemyHdg) };
-    } else {
+    } else if (f.start.kind === 'runway') {
       f.start = { kind: 'runway', airbaseId: mapBase(f.start.airbaseId) };
     }
     if (f.waypoints) {

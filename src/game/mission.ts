@@ -6,6 +6,7 @@ import { World, type WorldOptions } from '../sim/world.js';
 import { AIPilot, type AITask, type Skill } from '../ai/pilot.js';
 import { airbaseById, defaultNation, runwayEnds, setTheater, terrainHeight, theaterById, type SamType } from '../world/theater.js';
 import { adaptSpecToTheater } from './theaterAdapt.js';
+import { Carrier, DECK_H, GLIDE_DEG, AIM_S, type CarrierSpec } from '../sim/carrier.js';
 import type { Weather } from '../render/scene.js';
 import { WEAPONS } from '../weapons/stores.js';
 import { FT, KT, NM } from '../sim/atmosphere.js';
@@ -13,7 +14,8 @@ import { rng } from '../core/math.js';
 
 export type StartSpec =
   | { kind: 'air'; x: number; z: number; alt: number; hdg: number; speed: number }   // hdg deg, alt m, speed m/s
-  | { kind: 'runway'; airbaseId: string };
+  | { kind: 'runway'; airbaseId: string }
+  | { kind: 'carrier'; carrierId: string };   // on a bow catapult
 
 export interface FlightSpec {
   id: string;
@@ -41,6 +43,8 @@ export interface FlightSpec {
   squadronId?: string;
   /** nation id (nations.ts); defaults to the theater's first nation for the side */
   nation?: string;
+  /** air start already configured for landing: gear and flaps down, hook down, approach power */
+  approachConfig?: boolean;
 }
 
 export type GroupKind = 'sam' | 'armor' | 'convoy' | 'factory' | 'depot' | 'bridge' | 'radar' | 'command' | 'airbase' | 'city';
@@ -73,6 +77,8 @@ export interface MissionSpec {
   campaign?: { flightId: string; turn: number };
   /** theater (map) id; defaults to Varnia */
   theaterId?: string;
+  /** aircraft carriers steaming in the mission area */
+  carriers?: CarrierSpec[];
 }
 
 export interface BuiltMission {
@@ -91,6 +97,14 @@ const CALLSIGNS_RED = ['Berkut', 'Sokol', 'Strizh', 'Grom', 'Molniya', 'Vityaz',
 export function callsignFor(side: Side, i: number) {
   const l = side === 'blue' ? CALLSIGNS_BLUE : CALLSIGNS_RED;
   return l[i % l.length];
+}
+
+/** map position of a flight's start (any start kind) */
+export function startXZ(spec: Pick<MissionSpec, 'carriers'>, f: FlightSpec): { x: number; z: number } {
+  if (f.start.kind === 'air') return { x: f.start.x, z: f.start.z };
+  if (f.start.kind === 'carrier') { const id = f.start.carrierId; const c = spec.carriers?.find((k) => k.id === id); return { x: c?.x ?? 0, z: c?.z ?? 0 }; }
+  const ab = airbaseById(f.start.airbaseId);
+  return { x: ab?.x ?? 0, z: ab?.z ?? 0 };
 }
 
 function ground(x: number, z: number) { return Math.max(0, terrainHeight(x, z)); }
@@ -200,6 +214,8 @@ export function buildMission(spec: MissionSpec, opts: WorldOptions): BuiltMissio
   setTheater(spec.theaterId);
   const world = new World();
   world.opts = { ...opts };
+  world.carriers = (spec.carriers ?? []).map((c) => new Carrier(c));
+  const carrierById = (id: string) => world.carriers.find((c) => c.id === id);
   const groupUnits = new Map<string, GroundUnit[]>();
   spec.groups.forEach((g, i) => groupUnits.set(g.id, spawnGroup(world, g, 1000 + i * 77)));
   let player: Aircraft | null = null;
@@ -230,6 +246,27 @@ export function buildMission(spec: MissionSpec, opts: WorldOptions): BuiltMissio
         ac.fm.placeInAir(pos, h, s.speed);
         ac.ctrl.gearDown = false;
         ac.ctrl.throttle = 0.75;
+        if (f.approachConfig) {
+          ac.ctrl.gearDown = true; ac.fm.gearPos = 1;
+          ac.ctrl.flaps = 1; ac.fm.flapPos = 1;
+          ac.ctrl.throttle = 0.62;
+          ac.hook = ac.def.capabilities?.includes('carrier') ?? false;
+        }
+      } else if (f.start.kind === 'carrier') {
+        const cv = carrierById(f.start.carrierId);
+        if (!cv) throw new Error(`Unknown carrier ${f.start.carrierId}`);
+        if (i === 0) {
+          world.carrierOps.attachToCat(ac, cv, i);
+          ac.ctrl.gearDown = true;
+          ac.ctrl.throttle = 0;
+          ac.ctrl.flaps = 1; ac.fm.flapPos = 1;   // launch flaps
+        } else {
+          // wingmen are already airborne overhead (AI pilots do not work the catapult)
+          const p = cv.fromDeck(3000 + i * 400, (i % 2 ? 1 : -1) * 300, 900);
+          ac.fm.placeInAir(p, cv.hdg, 160);
+          ac.ctrl.gearDown = false;
+          ac.ctrl.throttle = 0.7;
+        }
       } else {
         const ab = airbaseById(f.start.airbaseId);
         const ends = runwayEnds(ab);
@@ -267,8 +304,10 @@ export function buildMission(spec: MissionSpec, opts: WorldOptions): BuiltMissio
     if (f.player) {
       playerFlight = members;
       for (const w of f.waypoints ?? []) steerpoints.push({ pos: new THREE.Vector3(w.x, w.alt, w.z), name: w.name ?? 'STPT' });
+      const cvHome = f.start.kind === 'carrier' ? carrierById(f.start.carrierId) : f.approachConfig ? world.carriers[0] : undefined;
       const home = airbaseById(f.homeBase);
-      if (home) steerpoints.push({ pos: new THREE.Vector3(home.x, home.elev, home.z), name: 'HOME' });
+      if (cvHome) steerpoints.push({ pos: cvHome.pos.clone().setY(DECK_H), name: 'MOTHER' });
+      else if (home) steerpoints.push({ pos: new THREE.Vector3(home.x, home.elev, home.z), name: 'HOME' });
       for (const m of members) if (m.ai) {
         m.ai.leader = members[0];
         if (f.start.kind !== 'runway') m.ai.state = 'follow';
@@ -345,11 +384,13 @@ export function evaluate(b: BuiltMission): MissionResult {
 }
 
 // ------------------------------------------------------------------ instant action / mission setup
-export type ScenarioId = 'freeflight' | 'takeoff' | 'refuel' | 'bfm_guns' | 'bfm_ir' | 'bvr' | 'furball' | 'strike' | 'sead' | 'cas' | 'scramble';
+export type ScenarioId = 'freeflight' | 'takeoff' | 'carrier_ops' | 'carrier_trap' | 'refuel' | 'bfm_guns' | 'bfm_ir' | 'bvr' | 'furball' | 'strike' | 'sead' | 'cas' | 'scramble';
 
 export const SCENARIOS: Array<{ id: ScenarioId; name: string; desc: string }> = [
   { id: 'freeflight', name: 'Free flight', desc: 'Air start at 15,000 ft near Halvorsen AB. No threats — learn the jet.' },
   { id: 'takeoff', name: 'Takeoff & landing', desc: 'Runway start at Halvorsen AB. Take off, fly the pattern and land.' },
+  { id: 'carrier_ops', name: 'Carrier: cat shot & recovery', desc: 'On the bow catapult. Full power, launch (C), fly the pattern, lower the hook (H) and trap. Carrier-capable jets: F-14, F/A-18.' },
+  { id: 'carrier_trap', name: 'Carrier: trap practice', desc: 'Four miles astern on glideslope, gear, flaps and hook down. Fly the ball and catch a wire — 3-wire is the goal.' },
   { id: 'refuel', name: 'Aerial refueling', desc: 'Join a KC-135R on its track with 35% fuel. Boom (F-16/F-15) or drogue (probe jets). Follow the HUD cue.' },
   { id: 'bfm_guns', name: 'BFM: guns only', desc: '1v1 head-on merge at 15,000 ft. Guns only — energy management decides.' },
   { id: 'bfm_ir', name: 'BFM: heaters + guns', desc: '1v1 from 10 nm, IR missiles and guns. Flares, flares, flares.' },
@@ -391,7 +432,47 @@ export function pickLoadout(acId: string, keywords: string[]): string[] {
   return def.loadouts[0]?.stores ?? [];
 }
 
+/** carrier scenarios are built directly in the chosen theater, around its carrier */
+function carrierScenario(o: CustomOptions): MissionSpec {
+  const th = theaterById(o.theaterId);
+  const cs = th.carriers?.[0];
+  if (!cs) throw new Error(`${th.name} has no carrier`);
+  const cv = new Carrier(cs);
+  const pdef = getAircraft(o.aircraftId);
+  const stores = pdef.loadouts[o.loadoutIndex]?.stores ?? pdef.loadouts[0].stores;
+  const weather: Weather = { visibilityKm: o.visibilityKm, clouds: o.clouds, cloudBase: o.clouds === 'overcast' ? 2500 : 3500, timeOfDay: o.timeOfDay };
+  const home = [...th.airbases].filter((a) => a.side === 'blue').sort((a, b) => Math.hypot(a.x - cs.x, a.z - cs.z) - Math.hypot(b.x - cs.x, b.z - cs.z))[0];
+  const deg = (v: THREE.Vector3) => ((Math.atan2(v.x, -v.z) * 180 / Math.PI) + 360) % 360;
+  const sc = SCENARIOS.find((s) => s.id === o.scenario)!;
+  const flight: FlightSpec = {
+    id: 'player', callsign: 'Jester', side: 'blue', aircraftId: o.aircraftId, stores, count: 1, skill: 'veteran', task: 'ferry',
+    start: { kind: 'carrier', carrierId: cs.id }, homeBase: home?.id ?? th.airbases[0].id, player: true,
+  };
+  if (o.scenario === 'carrier_ops') {
+    // the ship moves ~460 m/min: pattern points are where it will roughly be when you get there
+    const ahead = (u: number, v: number, alt: number, name: string, tMin: number) => {
+      const p = cv.fromDeck(u + cv.speed * 60 * tMin, v, alt);
+      return { x: p.x, z: p.z, alt, name };
+    };
+    flight.waypoints = [ahead(12000, 0, 1500, 'DEPARTURE', 2), ahead(-6000, -8000, 600, 'DOWNWIND', 6), ahead(-9000, 0, 360, 'GROOVE', 8)];
+  } else {
+    // 4 nm astern on the landing centreline, on a 3.5° glideslope to the aim point
+    const L = cv.landingDir();
+    const dist = 4 * NM;
+    const aim = cv.fromLanding(AIM_S, 0);
+    const vAppr = 72;   // ~140 kt approach speed
+    const alt = DECK_H + dist * Math.tan(GLIDE_DEG * Math.PI / 180);
+    flight.start = { kind: 'air', x: aim.x - L.x * dist, z: aim.z - L.z * dist, alt, hdg: deg(L), speed: vAppr };
+    flight.approachConfig = true;
+  }
+  return {
+    title: sc.name, briefing: `${sc.desc} Mother: ${cs.name}, course ${cs.hdg.toFixed(0).padStart(3, '0')}°, ${cs.speedKt} kt.`,
+    weather, flights: [flight], groups: [], goals: [{ kind: 'land' }], theaterId: th.id, carriers: [cs],
+  };
+}
+
 export function buildScenario(o: CustomOptions): MissionSpec {
+  if (o.scenario === 'carrier_ops' || o.scenario === 'carrier_trap') return carrierScenario(o);
   const pdef = getAircraft(o.aircraftId);
   const enemySide: Side = 'red';
   const playerSide: Side = 'blue';

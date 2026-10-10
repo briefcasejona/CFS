@@ -100,6 +100,8 @@ export const EUROPE: Theater = {
   rawHeight,
   airbases,
   objectives,
+  // central North Sea, steaming north-east
+  carriers: [{ id: 'cvn75', name: 'USS Harry S. Truman (CVN-75)', side: 'blue', ...europeLcc.forward(54.6, 3.6), hdg: 30, speedKt: 15 }],
   sectors: 8,
   initialFront: [0, 0, 0, 0, 0, 0, 0, 0],
   campaign: false,

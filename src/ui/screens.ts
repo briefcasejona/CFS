@@ -1,7 +1,7 @@
 import { AIRCRAFT, AIRCRAFT_BY_ID } from '../aircraft/defs.js';
 import { WEAPONS } from '../weapons/stores.js';
 import { SAM_PARAMS } from '../sim/entities.js';
-import { SCENARIOS, buildScenario, defaultCustom, type CustomOptions, type MissionResult, type MissionSpec, type BuiltMission } from '../game/mission.js';
+import { SCENARIOS, buildScenario, startXZ, defaultCustom, type CustomOptions, type MissionResult, type MissionSpec, type BuiltMission } from '../game/mission.js';
 import { DEFAULT_SETTINGS, realismLabel, saveSettings, type Settings } from '../core/settings.js';
 import { drawTheater, type MapMarker } from './map.js';
 import { airbaseById, ensureTheater, listTheaters, setTheater, theaterById } from '../world/theater.js';
@@ -225,7 +225,7 @@ export function briefing(app: AppApi, spec: MissionSpec, back: () => void, extra
           <table class="kv">
             <tr><td>Aircraft</td><td>${esc(def.fullName)} ×${pf.count}</td></tr>
             <tr><td>Callsign</td><td>${esc(pf.callsign)} 1-1</td></tr>
-            <tr><td>Start</td><td>${pf.start.kind === 'runway' ? `Runway, ${esc(airbaseById(pf.start.airbaseId).name)}` : 'Airborne'}</td></tr>
+            <tr><td>Start</td><td>${pf.start.kind === 'runway' ? `Runway, ${esc(airbaseById(pf.start.airbaseId).name)}` : pf.start.kind === 'carrier' ? `Catapult 1, ${esc(spec.carriers?.find((c) => c.id === (pf.start as { carrierId: string }).carrierId)?.name ?? 'carrier')}` : 'Airborne'}</td></tr>
             <tr><td>Stores</td><td class="stores">${esc(summarizeStores(pf.stores))}</td></tr>
             <tr><td>Weather</td><td>${spec.weather.clouds}, visibility ${spec.weather.visibilityKm} km, ${String(Math.floor(spec.weather.timeOfDay)).padStart(2, '0')}:00L</td></tr>
             <tr><td>Known threats</td><td>${esc(threatSummary(spec))}</td></tr>
@@ -272,14 +272,14 @@ function goalText(spec: MissionSpec, g: MissionSpec['goals'][number]) {
 export function drawBriefMap(cv: HTMLCanvasElement, spec: MissionSpec, front?: number[]) {
   const ctx = cv.getContext('2d')!;
   const pf = spec.flights.find((f) => f.player)!;
-  const start = pf.start.kind === 'air' ? { x: pf.start.x, z: pf.start.z } : (() => { const a = airbaseById(pf.start.airbaseId); return { x: a.x, z: a.z }; })();
+  const start = startXZ(spec, pf);
   const home = airbaseById(pf.homeBase);
   const route = [start, ...(pf.waypoints ?? []).map((w) => ({ x: w.x, z: w.z })), ...(home ? [{ x: home.x, z: home.z }] : [])];
   const bounds = [...route];
   const markers: MapMarker[] = [];
   for (const f of spec.flights) {
     if (f.player) continue;
-    const s = f.start.kind === 'air' ? f.start : airbaseById(f.start.airbaseId);
+    const s = startXZ(spec, f);
     markers.push({ x: s.x, z: s.z, side: f.side, kind: 'aircraft', label: `${f.count}× ${AIRCRAFT_BY_ID[f.aircraftId].name}` });
     bounds.push({ x: s.x, z: s.z });
   }

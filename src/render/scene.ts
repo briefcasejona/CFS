@@ -3,6 +3,7 @@ import type { World } from '../sim/world.js';
 import type { Aircraft, GroundUnit } from '../sim/entities.js';
 import type { Missile } from '../weapons/missile.js';
 import { TerrainRenderer, buildScenery } from './terrainMesh.js';
+import { buildCarrierMesh } from './carrierMesh.js';
 import { buildAircraftModel, updateAircraftModel, syncStores, groundMesh, storeMesh, type AircraftModel } from './models.js';
 import { surfaceHeight, theaterVersion } from '../world/theater.js';
 import { buildCockpit, type Cockpit } from './cockpit.js';
@@ -472,7 +473,21 @@ export class SceneRenderer {
     return best;
   }
 
+  /** carrier meshes, keyed by carrier object (a new mission builds new carriers) */
+  private carrierMeshes = new Map<object, THREE.Group>();
+  private syncCarriers(world: World) {
+    for (const [k, m] of this.carrierMeshes) if (!world.carriers.includes(k as never)) { this.scene.remove(m); this.carrierMeshes.delete(k); }
+    for (const c of world.carriers) {
+      let m = this.carrierMeshes.get(c);
+      if (!m) { m = buildCarrierMesh(); m.rotation.y = -c.hdg; this.scene.add(m); this.carrierMeshes.set(c, m); }
+      m.position.copy(c.pos);
+      const radar = m.getObjectByName('radar');
+      if (radar) radar.rotation.y = world.time * 2.5;
+    }
+  }
+
   render(world: World, dt: number) {
+    this.syncCarriers(world);
     this.syncEntities(world);
     this.updateParticles(world, dt);
     this.updateCamera(world, dt);

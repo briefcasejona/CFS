@@ -328,6 +328,14 @@ export class FlightSession {
       if (c.gearDown && p.fm.wow) world.radio('Gear handle locked — weight on wheels.', '#fc8');
       else { c.gearDown = !c.gearDown; world.radio(`Gear ${c.gearDown ? 'down' : 'up'}.`, '#ccc'); }
     }
+    if (i.pressed('hook')) {
+      if (!p.def.capabilities?.includes('carrier')) world.radio('No tailhook on this jet.', '#fc8');
+      else { p.hook = !p.hook; world.radio(`Hook ${p.hook ? 'down' : 'up'}.`, '#ccc'); }
+    }
+    if (i.pressed('catLaunch')) {
+      const msg = world.carrierOps.launch(p);
+      if (msg) world.radio(msg, '#ffd27f');
+    }
     if (i.pressed('flaps')) c.flaps = c.flaps < 0.25 ? 0.5 : c.flaps < 0.75 ? 1 : 0;
     if (i.pressed('speedbrake')) c.speedbrake = c.speedbrake > 0.5 ? 0 : 1;
     if (i.down('speedbrakeHold')) c.speedbrake = 1;
@@ -379,6 +387,8 @@ export class FlightSession {
     if (i.pressed('cmsProgram')) {
       for (let k = 0; k < 4; k++) this.cmsQueue.push({ t: world.time + k * 0.25, kind: k % 2 === 0 ? 'chaff' : 'flare' });
     }
+    // ---- the carrier steerpoint moves with the ship
+    for (const s of this.built.steerpoints) if (s.name === 'MOTHER' && world.carriers[0]) s.pos.set(world.carriers[0].pos.x, s.pos.y, world.carriers[0].pos.z);
     // ---- steerpoint sequencing
     const sp = this.built.steerpoints[this.steerIndex];
     if (sp && Math.hypot(sp.pos.x - p.pos.x, sp.pos.z - p.pos.z) < 2 * NM && this.steerIndex < this.built.steerpoints.length - 1) {
@@ -463,6 +473,7 @@ export class FlightSession {
       const alive = u.filter((x) => x.alive).length;
       markers.push({ x: g.x, z: g.z, side: g.side, kind: 'target', label: `${g.name ?? g.kind} (${alive}/${u.length})`, dead: u.length > 0 && alive === 0 });
     }
+    for (const cv of w.carriers) markers.push({ x: cv.pos.x, z: cv.pos.z, side: cv.side, kind: 'ground', label: cv.name, hdg: cv.hdg });
     this.built.steerpoints.forEach((s, k) => markers.push({ x: s.pos.x, z: s.pos.z, side: 'neutral', kind: 'waypoint', label: `${k + 1} ${s.name}`, highlight: k === this.steerIndex }));
     const route = { pts: [{ x: p.pos.x, z: p.pos.z }, ...this.built.steerpoints.slice(this.steerIndex).map((s) => ({ x: s.pos.x, z: s.pos.z }))], color: '#fff', dashed: true };
     drawTheater(ctx, this.mapView, { markers, routes: [route], showObjectives: false });

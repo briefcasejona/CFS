@@ -65,6 +65,8 @@ export class Aircraft {
   gLoc = 0;                 // 0..1 vision loss
   gStress = 0;
   landed = false;
+  /** tailhook lowered (carrier-capable jets) */
+  hook = false;
   /** has left the ground at least once (a runway start isn't a landing) */
   everAirborne = false;
   /** nation id (world/nations.ts) — identity/markings; `side` is the coalition used by IFF and AI */

@@ -21,9 +21,17 @@ export function validateMissionSpec(o: any): MissionSpec {
     if (!AIRCRAFT_BY_ID[f.aircraftId]) fail(`unknown aircraft ${f.aircraftId}`);
     if (f.side !== 'blue' && f.side !== 'red') fail(`bad side on ${f.id}`);
     if (!(f.count >= 1 && f.count <= 8)) fail(`bad count on ${f.id}`);
-    if (!f.start || (f.start.kind !== 'air' && f.start.kind !== 'runway')) fail(`bad start on ${f.id}`);
+    if (!f.start || !['air', 'runway', 'carrier'].includes(f.start.kind)) fail(`bad start on ${f.id}`);
+    if (f.start.kind === 'carrier' && !(o.carriers ?? []).some((c: any) => c.id === f.start.carrierId)) fail(`${f.id} starts on an unknown carrier`);
     if (ids.has(f.id)) fail(`duplicate flight id ${f.id}`);
     ids.add(f.id);
+  }
+  if (o.carriers !== undefined) {
+    if (!Array.isArray(o.carriers)) fail('carriers must be a list');
+    for (const c of o.carriers) {
+      if (typeof c.id !== 'string' || !Number.isFinite(c.x) || !Number.isFinite(c.z) || !Number.isFinite(c.hdg) || !(c.speedKt >= 0 && c.speedKt <= 35)) fail('bad carrier');
+      if (c.side !== 'blue' && c.side !== 'red') fail(`bad side on carrier ${c.id}`);
+    }
   }
   for (const g of o.goals) if (g.kind === 'destroyGroup' && !o.groups.some((x: any) => x.id === g.group)) fail(`goal references missing group ${g.group}`);
   return o as MissionSpec;

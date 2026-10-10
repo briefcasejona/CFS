@@ -10,5 +10,6 @@ export function expect(actual: any, msg?: string) {
     toBeLessThan: (v: number) => assert.ok(actual < v, msg ?? `${actual} < ${v}`),
     toBeCloseTo: (v: number, digits = 2) => assert.ok(Math.abs(actual - v) < Math.pow(10, -digits) / 2, msg ?? `${actual} ≈ ${v}`),
     toBeTruthy: () => assert.ok(actual, msg),
+    toContain: (v: string) => assert.ok(String(actual).includes(v), msg ?? `expected "${String(actual)}" to contain "${v}"`),
   };
 }

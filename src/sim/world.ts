@@ -7,6 +7,7 @@ import { Missile } from '../weapons/missile.js';
 import { Bullets } from '../weapons/gun.js';
 import { WEAPONS, type WeaponDef } from '../weapons/stores.js';
 import { Radar, paintRwr } from '../avionics/radar.js';
+import { Carrier, CarrierOps } from './carrier.js';
 import { isWater, lineOfSight, surfaceHeight, terrainHeight, AIRBASES } from '../world/theater.js';
 import { clamp, DEG } from '../core/math.js';
 import { G0 } from './atmosphere.js';
@@ -55,14 +56,28 @@ export class World {
   netFire: ((weapon: string, target: Target | null) => void) | null = null;
   /** player air-to-air refuelling state */
   refuel = new Refueling();
+  /** aircraft carriers (moving decks) and the player's deck operations */
+  carriers: Carrier[] = [];
+  carrierOps = new CarrierOps();
   private rwrTimer = 0;
   private aiRadarTimer = 0;
 
   constructor() {
     const self = this;
     this.env = {
-      groundHeight: (x, z) => terrainHeight(x, z),
-      isWater: (x, z) => isWater(x, z),
+      groundHeight: (x, z) => {
+        const h = terrainHeight(x, z);
+        for (const c of self.carriers) { const d = c.deckHeight(x, z); if (d !== null && d > h) return d; }
+        return h;
+      },
+      isWater: (x, z) => {
+        for (const c of self.carriers) if (c.deckHeight(x, z) !== null) return false;
+        return isWater(x, z);
+      },
+      groundVelocity: (x, z) => {
+        for (const c of self.carriers) if (c.deckHeight(x, z) !== null) return c.vel;
+        return null;
+      },
       get wind() { return self.wind; },
     };
   }
@@ -94,6 +109,7 @@ export class World {
   // ------------------------------------------------------------------ main step
   step(dt: number) {
     this.time += dt;
+    for (const c of this.carriers) c.update(this.time);
     this.aiRadarTimer -= dt;
     const aiTick = this.aiRadarTimer <= 0;
     if (aiTick) this.aiRadarTimer = 0.25;
@@ -106,6 +122,11 @@ export class World {
         const wasCrashed = ac.fm.crashed;
         ac.fm.step(dt, ac.ctrl, this.env, this.fmOpts(ac));
         if (ac.fm.crashed && !wasCrashed) this.onCrash(ac);
+        if (ac.isPlayer && this.carriers.length) {
+          for (const msg of this.carrierOps.step(dt, ac, this.carriers)) this.radio(msg, '#ffd27f');
+          const lso = this.carrierOps.lsoCalls(dt, ac, this.carriers);
+          if (lso) this.radio(lso, '#ffd27f');
+        }
       }
       if (ac.radar && ac.alive && local) {
         if (ac.isPlayer) ac.radar.update(dt, this);
@@ -117,7 +138,7 @@ export class World {
         if (ac.isPlayer) this.updateGEffects(ac, dt);
       }
       if (!ac.fm.wow) ac.everAirborne = true;
-      if (ac.isPlayer) ac.landed = ac.everAirborne && ac.alive && !ac.fm.crashed && ac.fm.wow && ac.fm.tas < 2 && this.onRunway(ac);
+      if (ac.isPlayer) ac.landed = ac.everAirborne && ac.alive && !ac.fm.crashed && ac.fm.wow && (this.onRunway(ac) ? ac.fm.tas < 2 : this.stoppedOnDeck(ac));
     }
     for (const m of this.netRole === 'client' ? [] : this.missiles) {
       m.step(dt, this);
@@ -166,6 +187,14 @@ export class World {
       }
       ac.rwr = list.sort((a, b) => b.priority - a.priority);
     }
+  }
+
+  /** stopped (relative to the ship) on a friendly carrier deck */
+  stoppedOnDeck(ac: Aircraft) {
+    for (const c of this.carriers) {
+      if (c.side === ac.side && c.deckHeight(ac.pos.x, ac.pos.z) !== null && ac.fm.vel.distanceTo(c.vel) < 2 && this.carrierOps.state(ac) !== 'cat') return true;
+    }
+    return false;
   }
 
   onRunway(ac: Aircraft) {

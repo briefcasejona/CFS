@@ -29,6 +29,7 @@ export const VARNIA: Theater = {
   factions: { blue: 'Coalition', red: 'Federation' },
   nations: { blue: ['coalition'], red: ['federation'] },
   rawHeight,
+  carriers: [{ id: 'cvn71', name: 'USS Theodore Roosevelt (CVN-71)', side: 'blue', x: -180000, z: 140000, hdg: 0, speedKt: 15 }],
   sectors: 8,
   initialFront: [5000, 0, -5000, 0, 8000, 5000, -3000, 0],
   airbases: [
