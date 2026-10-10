@@ -4,7 +4,7 @@ This file is the single source of truth for continuing the roadmap across sessio
 session at any time). Update it and `git commit && git push` after every finished step.
 
 ## Heartbeat (lock)
-- heartbeat: 2026-10-10T22:40:26+02:00
+- heartbeat: 2026-10-10T22:43:07+02:00
 - owner: interactive session (wishlist session)
 
 Rule: a session that is actively working updates `heartbeat` (local ISO time, `date -Iseconds`) at least every
@@ -52,7 +52,11 @@ Licence duties if used: attribution (credits screen + `assets/models/CREDITS.md`
 Phase 7 done: src/ui/editor.ts (map placement of flights/ground groups/waypoints, property panels, goals, weather, briefing, saved-mission library,
 JSON export/import, share link #mission=… copied to clipboard, Briefing → fly), src/game/missionFile.ts (validateMissionSpec, encode/decodeMission
 deflate-raw+base64url, localStorage library cfs.missions.v1), main.ts opens #mission= links in the editor, tests/editor.test.ts. 52 tests.
-NEXT: Phase 8 — full Europe theater + landscape (biggest phase; do it in steps, commit after each):
+NEXT: Phase 8 — full Europe theater + landscape (biggest phase; do it in steps, commit after each).
+DONE step (1): src/world/lcc.ts (Lambert Conformal Conic, lat0 52 lon0 10, std parallels 47/57) + scripts/terrain/bake-europe.mjs → assets/theaters/europe/height.bin.gz (6.4 MB, 2301×2301 @1 km, ±1150 km, Int16 LE) + meta.json; tile cache .cache/ (git-ignored). Region lon ~−6…26 so Kaliningrad (RU) and W Belarus are inside for the OPFOR side.
+PLAN for Europe campaign: the campaign frontline model assumes an east-west front (z per x-sector); Europe needs a north-south front → add Theater.frontAxis or defer the Europe campaign; Instant Action/editor/MP first via a scenario transform (rotate+translate Varnia-frame scenario coordinates to a theater anchor, map halvorsen/volsk to nearest blue/red base).
+NOTE: a user hook asks to run /app-legal-guard check after network/data-flow changes — do it at the end of Phase 8 (attribution for AWS Terrain Tiles/OurAirports in credits).
+Remaining steps:
 (1) scripts/terrain/bake-europe.mjs (pure JS: fetch AWS Terrarium tiles https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png,
 decode with pngjs, height = (R*256 + G + B/256) - 32768) for lon −6…20, lat 42…62 at zoom ~7–8 → resample into a Transverse-Mercator
 (centre 7°E 52°N) local grid ~1 km/px → write Int16 binary tiles site-ready under assets/theaters/europe/ (+ a meta.json with extent, projection);
