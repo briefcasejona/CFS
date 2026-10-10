@@ -56,7 +56,22 @@ export interface Theater {
   iaAnchor?: { x: number; z: number; enemyHdg: number; blueBase: string; redBase: string };
   /** asynchronous data load (e.g. a DEM) — call ensureTheater() before flying here */
   load?: () => Promise<void>;
+  /** terrain colouring overrides (defaults suit the fictional Varnia) */
+  palette?: Partial<TerrainPalette>;
+  /** map overlay (real-world theaters): border polylines as flat x,z pairs in 100 m units; cities [name, x, z, capital] */
+  overlay?: { borders: number[][]; cities: Array<[string, number, number, number]> };
 }
+
+export interface TerrainPalette {
+  /** land below this height (m) is drawn as sand/beach */
+  beach: number;
+  /** permanent snow from this height (m) at a point */
+  snowLine: (x: number, z: number) => number;
+  /** bare rock starts this far (m) below the snowline */
+  rockBelowSnow: number;
+}
+const DEFAULT_PALETTE: TerrainPalette = { beach: 8, snowLine: () => 1900, rockBelowSnow: 200 };
+export function terrainPalette(): TerrainPalette { return { ...DEFAULT_PALETTE, ...current.palette }; }
 
 const REGISTRY = new Map<string, Theater>();
 let current: Theater = VARNIA;

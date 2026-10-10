@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { terrainHeight, AIRBASES, OBJECTIVES, THEATER_HALF, runwayEnds, fbm } from '../world/theater.js';
+import { terrainHeight, AIRBASES, OBJECTIVES, THEATER_HALF, runwayEnds, fbm, terrainPalette, type TerrainPalette } from '../world/theater.js';
 
 const CHUNK = 16000; // m
 const LODS = [
@@ -9,14 +9,19 @@ const LODS = [
   { dist: 260000, res: 8 },
 ];
 
-function terrainColor(h: number, slope: number, x: number, z: number, out: THREE.Color) {
+const SNOW = new THREE.Color(0.9, 0.92, 0.95);
+
+function terrainColor(h: number, slope: number, x: number, z: number, pal: TerrainPalette, out: THREE.Color) {
   const n = fbm(x * 0.0007, z * 0.0007, 3) * 0.5 + 0.5;
   if (h <= 0.5) return out.setRGB(0.12, 0.2, 0.28);
-  if (h < 8) return out.setRGB(0.55, 0.52, 0.42);
-  if (slope > 0.55 || h > 1700) {
-    const snow = h > 1900 ? Math.min(1, (h - 1900) / 300) : 0;
+  if (h < pal.beach) return out.setRGB(0.55, 0.52, 0.42);
+  const snowLine = pal.snowLine(x, z);
+  if (slope > 0.55 || h > snowLine - pal.rockBelowSnow) {
+    // ragged snow edge: the noise moves the line up and down by ~150 m
+    const sl = snowLine + (n - 0.5) * 300;
+    const snow = h > sl ? Math.min(1, (h - sl) / 300) : 0;
     out.setRGB(0.38 + n * 0.08, 0.36 + n * 0.06, 0.33 + n * 0.05);
-    if (snow > 0) out.lerp(new THREE.Color(0.9, 0.92, 0.95), snow);
+    if (snow > 0) out.lerp(SNOW, snow);
     return out;
   }
   if (n > 0.55) return out.setRGB(0.16 + n * 0.05, 0.25 + n * 0.06, 0.13);
@@ -56,6 +61,7 @@ export class TerrainRenderer {
     const hs = new Float32Array(n * n);
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) hs[j * n + i] = terrainHeight(x0 + i * step, z0 + j * step);
     const c = new THREE.Color();
+    const pal = terrainPalette();
     let v = 0;
     for (let j = 0; j < n; j++) {
       for (let i = 0; i < n; i++) {
@@ -64,7 +70,7 @@ export class TerrainRenderer {
         const hz = hs[Math.min(n - 1, j + 1) * n + i] - hs[Math.max(0, j - 1) * n + i];
         const slope = Math.hypot(hx, hz) / (2 * step);
         pos[v * 3] = i * step; pos[v * 3 + 1] = Math.max(h, -2); pos[v * 3 + 2] = j * step;
-        terrainColor(h, slope, x0 + i * step, z0 + j * step, c);
+        terrainColor(h, slope, x0 + i * step, z0 + j * step, pal, c);
         col[v * 3] = c.r; col[v * 3 + 1] = c.g; col[v * 3 + 2] = c.b;
         v++;
       }

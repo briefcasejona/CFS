@@ -36,6 +36,17 @@ describe('Europe theater', () => {
     for (const ab of EUROPE.airbases) expect(Math.abs(ab.x) < EUROPE.half && Math.abs(ab.z) < EUROPE.half, `${ab.id} inside`).toBe(true);
   });
 
+  it('polders below sea level stay dry land after the sub-kilometre detail is added', () => {
+    loadGrid();
+    // Flevoland, Haarlemmermeer, Noordoostpolder: sampled every 250 m over 4×4 km
+    for (const [lat, lon] of [[52.45, 5.55], [52.31, 4.70], [52.71, 5.78]]) {
+      const c = europeLcc.forward(lat, lon);
+      for (let dz = -2000; dz <= 2000; dz += 250) for (let dx = -2000; dx <= 2000; dx += 250) {
+        expect(EUROPE.rawHeight(c.x + dx, c.z + dz) > 0, `${lat},${lon} +${dx},${dz}`).toBe(true);
+      }
+    }
+  });
+
   it('every Instant Action scenario can be flown over Europe', () => {
     loadGrid();
     const OPTS = { unlimitedFuel: false, unlimitedWeapons: false, invulnerable: false, gEffects: true, abDetent: 0.8 };

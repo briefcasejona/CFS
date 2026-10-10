@@ -24,9 +24,10 @@ function rawHeight(x: number, z: number): number {
   const i = Math.floor(fx), j = Math.floor(fz), tx = fx - i, tz = fz - j;
   const h = (sample(i, j) * (1 - tx) + sample(i + 1, j) * tx) * (1 - tz) + (sample(i, j + 1) * (1 - tx) + sample(i + 1, j + 1) * tx) * tz;
   if (h <= 0) return h;
-  // sub-kilometre relief the 1 km grid can't hold: more in rough terrain, none on flat coastal plains
-  const rough = smoothstep(80, 900, h);
-  return h + fbm(x / 1400, z / 1400, 4) * (12 + 160 * rough) + fbm(x / 350, z / 350, 2) * (3 + 25 * rough);
+  // sub-kilometre relief the 1 km grid can't hold: more in rough terrain, fading out towards sea level so polders and
+  // low coasts (baked at +1 m) never dip under the sea plane
+  const rough = smoothstep(80, 900, h), low = smoothstep(1, 40, h);
+  return Math.max(0.6, h + low * (fbm(x / 1400, z / 1400, 4) * (12 + 160 * rough) + fbm(x / 350, z / 350, 2) * (3 + 25 * rough)));
 }
 
 /** grid bearing (deg) of true north at a point — runway headings are given true and converted to grid. */
@@ -102,6 +103,13 @@ export const EUROPE: Theater = {
   sectors: 8,
   initialFront: [0, 0, 0, 0, 0, 0, 0, 0],
   campaign: false,
+  // summer snowline ~3000 m in the Alps falling to ~1650 m in southern Norway; bare rock from ~800 m below it.
+  // No sand band: low land here is polder and coastal plain (the 1 km grid can't resolve beaches).
+  palette: {
+    beach: 0,
+    snowLine: (_x, z) => 3000 - (52 - z / 111000 - 46) * 95,
+    rockBelowSnow: 800,
+  },
   // Instant Action engagement area: over north-east Poland, enemy to the east-north-east
   iaAnchor: { ...europeLcc.forward(53.9, 21.4), enemyHdg: 75, blueBase: 'malbork', redBase: 'chkalovsk' },
   load: async () => {
@@ -113,6 +121,11 @@ export const EUROPE: Theater = {
     // gunzip unless a server already did (Content-Encoding: gzip)
     if (head[0] === 0x1f && head[1] === 0x8b) bytes = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
     setEuropeGrid(new Int16Array(bytes));
+    // borders and cities for the map — optional, the theater flies without them
+    try {
+      const o = await fetch('assets/theaters/europe/overlay.json');
+      if (o.ok) EUROPE.overlay = await o.json();
+    } catch { /* offline without the overlay cached */ }
   },
 };
 

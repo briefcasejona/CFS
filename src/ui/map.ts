@@ -1,4 +1,4 @@
-import { THEATER_HALF, terrainHeight, AIRBASES, OBJECTIVES, frontZAt, theaterVersion, type ObjectiveDef } from '../world/theater.js';
+import { THEATER_HALF, currentTheater, terrainHeight, AIRBASES, OBJECTIVES, frontZAt, theaterVersion, type ObjectiveDef } from '../world/theater.js';
 import { SAM_PARAMS } from '../sim/entities.js';
 import { WEAPONS } from '../weapons/stores.js';
 
@@ -9,7 +9,8 @@ let BGver = -1;
 export function theaterBackground(): HTMLCanvasElement {
   if (BG && BGver === theaterVersion) return BG;
   BGver = theaterVersion;
-  const N = 512;
+  // ~2 km per pixel or better on large theaters
+  const N = THEATER_HALF > 400000 ? 1024 : 512;
   const cv = document.createElement('canvas');
   cv.width = cv.height = N;
   const x = cv.getContext('2d')!;
@@ -72,6 +73,37 @@ export interface TheaterOpts {
   routes?: Array<{ pts: Array<{ x: number; z: number }>; color: string; dashed?: boolean }>;
 }
 
+/** National borders and city names of real-world theaters. */
+function drawOverlay(ctx: CanvasRenderingContext2D, v: MapView) {
+  const ov = currentTheater().overlay;
+  if (!ov) return;
+  ctx.strokeStyle = 'rgba(255,240,205,0.85)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([5, 3]);
+  ctx.beginPath();
+  for (const line of ov.borders) {
+    for (let k = 0; k < line.length; k += 2) {
+      const p = w2s(v, line[k] * 100, line[k + 1] * 100);
+      if (k === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+    }
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // fewer labels when zoomed out: capitals only beyond ~3 km per pixel
+  const all = v.mpp < 3000;
+  ctx.font = '11px system-ui, sans-serif';
+  ctx.textBaseline = 'middle';
+  for (const [name, x, z, cap] of ov.cities) {
+    if (!cap && !all) continue;
+    const p = w2s(v, x, z);
+    if (p.x < -50 || p.y < -20 || p.x > v.w + 50 || p.y > v.h + 20) continue;
+    ctx.fillStyle = 'rgba(240,235,220,0.85)';
+    ctx.fillRect(p.x - (cap ? 2.5 : 1.5), p.y - (cap ? 2.5 : 1.5), cap ? 5 : 3, cap ? 5 : 3);
+    ctx.fillStyle = 'rgba(240,235,220,0.7)';
+    ctx.fillText(name, p.x + 5, p.y);
+  }
+}
+
 export function drawTheater(ctx: CanvasRenderingContext2D, v: MapView, opts: TheaterOpts) {
   ctx.save();
   ctx.fillStyle = '#16212b';
@@ -88,6 +120,7 @@ export function drawTheater(ctx: CanvasRenderingContext2D, v: MapView, opts: The
     const q1 = w2s(v, -THEATER_HALF, g), q2 = w2s(v, THEATER_HALF, g);
     ctx.beginPath(); ctx.moveTo(q1.x, q1.y); ctx.lineTo(q2.x, q2.y); ctx.stroke();
   }
+  drawOverlay(ctx, v);
   if (opts.front) {
     ctx.lineWidth = 3;
     ctx.strokeStyle = 'rgba(255,220,80,0.85)';
