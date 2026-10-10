@@ -31,6 +31,8 @@ export interface FlightSpec {
   stationHdg?: number;
   /** cruise / orbit true airspeed (m/s) */
   speed?: number;
+  /** multiplayer: extra rows back on the runway so several flights can line up */
+  runwaySlot?: number;
   /** internal fuel at start as a fraction of capacity (default full) */
   fuelFraction?: number;
   targetGroup?: string;
@@ -232,7 +234,7 @@ export function buildMission(spec: MissionSpec, opts: WorldOptions): BuiltMissio
         const ends = runwayEnds(ab);
         const h = ab.hdg * Math.PI / 180;
         const right = new THREE.Vector3(Math.cos(h), 0, Math.sin(h));
-        const along = 150 + Math.floor(i / 2) * 250;
+        const along = 150 + (Math.floor(i / 2) + (f.runwaySlot ?? 0) * 2) * 250;
         const lat = (i % 2 === 0 ? -1 : 1) * 9;
         ac.fm.placeOnGround(ends.start.x + ends.dir.x * along + right.x * lat, ends.start.z + ends.dir.z * along + right.z * lat, ab.elev, h);
         ac.ctrl.gearDown = true;

@@ -51,6 +51,8 @@ export class World {
   datalink = new Datalink();
   /** multiplayer role: the host simulates everything; clients only fly their own jet */
   netRole: 'none' | 'host' | 'client' = 'none';
+  /** client: send a weapon release to the host instead of launching locally */
+  netFire: ((weapon: string, target: Target | null) => void) | null = null;
   /** player air-to-air refuelling state */
   refuel = new Refueling();
   private rwrTimer = 0;
@@ -298,9 +300,13 @@ export class World {
     const vel = ac.vel.clone();
     if (def.kind === 'bomb' || def.kind === 'lgb') vel.addScaledVector(ac.fm.up(), -2);
     else vel.addScaledVector(ac.fm.forward(), 5);
-    const m = new Missile(def, ac.side, ac, null, target, point, pos, vel);
-    this.missiles.push(m);
-    if (ac.isPlayer) this.lastLaunched = m;
+    if (this.netRole === 'client' && ac.isPlayer && this.netFire) {
+      this.netFire(id, target); // the host launches it; it comes back in the next snapshot
+    } else {
+      const m = new Missile(def, ac.side, ac, null, target, point, pos, vel);
+      this.missiles.push(m);
+      if (ac.isPlayer) this.lastLaunched = m;
+    }
     const call = def.kind === 'sarh' ? 'Fox 1' : def.kind === 'ir' ? 'Fox 2' : def.kind === 'arh' ? 'Fox 3' : def.kind === 'arm' ? 'Magnum' : def.kind === 'agm' ? 'Rifle' : 'Pickle';
     if (ac.isPlayer || (this.player && ac.side === this.player.side && ac.pos.distanceTo(this.player.pos) < 60000)) {
       this.radio(`${ac.callsign}: ${call}${target && target.kind === 'aircraft' ? ` on ${target.def.name}` : ''}.`, '#cfc');
