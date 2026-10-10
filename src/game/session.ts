@@ -133,7 +133,7 @@ export class FlightSession {
     const p = this.built.player;
     if (p.radar && s.easyRadar) p.radar.def = { ...p.radar.def, range: p.radar.def.range * 1.6 };
     this.kb = { pitch: 0, roll: 0, yaw: 0 };
-    if (this.input.axis('throttle') === null) p.ctrl.throttle = p.fm.wow ? 0 : 0.75;
+    // keyboard throttle starts where the mission put it (idle on the ground, cruise in the air, approach power on final)
     this.mapView.cx = p.pos.x; this.mapView.cz = p.pos.z;
     this.resize();
     this.scene.prewarm(p.pos);

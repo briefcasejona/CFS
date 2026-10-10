@@ -41,9 +41,16 @@ All 16 fly on the same **6-DOF rigid-body flight model**, and each jet supplies 
 * SAM sites (SA-10, SA-6, SA-2, SA-15, Patriot, Hawk) and AAA.
 * AI pilots fly the same flight model. They shoot and crank in BVR, fight BFM with lead/lag pursuit, defend by beaming and notching with countermeasures, and attack ground targets.
 
+## Carriers
+
+Carrier-capable jets (F-14, F/A-18) can operate from a Nimitz-class carrier that steams through the scenario: the USS Theodore Roosevelt off Varnia's west coast and the USS Harry S. Truman in the North Sea.
+* **Catapult:** run up to full power and press **C**. The shuttle takes the jet to flying speed in about 90 m.
+* **Recovery:** gear, flaps and hook (**H**) down. Fly a 3.5° glideslope to the angled deck. The HUD shows the "ball" (glideslope) and lineup, and the LSO talks you in. Catch one of four wires (the 3-wire is the target), or bolter and go around.
+* The deck moves: it keeps steaming at 15 kt and "walks" to the right on final.
+
 ## Game modes
 
-* **Instant Action**: pick a jet and a scenario: free flight, takeoff & landing, guns BFM, heater BFM, BVR 2v2, 4v4 furball, strike, SEAD, CAS or scramble.
+* **Instant Action**: pick a jet, a map (Varnia or Northern Europe) and a scenario: free flight, takeoff & landing, carrier cat shot & recovery, carrier trap practice, aerial refueling, guns BFM, heater BFM, BVR 2v2, 4v4 furball, strike, SEAD, CAS or scramble.
 * **Mission Setup**: the same scenarios, with full control over opponents, numbers, skill, wingmen, start, altitude, time of day and weather.
 * **Dynamic Campaign**: a persistent war on the Varnia Peninsula in 6-hour turns. Each turn both sides' AI writes an **Air Tasking Order** (CAP, sweep, SEAD, strike packages with escort, OCA, CAS). You pick any Coalition flight and fly it in 3D, with enemy CAPs and SAMs placed from the campaign state. Everything you don't fly is resolved statistically.
   * Factories, depots, bridges and the command HQ feed **supply**, which drives the ground war.
@@ -73,6 +80,7 @@ The afterburner detent position for throttle axes can be set under Settings.
 | Target cursor | Tab | Radar mode / range | R / [ ] |
 | Flare / chaff / program | Q / E / V | Gear / flaps / speed brake | G / F / B |
 | Wheel brakes | W | Autopilot | A |
+| Tailhook | H | Catapult launch (at full power) | C |
 | Harrier nozzles | N / M | Eject (press twice) | Shift+E |
 | Views | F1–F6, F10 / O map | Look around | Mouse drag, numpad |
 | Padlock | L | Labels | F9 |

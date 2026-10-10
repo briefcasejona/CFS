@@ -507,7 +507,10 @@ function carrierScenario(o: CustomOptions): MissionSpec {
     flight.stores = [];
     flight.fuelFraction = 0.35;
     const alt = DECK_H + dist * Math.tan(GLIDE_DEG * Math.PI / 180);
-    flight.start = { kind: 'air', x: aim.x - L.x * dist, z: aim.z - L.z * dist, alt, hdg: deg(L), speed: vAppr };
+    // the angled deck "walks" sideways as the ship steams: start crabbed so the jet tracks the moving centreline
+    const drift = cv.vel.clone().addScaledVector(L, -cv.vel.dot(L));
+    const track = L.clone().multiplyScalar(vAppr).add(drift);
+    flight.start = { kind: 'air', x: aim.x - L.x * dist, z: aim.z - L.z * dist, alt, hdg: deg(track), speed: vAppr };
     flight.approachConfig = true;
   }
   return {
