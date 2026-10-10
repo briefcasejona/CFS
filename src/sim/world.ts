@@ -49,6 +49,8 @@ export class World {
   lastLaunched: Missile | null = null;
   /** coalition air pictures (Link 16) */
   datalink = new Datalink();
+  /** multiplayer role: the host simulates everything; clients only fly their own jet */
+  netRole: 'none' | 'host' | 'client' = 'none';
   /** player air-to-air refuelling state */
   refuel = new Refueling();
   private rwrTimer = 0;
@@ -95,15 +97,19 @@ export class World {
     if (aiTick) this.aiRadarTimer = 0.25;
     for (const ac of this.aircraft) {
       if (ac.removed) continue;
-      if (ac.ai && ac.alive) ac.ai.update(dt, this);
-      const wasCrashed = ac.fm.crashed;
-      ac.fm.step(dt, ac.ctrl, this.env, this.fmOpts(ac));
-      if (ac.fm.crashed && !wasCrashed) this.onCrash(ac);
-      if (ac.radar && ac.alive) {
+      // multiplayer: ghosts (client side) and proxies (host side) are positioned from the network, not simulated
+      const local = !ac.netGhost && !ac.netProxy;
+      if (ac.ai && ac.alive && local) ac.ai.update(dt, this);
+      if (local) {
+        const wasCrashed = ac.fm.crashed;
+        ac.fm.step(dt, ac.ctrl, this.env, this.fmOpts(ac));
+        if (ac.fm.crashed && !wasCrashed) this.onCrash(ac);
+      }
+      if (ac.radar && ac.alive && local) {
         if (ac.isPlayer) ac.radar.update(dt, this);
         else if (aiTick) ac.radar.update(0.25, this);
       }
-      if (ac.alive && !ac.fm.crashed) {
+      if (ac.alive && !ac.fm.crashed && !ac.netGhost) {
         this.updateGun(ac, dt);
         if (ac.isPlayer || aiTick) this.updateSeekers(ac);
         if (ac.isPlayer) this.updateGEffects(ac, dt);
@@ -111,7 +117,7 @@ export class World {
       if (!ac.fm.wow) ac.everAirborne = true;
       if (ac.isPlayer) ac.landed = ac.everAirborne && ac.alive && !ac.fm.crashed && ac.fm.wow && ac.fm.tas < 2 && this.onRunway(ac);
     }
-    for (const m of this.missiles) {
+    for (const m of this.netRole === 'client' ? [] : this.missiles) {
       m.step(dt, this);
       if (m.alive && m.target && m.target.kind === 'aircraft') {
         const t = m.target;
@@ -127,7 +133,7 @@ export class World {
       const msg = this.refuel.step(dt, this.player, this.aircraft);
       if (msg && this.refuel.status.tanker) this.radio(`${this.refuel.status.tanker.callsign}: ${msg}`, "#9fd8ff");
     }
-    this.missiles = this.missiles.filter((m) => m.alive);
+    if (this.netRole !== 'client') this.missiles = this.missiles.filter((m) => m.alive);
     this.bullets.step(dt, this);
     for (const cm of this.countermeasures) {
       cm.life -= dt;
@@ -137,8 +143,10 @@ export class World {
       cm.pos.addScaledVector(cm.vel, dt);
     }
     this.countermeasures = this.countermeasures.filter((c) => c.life > 0);
-    this.stepGround(dt);
-    this.stepSams(dt);
+    if (this.netRole !== 'client') {
+      this.stepGround(dt);
+      this.stepSams(dt);
+    }
     this.rwrTimer -= dt;
     if (this.rwrTimer <= 0) { this.rwrTimer = 0.1; this.compileRwr(); }
     if (this.chaffSeen.size > 20000) this.chaffSeen.clear();
@@ -194,7 +202,7 @@ export class World {
   }
 
   damageAircraft(a: Aircraft, dmg: number, by: Aircraft | null, weapon: string) {
-    if (!a.alive) return;
+    if (!a.alive || this.netRole === 'client') return; // the host decides hits in multiplayer
     const inv = a.isPlayer && this.opts.invulnerable;
     if (!by) a.lastHitWeapon = weapon;
     a.damage(dmg, by, weapon, inv);
@@ -206,7 +214,7 @@ export class World {
   }
 
   damageGround(g: GroundUnit, dmg: number, by: Aircraft | null) {
-    if (!g.alive) return;
+    if (!g.alive || this.netRole === 'client') return;
     g.damage(dmg, by);
     if (!g.alive) {
       this.addEffect('explosion', g.pos, g.radius * 1.5);

@@ -16,6 +16,7 @@
     "site": "npm run build:site && node scripts/serve.mjs --site"
   },
   "dependencies": {
+    "@trystero-p2p/torrent": "^0.26.0",
     "three": "0.186.1"
   },
   "devDependencies": {

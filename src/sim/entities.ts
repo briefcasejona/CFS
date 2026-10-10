@@ -70,6 +70,9 @@ export class Aircraft {
   /** nation id (world/nations.ts) — identity/markings; `side` is the coalition used by IFF and AI */
   nation = '';
   infiniteWeapons = false;
+  /** multiplayer: positioned from host snapshots (client side), or from a remote player's updates (host side) */
+  netGhost = false;
+  netProxy = false;
   squadronId = '';
 
   constructor(def: AircraftDef, side: Side, callsign: string, loadout: string[]) {
