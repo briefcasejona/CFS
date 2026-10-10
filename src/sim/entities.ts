@@ -67,6 +67,8 @@ export class Aircraft {
   landed = false;
   /** has left the ground at least once (a runway start isn't a landing) */
   everAirborne = false;
+  /** nation id (world/nations.ts) — identity/markings; `side` is the coalition used by IFF and AI */
+  nation = '';
   infiniteWeapons = false;
   squadronId = '';
 

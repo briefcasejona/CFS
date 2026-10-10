@@ -4,7 +4,7 @@ This file is the single source of truth for continuing the roadmap across sessio
 session at any time). Update it and `git commit && git push` after every finished step.
 
 ## Heartbeat (lock)
-- heartbeat: 2026-10-10T13:07:26+02:00
+- heartbeat: 2026-10-10T13:09:33+02:00
 - owner: interactive session (wishlist session)
 
 Rule: a session that is actively working updates `heartbeat` (local ISO time, `date -Iseconds`) at least every
@@ -32,7 +32,7 @@ less than 60 minutes old (someone else is working). When taking over, set `owner
 - [x] Phase 1 — installable PWA + Electron installer + CI (Pages + Releases), Quick Fight, how-to-fly, error overlay; auto-update verified on the user's PC (v0.1.0 → v0.1.1)
 - [x] Phase 1b — `ship-installable` user skill (~/.claude/skills/ship-installable)
 - [x] Phase 1c — 3D models: council verdict on the user's models, then integrate the usable ones (see below)
-- [ ] Phase 2 — foundations: Theater interface + registry, aircraft variant system (`extends`), Nation model, camera-relative rendering hook, campaign save migration (theaterId)
+- [x] Phase 2 — foundations: Theater interface + registry, aircraft variant system (`extends`), Nation model, camera-relative rendering hook, campaign save migration (theaterId)
 - [ ] Phase 3 — aircraft families: F-14A/B/B(U)/D, F-16A/B blk15, C/D blk40/50/70, F-15C/D, F-15E
 - [ ] Phase 4 — cameras + 3D cockpit (orbit chase cam, procedural/GLB cockpit, collimated HUD)
 - [ ] Phase 5 — radar/datalink, AWACS, aerial refueling
@@ -49,13 +49,20 @@ less than 60 minutes old (someone else is working). When taking over, set `owner
 Licence duties if used: attribution (credits screen + `assets/models/CREDITS.md`), non-commercial only, processed model files stay CC BY-NC-SA.
 
 ## Current step / next actions
-Phase 1c done (HD F-14 with shader wing-sweep + HD Gripen, opt-in setting 'HD aircraft models' on by default, credits in Settings,
-models in runtime cache not precache). Phase 2 in progress. DONE (1) Theater interface: src/world/theater.ts = Theater type + registry (registerTheater/setTheater/currentTheater/listTheaters, live-binding exports, theaterVersion), Varnia in src/world/theaters/varnia.ts, noise in src/world/noise.ts; MissionSpec.theaterId (buildMission activates it); CampaignState v2 with theaterId + v1 migration; terrain/map caches rebuild on theater switch; tests/theater.test.ts.
-DONE (2) aircraft variant system: types.ts (family/variant/seats/capabilities/allowedStores, VariantDef, DeepPartial), defs.ts (BASE + VARIANTS → mergeDeep/resolveVariant → finalize; familyOf/hasCapability), tests/aircraft.test.ts. NEXT:
-(3) Nation model + coalition per scenario (Side stays blue/red). (4) camera-relative rendering hook. Tests for each.
-Known cosmetic issue for Phase 8: dashed stripe artifacts along the horizon (distant clouds/terrain).
+Phase 2 done: Theater registry (src/world/theater.ts, theaters/varnia.ts, noise.ts), aircraft variant system (types.ts VariantDef/Capability,
+defs.ts BASE+VARIANTS→finalize), Nation model (src/world/nations.ts; Theater.nations; FlightSpec.nation → Aircraft.nation), terrain chunks already
+chunk-local (precision OK). NOTE for Phase 8: TerrainRenderer.update loops over ALL chunks — window it around the camera for Europe.
+NEXT: Phase 3 aircraft families via VARIANTS in src/aircraft/defs.ts:
+- F-14: f14a (TF30-P-414A 2×~93 kN AB / 2×~55 kN mil, AWG-9, compressor-stall flag), f14b (F110-GE-400 2×~124 kN AB / ~71 kN mil, AWG-9), keep f14b as B(U)
+  (rename id? keep 'f14b' = F-14B(U) for saves), f14d (F110, APG-71 + IRST, digital). All seats 2, family 'F-14', HD model shared (HD_SPECS keyed by family).
+- F-16: f16a (blk15 APG-66, no AMRAAM: AIM-9 + bombs, F100-PW-200), f16c40 (F110-GE-100, LANTIRN → lgb), f16c (=blk50, HTS/AGM-88), f16c70 (APG-83 AESA, CFTs: +fuel +drag),
+  two-seat B/D variants (+~400 kg, −~500 kg fuel, seats 2).
+- F-15: f15d (two-seat C), f15e (CFT, WSO, APG-82, F100-PW-229, strike loadouts: GBU-12/31?, AGM-65, AIM-120/9).
+- Make HD_SPECS lookup by family (F-14 GLB for all F-14s, Gripen for jas39 family). Aircraft DB + Instant Action grids grouped by family.
+- Campaign/ATO: only assign tasks the variant has capabilities for (hasCapability). Envelope test per variant in tests/fm.test.ts.
 
 ## Log
+- 2026-10-10 — Phase 2 done (theater registry, variants, nations), 40 tests; release v0.1.3.
 - 2026-10-10 — Phase 1c done: HD models in game (F-14 swing-wing shader, Gripen), runway-start landing bug fixed, 30 tests.
 - 2026-10-10 — 3D model council done; optimized F-14/Gripen GLBs committed with licence file; auto-resume task cfs-roadmap-resume created (every 2 h).
 - 2026-10-10 — Phases 0, 1, 1b done; public: https://briefcasejona.github.io/CFS/ ; installer v0.1.1 on Releases.

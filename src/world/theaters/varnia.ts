@@ -27,6 +27,7 @@ export const VARNIA: Theater = {
   description: 'Fictional 400 × 400 km peninsula: Coalition (south) vs Federation (north) across the Lenva river.',
   half: 200000,
   factions: { blue: 'Coalition', red: 'Federation' },
+  nations: { blue: ['coalition'], red: ['federation'] },
   rawHeight,
   sectors: 8,
   initialFront: [5000, 0, -5000, 0, 8000, 5000, -3000, 0],

@@ -40,6 +40,8 @@ export interface Theater {
   half: number;
   /** display names of the two coalitions */
   factions: { blue: string; red: string };
+  /** nations in each coalition (ids from nations.ts); the first is the default for new flights */
+  nations: { blue: string[]; red: string[] };
   /** terrain height without airbase flattening; negative = sea floor */
   rawHeight(x: number, z: number): number;
   airbases: Airbase[];
@@ -145,6 +147,9 @@ export function frontZAt(front: number[], x: number): number {
   const t = clamp(f - i, 0, 1);
   return front[i] * (1 - t) + front[j] * t;
 }
+
+/** Default nation for a side in the active theater. */
+export function defaultNation(side: Side): string { return current.nations[side][0]; }
 
 export function airbaseById(id: string) { return AIRBASES.find((a) => a.id === id)!; }
 export function nearestAirbase(x: number, z: number, side?: Side) {

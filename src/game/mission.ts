@@ -4,7 +4,7 @@ import { AIRCRAFT_BY_ID, getAircraft } from '../aircraft/defs.js';
 import { Aircraft, GroundUnit, SamSite, type GroundType } from '../sim/entities.js';
 import { World, type WorldOptions } from '../sim/world.js';
 import { AIPilot, type AITask, type Skill } from '../ai/pilot.js';
-import { airbaseById, runwayEnds, setTheater, terrainHeight, type SamType } from '../world/theater.js';
+import { airbaseById, defaultNation, runwayEnds, setTheater, terrainHeight, type SamType } from '../world/theater.js';
 import type { Weather } from '../render/scene.js';
 import { WEAPONS } from '../weapons/stores.js';
 import { FT, KT, NM } from '../sim/atmosphere.js';
@@ -30,6 +30,8 @@ export interface FlightSpec {
   targetGroup?: string;
   player?: boolean;
   squadronId?: string;
+  /** nation id (nations.ts); defaults to the theater's first nation for the side */
+  nation?: string;
 }
 
 export type GroupKind = 'sam' | 'armor' | 'convoy' | 'factory' | 'depot' | 'bridge' | 'radar' | 'command' | 'airbase' | 'city';
@@ -201,6 +203,7 @@ export function buildMission(spec: MissionSpec, opts: WorldOptions): BuiltMissio
     const cs = f.callsign || callsignFor(f.side, f.side === 'blue' ? csBlue++ : csRed++);
     for (let i = 0; i < f.count; i++) {
       const ac = new Aircraft(def, f.side, `${cs} 1-${i + 1}`, f.stores);
+      ac.nation = f.nation ?? defaultNation(f.side);
       ac.flightId = f.id;
       ac.wingIndex = i;
       ac.homeBaseId = f.homeBase;

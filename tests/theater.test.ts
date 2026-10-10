@@ -2,11 +2,13 @@ import { describe, expect, it } from './expect.js';
 import * as T from '../src/world/theater.js';
 import { newCampaign, validateState } from '../src/campaign/campaign.js';
 import { buildMission, buildScenario, defaultCustom } from '../src/game/mission.js';
+import { NATIONS } from '../src/world/nations.js';
 
 const OPTS = { unlimitedFuel: false, unlimitedWeapons: false, invulnerable: false, gEffects: true, abDetent: 0.8 };
 const FLAT: T.Theater = {
   id: 'test-flat', name: 'Test Flats', description: 'flat test theater', half: 50000,
   factions: { blue: 'Blue', red: 'Red' },
+  nations: { blue: ['nl', 'de'], red: ['ru'] },
   rawHeight: (x) => (x < -40000 ? -50 : 100), // sea in the far west
   sectors: 4, initialFront: [0, 0, 0, 0],
   airbases: [{ id: 'tb', name: 'Test Base', side: 'blue', x: 0, z: 20000, hdg: 0, length: 3000, elev: 0 }],
@@ -52,6 +54,21 @@ describe('theaters', () => {
     expect(T.currentTheater().id).toBe('test-flat');
     buildMission(spec, OPTS);
     expect(T.currentTheater().id).toBe('varnia');
+  });
+
+  it('flights get a nation: explicit, or the theater default for their side', () => {
+    T.registerTheater(FLAT);
+    const spec = buildScenario(defaultCustom());
+    const air = { kind: 'air', x: 0, z: 0, alt: 4000, hdg: 0, speed: 200 } as const;
+    const flights = spec.flights.map((f, i) => ({ ...f, start: air, nation: i === 0 ? 'de' : undefined }));
+    const b = buildMission({ ...spec, theaterId: 'test-flat', flights, groups: [] }, OPTS);
+    expect(b.player.nation).toBe('de');
+    const red = b.world.aircraft.find((a) => a.side === 'red')!;
+    expect(red.nation).toBe('ru');
+    expect(NATIONS[red.nation].airForce).toBe('Russian Aerospace Forces');
+    const v = buildMission(spec, OPTS);
+    expect(v.player.nation).toBe('coalition');
+    for (const t of T.listTheaters()) for (const side of ['blue', 'red'] as const) for (const n of t.nations[side]) expect(!!NATIONS[n], `${t.id} ${n}`).toBe(true);
   });
 
   it('campaign saves migrate from version 1 (no theater) to version 2', () => {
