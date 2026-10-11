@@ -32,7 +32,9 @@ export interface EngineDef {
 
 export interface LimitsDef {
   gMax: number; gMin: number;
-  aoaMax: number;       // deg (FBW limiter, or structural/departure for manual)
+  aoaMax: number;       // deg: hard FBW limiter, soft (warning + fading stick) on CAS/analog jets
+  /** negative AoA limit (deg, positive number); default 10 */
+  aoaNeg?: number;
   rollRate: number;     // deg/s max commanded (FBW) / typical
   maxMach: number;
   vmaxKcas: number;

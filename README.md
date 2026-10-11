@@ -30,6 +30,13 @@ All 16 fly on the same **6-DOF rigid-body flight model**, and each jet supplies 
 * **Fly-by-wire** (F-16, F/A-18, Flankers, Su-57, Mirage, Rafale, Gripen, Typhoon): G/AoA-command pitch law with limiter, roll-rate command, sideslip and turn coordination.
 * **Mechanical / CAS** (F-15, F-14, F-4E, T-38, MiG-29, Harrier): stick drives the surfaces, plus dampers. These jets can be over-G'd, stalled and departed.
 * **Thrust vectoring** (Su-30, Su-57), **automatic swing wing** (F-14), **vectored-thrust V/STOL with reaction controls** (Harrier).
+* Flight controls that feel like the real system:
+  * **Fly-by-wire** (F-16, F/A-18, Typhoon, Gripen, Flankers, Rafale, Mirage) has hard G and AoA limiters, stability-axis rolling and sideslip suppression.
+  * **Digital CAS** (F-15, F-14B/D) and **analog** (F-14A, F-4) jets have soft limits: the stick goes light near the limit, and an analog jet needs rudder at high AoA.
+  * Limits:
+    * 50° AoA on the F/A-18, F-14, Typhoon, Gripen and Su-27/30/57; 35° on the rest; −10° on all.
+    * +9 g on the F-16, F-15, Typhoon, Gripen and Su-27/30/57; +7 g on the rest; −3 g on all.
+* Pilot G tolerance: about 7.5 g sustained (8.5 g in reclined-seat jets). At 9 g the pilot greys out and blacks out after about 10 s; real G-LOC releases the controls for a few seconds.
 * ISA atmosphere, ground handling (gear spring-dampers, nosewheel steering, brakes), tail strikes, hard-landing gear collapse, over-G structural failure, G-LOC / red-out.
 
 ## Combat

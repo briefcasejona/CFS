@@ -292,6 +292,7 @@ export class Hud {
     if (p.rwr.some((r) => r.kind === 'launch' || r.kind === 'missile')) w.push('MISSILE');
     if (fm.stalled) w.push('STALL');
     if (fm.nz > p.def.limits.gMax * 1.02) w.push('OVER G');
+    if (!fm.wow && (fm.alpha * RAD > p.def.limits.aoaMax || fm.alpha * RAD < -(p.def.limits.aoaNeg ?? 10))) w.push('AOA');
     if (fm.totalFuel < p.def.fuelInternal * 0.15) w.push('BINGO');
     if (fm.damage.engine < 0.6) w.push('ENGINE');
     if (fm.damage.fuelLeak > 0) w.push('FUEL LEAK');

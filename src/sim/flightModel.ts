@@ -84,6 +84,9 @@ export class FlightModel {
   private alphaInt = 0;
   private alphaPrev = 0;
   private alphaDot = 0;
+  private nzPrev = 1;
+  /** load-factor rate (g/s), smoothed — the limiters look ahead on it */
+  private nzDot = 0;
   private qi = new THREE.Quaternion();
 
   // outputs
@@ -353,13 +356,18 @@ export class FlightModel {
     const rhat = this.r * b / (2 * Vs);
     let Cm = Cma * alpha + A.Cmq * qhat + A.Cmde * this.elev * superCtrl - 0.02 * this.brakePos - 0.04 * this.flapPos;
     Cm -= stallF * 0.08 * sgn * (def.fcs.canard ? 0.3 : 1); // pitch break
-    const depart = smoothstep(aSt * 0.7, aSt * 1.2, absA);
-    const Cnb = A.Cnb * (1 - 1.5 * depart);
-    const Clb = A.Clb * (1 - 1.8 * depart);
-    const advYaw = -0.15 * A.Clda * this.ail * Math.sin(2 * absA) * (def.fcs.type === 'manual' ? 2 : 0.6);
+    // directional stability fades past the stall and only reverses (mildly) deep post-stall — the FCS or the pilot's
+    // feet have to keep the sideslip in check up there
+    const depart = smoothstep(aSt * 1.0, aSt * 1.6, absA);
+    const Cnb = A.Cnb * (1 - 1.3 * depart);
+    const Clb = A.Clb * (1 - 1.2 * depart);
+    // adverse yaw from the ailerons grows with AoA; FCS-coordinated jets hide most of it
+    const advYaw = -0.15 * A.Clda * this.ail * Math.sin(2 * absA) * (def.fcs.type === 'manual' ? 1 : def.fcs.type === 'cas' ? 0.6 : 0.3);
+    // yaw due to roll rate (Cnp ≈ −CL/8)
+    const Cnp = -clamp(CL, -1.5, 1.5) / 8;
     const wingRock = stallF * 0.015 * Math.sin(this.time * 2.3) * (1 + Math.sin(this.time * 0.7));
     const Cl = Clb * beta + A.Clp * phat + A.Clr * rhat + A.Clda * this.ail * superCtrl * (1 - 0.5 * stallF) + wingRock;
-    const Cn = Cnb * beta + A.Cnr * rhat + A.Cndr * this.rud * superCtrl * (1 - 0.4 * stallF) + advYaw;
+    const Cn = Cnb * beta + A.Cnr * rhat + Cnp * phat + A.Cndr * this.rud * superCtrl * (1 - 0.4 * stallF) + advYaw;
     const CY = A.CYb * beta;
 
     // --- forces (world frame)
@@ -471,19 +479,29 @@ export class FlightModel {
     const ctrlRate = 60 * DEG;
     this.alphaDot += ((this.alpha - this.alphaPrev) / dt - this.alphaDot) * Math.min(1, dt * 20);
     this.alphaPrev = this.alpha;
+    this.nzDot += ((this.nz - this.nzPrev) / dt - this.nzDot) * Math.min(1, dt * 15);
+    this.nzPrev = this.nz;
+    const nzLead = this.nz + 0.12 * this.nzDot;
 
     if (def.fcs.type === 'fbw' && !this.wow && V > 30) {
       // ---- Pitch: G command with AoA limiter (model following + integral)
-      const aoaMax = Math.min(L.aoaMax * DEG, aStall * 0.97 + (def.fcs.tvc ? 15 * DEG : 0));
-      const nCmd = pitchIn >= 0 ? 1 + pitchIn * (L.gMax - 1) : 1 + -pitchIn * (L.gMin - 1);
+      // hard AoA limiter at the jet's limit (post-stall AoA is flown on the FCS, not on natural stability)
+      const aoaMax = L.aoaMax * DEG, aoaNeg = (L.aoaNeg ?? 10) * DEG;
+      // full stick commands 96 % of the limit: the law settles a few percent high, so the jet lands just under it
+      const nCmd = pitchIn >= 0 ? 1 + pitchIn * (0.96 * L.gMax - 1) : 1 + -pitchIn * (0.96 * L.gMin - 1);
       const W = this.mass * G0;
       const clReq = (nCmd * W) / Math.max(qbar * S, 1);
       // the flaps' share of the lift is subtracted, so the law doesn't over-command AoA in the landing configuration
       let aCmd = (clReq - A.CL0 - A.flapCL * this.flapPos) / CLa;
+      // hard G limit: take back the AoA worth of any (anticipated) load beyond the command
+      const gOver = pitchIn >= 0 ? Math.max(0, nzLead - Math.min(nCmd, L.gMax)) : Math.min(0, nzLead - Math.max(nCmd, L.gMin));
+      aCmd -= (0.6 * gOver * W) / Math.max(qbar * S, 1) / CLa;
       this.alphaInt = clamp(this.alphaInt + (nCmd - this.nz) * 0.03 * dt, -0.08, 0.08);
       aCmd += this.alphaInt;
-      if (aCmd > aoaMax) { aCmd = aoaMax; this.alphaInt = Math.min(this.alphaInt, 0.0); }
-      if (aCmd < -10 * DEG) aCmd = -10 * DEG;
+      // the limit anticipates the AoA rate so a full-stick pull does not overshoot it
+      const aLim = aoaMax - 0.12 * Math.max(0, this.alphaDot);
+      if (aCmd > aLim) { aCmd = aLim; this.alphaInt = Math.min(this.alphaInt, 0.0); }
+      if (aCmd < -aoaNeg) { aCmd = -aoaNeg; this.alphaInt = Math.max(this.alphaInt, 0); }
       const gamma = Math.asin(clamp(this.vel.y / Vs, -1, 1));
       const qRef = (G0 / Vs) * (Math.min(nCmd, this.nz + 1) - Math.cos(gamma) * Math.cos(att.roll));
       const Cma = A.Cma - 0.35 * smoothstep(0.9, 1.3, this.mach);
@@ -496,25 +514,63 @@ export class FlightModel {
         this.tvc = clamp(sat * 1.5 + (de / eMax) * def.fcs.tvc * DEG * 0.3, -def.fcs.tvc * DEG, def.fcs.tvc * DEG);
       }
       // ---- Roll: rate command
-      const hiA = smoothstep(12 * DEG, Math.max(aoaMax, 13 * DEG), Math.abs(this.alpha));
-      const pCmd = rollIn * L.rollRate * DEG * (1 - 0.6 * hiA) * clamp(qbar / 6000, 0.25, 1);
+      // roll about the velocity vector: at high AoA the rate is limited to what the rudder can coordinate (r = p·tanα)
+      // and the roll-rate limiter tightens with AoA (pitch–roll inertia coupling grows with p·q)
+      const absAl = Math.abs(this.alpha);
+      const tanA = Math.tan(clamp(absAl, 0, 1.2));
+      const pMax = Math.min(L.rollRate * DEG * (1 - 0.65 * smoothstep(8 * DEG, 30 * DEG, absAl)), (50 * DEG) / Math.max(tanA, 0.05))
+        * clamp(qbar / 6000, 0.25, 1);
+      // roll–sideslip interconnect: if the rudder can't keep up and sideslip builds, the roll command backs off
+      const pCmd = rollIn * pMax * (1 - 0.8 * smoothstep(2 * DEG, 10 * DEG, Math.abs(this.beta)));
       const clNeeded = -A.Clp * pCmd * b / (2 * Vs) + 3.0 * (pCmd - this.p) * b / (2 * Vs) - A.Clb * this.beta;
       da = clNeeded / A.Clda;
       // ---- Yaw: sideslip command + turn coordination + damper
       const betaCmd = -yawIn * 8 * DEG;
       const rRef = this.p * Math.tan(clamp(this.alpha, -0.6, 0.9)) + G0 * Math.sin(att.roll) * Math.cos(att.pitch) / Vs;
-      const cnNeeded = -A.Cnb * betaCmd + 0.4 * (this.beta - betaCmd) - 6 * (this.r - rRef) * b / (2 * Vs);
+      // sideslip + yaw-rate feedback (moderate gains: a saturated rudder would ring) plus feed-forward cancelling the
+      // inertial yaw moment of rolling while pulling, (Ixx − Iyy)·p·q
+      const [Ixx, Iyy] = def.inertia;
+      const mS = clamp(this.mass / (def.massEmpty + def.fuelInternal * 0.5), 0.7, 1.6);
+      const cnCoupling = ((Ixx - Iyy) * mS * this.p * this.q) / Math.max(qbar * S * b, 1);
+      const cnNeeded = -A.Cnb * betaCmd + 0.15 * (this.beta - betaCmd) - 6 * (this.r - rRef) * b / (2 * Vs) - cnCoupling;
       dr = cnNeeded / A.Cndr;
     } else {
-      // ---- Mechanical / CAS (stability augmentation only — no limiter)
+      // ---- Digital CAS (F-15, F-14B/D…) or analog stability augmentation (F-14A, F-4): no hard limiter
       this.alphaInt = 0;
-      const sas = def.fcs.type === 'manual' ? 0.5 : 1;
+      const cas = def.fcs.type === 'cas';
+      const sas = cas ? 1 : 0.5;
       const gnd = this.wow || V < 30;
-      de = pitchIn * eMax - (gnd ? 0 : sas * 2.5 * this.q * cbar / (2 * Vs) / A.Cmde);
-      da = rollIn * aMax - (gnd ? 0 : sas * 0.4 * this.p * b / (2 * Vs) / A.Clda);
-      const rRef = G0 * Math.sin(att.roll) * Math.cos(att.pitch) / Vs;
+      // soft limiter: approaching the G or AoA limit, the stick's authority in that direction fades — on analog jets to
+      // 30 % (a determined pilot can pull through and overstress the jet), on digital CAS jets to nothing by 110 %
+      let pitchCmd = pitchIn;
+      if (!gnd) {
+        // digital CAS looks ahead on the AoA rate; analog jets only "feel" the AoA itself
+        const aDeg = (this.alpha + (cas ? 0.35 * this.alphaDot : 0)) / DEG;
+        const fade = (x: number) => cas ? 1 - 0.7 * smoothstep(0.82, 1.0, x) - 0.3 * smoothstep(1.0, 1.12, x) : 1 - 0.7 * smoothstep(0.9, 1.0, x);
+        const n = cas ? nzLead : this.nz;
+        if (pitchCmd > 0) pitchCmd *= Math.min(fade(n / L.gMax), fade(aDeg / L.aoaMax));
+        else pitchCmd *= Math.min(fade(n / L.gMin), fade(-aDeg / (L.aoaNeg ?? 10)));
+      }
+      // pitch ratio changer: less stabilator per inch of stick at high dynamic pressure, so a full-stick pull at
+      // speed lands near the G limit instead of far past it
+      const gearing = gnd ? 1 : clamp((cas ? 14000 : 22000) / Math.max(qbar, 1), cas ? 0.3 : 0.45, 1);
+      de = pitchCmd * eMax * gearing - (gnd ? 0 : sas * (cas ? 4 : 2.5) * this.q * cbar / (2 * Vs) / A.Cmde);
+      // digital CAS backs the roll off when sideslip builds (it cannot out-yaw the inertia coupling)
+      const rollCmd = cas && !gnd ? rollIn * (1 - 0.6 * smoothstep(3 * DEG, 12 * DEG, Math.abs(this.beta))) : rollIn;
+      da = rollCmd * aMax - (gnd ? 0 : sas * 0.4 * this.p * b / (2 * Vs) / A.Clda);
+      // yaw damper about the stability axis (p·tanα), so it damps Dutch roll without fighting coordinated rolls
+      const tanA = Math.tan(clamp(this.alpha, -0.6, 0.9));
+      const rRef = this.p * tanA * (cas ? 1 : 0.5) + G0 * Math.sin(att.roll) * Math.cos(att.pitch) / Vs;
       dr = yawIn * rMax - (gnd ? 0 : sas * 1.5 * (this.r - rRef) * b / (2 * Vs) / A.Cndr);
-      if (def.fcs.type === 'cas' && !gnd) dr += rollIn * aMax * 0.4 * Math.sin(Math.abs(this.alpha)); // ARI
+      if (cas && !gnd) {
+        // aileron-rudder interconnect (rudder follows roll commands with AoA) and sideslip feedback
+        dr += rollIn * rMax * 0.6 * Math.sin(Math.abs(this.alpha) * 1.5);
+        dr += 0.5 * this.beta / A.Cndr * 0.1;
+        // feed-forward against the inertial yaw of rolling while pulling, (Ixx − Iyy)·p·q
+        const [Ixx, Iyy] = def.inertia;
+        const mS = clamp(this.mass / (def.massEmpty + def.fuelInternal * 0.5), 0.7, 1.6);
+        dr -= ((Ixx - Iyy) * mS * this.p * this.q) / Math.max(qbar * S * b, 1) / A.Cndr;
+      }
       if (def.fcs.tvc) this.tvc = pitchIn * def.fcs.tvc * DEG;
     }
     de = clamp(de, -eMax, eMax) * health;
