@@ -1,17 +1,21 @@
-// Optional high-detail (HD) aircraft models loaded from glTF files (user-supplied, CC BY-NC-SA — see
-// assets/models/cc-by-nc-sa/LICENSE.md). The procedural model stays the source of truth: it is shown until the
-// GLB has loaded, beyond HD_RANGE, when HD models are disabled, and it is what hit-tests/physics are sized from.
+// Optional high-detail (HD) aircraft models loaded from glTF files (third-party, see the LICENSE.md next to each
+// file under assets/models/). The procedural model stays the source of truth: it is shown until the GLB has loaded,
+// beyond HD_RANGE, when HD models are disabled, and it is what hit-tests/physics are sized from.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { AircraftDef } from '../aircraft/types.js';
 
 export interface HdSpec {
   url: string;
   title: string; author: string; source: string; license: string;
-  /** node-name patterns (matched against "parentName/meshName") */
+  /** node-path patterns (matched against "ancestor/…/node" names) */
   gearDown: RegExp; gearUp: RegExp; cockpit: RegExp; hide?: RegExp;
-  /** swing wing (F-14): outer-wing vertices beyond |x| > minAbsX (game metres) and forward of maxZ rotate around (±pivotX, *, pivotZ) */
-  swing?: { pivotX: number; pivotZ: number; minAbsX: number; maxZ: number; refSweep: number };
+  /** source axes: 'xfwd' = nose +X, right +Z (bohmerang exports, default); 'zfwd' = nose +Z, left +X (FBX exports) */
+  axes?: 'xfwd' | 'zfwd';
+  /** articulated swing wing: node paths of every moving wing part (panel, slats, flaps, spoilers, lights…), the pivot of
+   *  the wing on the source's +X side in source metres, and the sweep (deg) the model is built at */
+  wings?: { parts: RegExp; pivot: { x: number; z: number }; refSweep: number };
   /** pilot eye position in game metres (body frame); default: ~0.65 m behind and just above the HUD combiner node,
    *  else derived from the cockpit node's bounds */
   eye?: { y: number; z: number };
@@ -21,20 +25,24 @@ export interface HdSpec {
 
 const BOHMERANG = { author: 'bohmerang', license: 'CC BY-NC-SA 4.0' };
 const BOH_PARTS = { gearDown: /landingOn/i, gearUp: /landingOff/i, cockpit: /cockpit|hud/i };
+const NEVER = /(?!)/;
 
 /** HD models, keyed by aircraft id (one variant) or by family (every variant of the family). */
 export const HD_SPECS: Record<string, HdSpec> = {
+  // one articulated model for the whole family: wings, slats, flaps and spoilers are separate nodes that sweep
+  // rigidly about the real pivot (2.72 m from the centreline) — the published 68° / 75° spans check out on it
   'F-14': {
-    url: 'assets/models/cc-by-nc-sa/f14.glb', title: 'F-14 Tomcat - Fighter Jet - Free', author: 'bohmerang',
-    source: 'https://sketchfab.com/3d-models/f-14-tomcat-fighter-jet-free-497f77c311b5411d9b567d8707a81c33', license: 'CC BY-NC-SA 4.0',
-    gearDown: /gearOn/i, gearUp: /gearOff/i, cockpit: /cockpit|instrGlass/i,
-    swing: { pivotX: 2.7, pivotZ: -1.5, minAbsX: 3.85, maxZ: 4.5, refSweep: 20 },
-    eye: { y: 1.6, z: -5.0 },
+    url: 'assets/models/cc-by/f14d.glb', title: 'Grumman F-14D "Super Tomcat"', author: 'KOG_THORNS',
+    source: 'https://sketchfab.com/3d-models/grumman-f-14d-super-tomcat-74be89a104a34caabacb25a705708097', license: 'CC BY 4.0',
+    axes: 'zfwd',
+    gearDown: /vehicle#(gear|wheel)_/i, gearUp: NEVER,
+    cockpit: /MFD Display|DISPLAY|\/HUD\/|cockpit|Meshpart|RIO|\/Glass\//i,
+    hud: /\/HUD\//,
+    wings: { parts: /vehicle#(wing_[lr]_|slat_[lr]_|flap\w*?_[lr]_|aileron_interceptor_[lr]_)/i, pivot: { x: 2.72, z: 0.32 }, refSweep: 20 },
   },
   'JAS 39': {
-    url: 'assets/models/cc-by-nc-sa/gripen.glb', title: 'Saab JAS 39 Gripen - Fighter Jet - Free', author: 'bohmerang',
-    source: 'https://sketchfab.com/3d-models/saab-jas-39-gripen-fighter-jet-free-03d4f4f0f7e94f469299ba7db4c707c4', license: 'CC BY-NC-SA 4.0',
-    gearDown: /landingOn/i, gearUp: /landingOff/i, cockpit: /cockpit|hud/i,
+    url: 'assets/models/cc-by-nc-sa/gripen.glb', title: 'Saab JAS 39 Gripen - Fighter Jet - Free', ...BOHMERANG,
+    source: 'https://sketchfab.com/3d-models/saab-jas-39-gripen-fighter-jet-free-03d4f4f0f7e94f469299ba7db4c707c4', ...BOH_PARTS,
   },
   'F-16': {
     url: 'assets/models/cc-by-nc-sa/f16.glb', title: 'F-16 Fighting Falcon - Fighter Jet - Free', ...BOHMERANG,
@@ -64,8 +72,11 @@ interface Template { root: THREE.Group; spec: HdSpec }
 const templates = new Map<string, Promise<Template | null>>();
 let loader: GLTFLoader | null = null;
 
-// source (x fwd, y up, z right) → game (x right, y up, z aft)
-const SRC_TO_GAME = new THREE.Matrix4().set(0, 0, 1, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 0, 1);
+// source → game frame (x right, y up, z aft)
+const SRC_TO_GAME = {
+  xfwd: new THREE.Matrix4().set(0, 0, 1, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 0, 1),   // x fwd, z right
+  zfwd: new THREE.Matrix4().makeRotationY(Math.PI),                                   // z fwd, x left
+};
 
 function loadTemplate(def: AircraftDef): Promise<Template | null> {
   let p = templates.get(def.id);
@@ -82,69 +93,95 @@ function loadTemplate(def: AircraftDef): Promise<Template | null> {
   return p;
 }
 
-/** Flatten the glTF hierarchy into game-frame meshes (metres, nose −Z), scaled to def.length, gear bottom at −gear.height. */
+/** every attribute becomes a plain, uniform Float32 attribute: quantized (KHR_mesh_quantization) data survives being
+ *  transformed, and geometries from different nodes can be merged (mergeGeometries needs identical attribute types) */
+function floatAttributes(g: THREE.BufferGeometry) {
+  for (const name of Object.keys(g.attributes)) {
+    const a = g.getAttribute(name) as THREE.BufferAttribute;
+    const out = new Float32Array(a.count * a.itemSize);
+    for (let i = 0; i < a.count; i++) for (let k = 0; k < a.itemSize; k++) out[i * a.itemSize + k] = a.getComponent(i, k);
+    g.setAttribute(name, new THREE.BufferAttribute(out, a.itemSize));
+  }
+}
+
+function pathOf(o: THREE.Object3D) {
+  let s = '';
+  for (let a: THREE.Object3D | null = o; a; a = a.parent) s = `${a.name}/${s}`;
+  return s;
+}
+
+/**
+ * Flatten the glTF hierarchy into game-frame meshes (metres, nose −Z), scaled to def.length with the gear bottom at
+ * −gear.height, merged per role / wing side / material to keep draw calls low. Moving wing parts are tagged with
+ * their side; root.userData.pivot is the (right) wing pivot in the game frame.
+ */
 export function bake(scene: THREE.Object3D, spec: HdSpec, def: AircraftDef): THREE.Group {
   scene.updateMatrixWorld(true);
-  const parts: { name: string; mesh: THREE.Mesh }[] = [];
+  const toGame = SRC_TO_GAME[spec.axes ?? 'xfwd'];
+  const parts: { name: string; geo: THREE.BufferGeometry; mat: THREE.Material; wing: number }[] = [];
   scene.traverse((o) => {
     const m = o as THREE.Mesh;
     if (!m.isMesh) return;
-    const name = `${m.parent?.name ?? ''}/${m.name}`;
+    const name = pathOf(m);
     const g = m.geometry.clone();
-    g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(SRC_TO_GAME, m.matrixWorld));
-    for (const a of ['tangent', 'uv2', 'uv3']) if (g.getAttribute(a)) g.deleteAttribute(a);
-    parts.push({ name, mesh: new THREE.Mesh(g, m.material) });
+    floatAttributes(g);
+    g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(toGame, m.matrixWorld));
+    for (const a of ['tangent', 'uv1', 'uv2', 'uv3']) if (g.getAttribute(a)) g.deleteAttribute(a);
+    if (!g.getAttribute('normal')) g.computeVertexNormals();   // parts simplified without normals
+    let wing = 0;
+    if (spec.wings?.parts.test(name)) { g.computeBoundingBox(); wing = Math.sign(g.boundingBox!.min.x + g.boundingBox!.max.x) || 1; }
+    parts.push({ name, geo: g, mat: m.material as THREE.Material, wing });
   });
-  // scale + centre on the airframe bounding box
+  // scale + centre on the airframe bounding box (gear excluded)
   const box = new THREE.Box3();
-  for (const p of parts) if (!spec.gearDown.test(p.name) && !spec.gearUp.test(p.name)) box.expandByObject(p.mesh);
+  for (const p of parts) if (!spec.gearDown.test(p.name) && !spec.gearUp.test(p.name)) { p.geo.computeBoundingBox(); box.union(p.geo.boundingBox!); }
   const s = def.length / (box.max.z - box.min.z);
   let gearMin = Infinity;
-  for (const p of parts) if (spec.gearDown.test(p.name)) { p.mesh.geometry.computeBoundingBox(); gearMin = Math.min(gearMin, p.mesh.geometry.boundingBox!.min.y); }
+  for (const p of parts) if (spec.gearDown.test(p.name)) { p.geo.computeBoundingBox(); gearMin = Math.min(gearMin, p.geo.boundingBox!.min.y); }
   const cz = (box.min.z + box.max.z) / 2;
   const yShift = Number.isFinite(gearMin) ? -def.gear.height - gearMin * s : -((box.min.y + box.max.y) / 2) * s;
   const fix = new THREE.Matrix4().makeTranslation(0, yShift, -cz * s).multiply(new THREE.Matrix4().makeScale(s, s, s));
   const root = new THREE.Group();
+  if (spec.wings) {
+    const pv = new THREE.Vector3(spec.wings.pivot.x, 0, spec.wings.pivot.z).applyMatrix4(toGame).applyMatrix4(fix);
+    root.userData.pivot = { x: Math.abs(pv.x), z: pv.z };
+  }
+  // merge parts that share role, wing side, material and attribute layout
+  const groups = new Map<string, { role: string; wing: number; mat: THREE.Material; geos: THREE.BufferGeometry[]; name: string; hud: boolean }>();
   for (const p of parts) {
-    p.mesh.geometry.applyMatrix4(fix);
-    p.mesh.geometry.computeBoundingSphere();
-    p.mesh.name = p.name;
-    p.mesh.userData.hud = (spec.hud ?? /hud/i).test(p.name);
-    p.mesh.userData.role = spec.gearDown.test(p.name) ? 'gearDown' : spec.gearUp.test(p.name) ? 'gearUp'
+    p.geo.applyMatrix4(fix);
+    const role = spec.gearDown.test(p.name) ? 'gearDown' : spec.gearUp.test(p.name) ? 'gearUp'
       : spec.cockpit.test(p.name) ? 'cockpit' : spec.hide?.test(p.name) ? 'hidden' : 'body';
-    const mats = (Array.isArray(p.mesh.material) ? p.mesh.material : [p.mesh.material]) as THREE.MeshStandardMaterial[];
+    const hud = (spec.hud ?? /hud/i).test(p.name);
+    const mats = (Array.isArray(p.mat) ? p.mat : [p.mat]) as THREE.MeshStandardMaterial[];
     for (const mt of mats) if (mt.isMeshStandardMaterial && mt.metalness > 0.4) mt.metalness = 0.4; // no env map: keep metal from going black
-    if (spec.swing && /airframe/i.test(p.name) && !spec.gearDown.test(p.name) && !spec.gearUp.test(p.name)) {
-      // un-index so every triangle can be classified as a whole: the outer panel then pivots rigidly instead of
-      // stretching the root triangles across the glove
-      if (p.mesh.geometry.index) p.mesh.geometry = p.mesh.geometry.toNonIndexed();
-      addSwingAttribute(p.mesh.geometry, spec.swing);
+    const layout = Object.keys(p.geo.attributes).sort().join(',') + (p.geo.index ? ':i' : ':n');
+    const key = `${role}|${p.wing}|${hud}|${(p.mat as THREE.Material).uuid}|${layout}`;
+    let g = groups.get(key);
+    if (!g) { g = { role, wing: p.wing, mat: p.mat, geos: [], name: p.name, hud }; groups.set(key, g); }
+    g.geos.push(p.geo);
+  }
+  for (const g of groups.values()) {
+    // a merge that still fails must not drop parts: fall back to one mesh per part
+    const merged = g.geos.length === 1 ? g.geos[0] : mergeGeometries(g.geos, false);
+    for (const geo of merged ? [merged] : g.geos) {
+      geo.computeBoundingSphere();
+      const mesh = new THREE.Mesh(geo, g.mat);
+      mesh.name = g.name;
+      mesh.userData.role = g.role;
+      mesh.userData.wing = g.wing;
+      mesh.userData.hud = g.hud;
+      root.add(mesh);
     }
-    root.add(p.mesh);
   }
   return root;
-}
-
-export function addSwingAttribute(g: THREE.BufferGeometry, sw: NonNullable<HdSpec['swing']>) {
-  const pos = g.getAttribute('position');
-  const a = new Float32Array(pos.count);
-  const perTri = !g.index;
-  for (let i = 0; i < pos.count; i += perTri ? 3 : 1) {
-    const n = perTri ? 3 : 1;
-    let x = 0, z = 0;
-    for (let k = 0; k < n; k++) { x += pos.getX(i + k); z += pos.getZ(i + k); }
-    x /= n; z /= n;
-    const v = Math.abs(x) > sw.minAbsX && z < sw.maxZ ? Math.sign(x) : 0;
-    for (let k = 0; k < n; k++) a[i + k] = v;
-  }
-  g.setAttribute('aSwing', new THREE.BufferAttribute(a, 1));
 }
 
 /** Per-aircraft instance of an HD model. */
 export interface HdInstance {
   root: THREE.Group;
-  sweep: { value: number } | null;
-  refSweep: number;
+  /** swing-wing groups (left = −x, right = +x), each rotating about its pivot */
+  wings: { left: THREE.Group; right: THREE.Group; refSweep: number } | null;
   gearDown: THREE.Object3D[];
   gearUp: THREE.Object3D[];
   cockpit: THREE.Object3D[];
@@ -154,41 +191,36 @@ export interface HdInstance {
   eye: THREE.Vector3;
 }
 
-function instantiate(t: Template): HdInstance {
+export function instantiateHd(t: { root: THREE.Group; spec: HdSpec }): HdInstance {
   const root = new THREE.Group();
-  const sw = t.spec.swing;
-  const inst: HdInstance = { root, sweep: null, refSweep: sw?.refSweep ?? 0, gearDown: [], gearUp: [], cockpit: [], glass: [], eye: new THREE.Vector3() };
-  const uSweep = { value: 0 };
+  const inst: HdInstance = { root, wings: null, gearDown: [], gearUp: [], cockpit: [], glass: [], eye: new THREE.Vector3() };
+  const pivot = t.root.userData.pivot as { x: number; z: number } | undefined;
+  if (t.spec.wings && pivot) {
+    const left = new THREE.Group(), right = new THREE.Group();
+    left.position.set(-pivot.x, 0, pivot.z);
+    right.position.set(pivot.x, 0, pivot.z);
+    root.add(left, right);
+    inst.wings = { left, right, refSweep: t.spec.wings.refSweep };
+  }
   const hudBox = new THREE.Box3();
   for (const src of t.root.children as THREE.Mesh[]) {
-    if (src.userData.hud) { src.geometry.computeBoundingBox(); hudBox.union(src.geometry.boundingBox!); }
     const role = src.userData.role as string;
     if (role === 'hidden') continue;
-    let mat = src.material as THREE.Material;
-    if (sw && src.geometry.getAttribute('aSwing')) {
-      mat = mat.clone();
-      const uPivot = { value: new THREE.Vector2(sw.pivotX, sw.pivotZ) };
-      mat.onBeforeCompile = (sh) => {
-        sh.uniforms.uSweep = uSweep; sh.uniforms.uPivot = uPivot;
-        const rot = `
-          if (aSwing != 0.0) { float sa = -aSwing * uSweep; float cs = cos(sa), sn = sin(sa);`;
-        sh.vertexShader = 'attribute float aSwing;\nuniform float uSweep;\nuniform vec2 uPivot;\n' + sh.vertexShader
-          .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>${rot}
-            objectNormal = vec3(objectNormal.x * cs + objectNormal.z * sn, objectNormal.y, -objectNormal.x * sn + objectNormal.z * cs); }`)
-          .replace('#include <begin_vertex>', `#include <begin_vertex>${rot}
-            vec2 pv = vec2(aSwing * uPivot.x, uPivot.y);
-            vec2 r = transformed.xz - pv; transformed.xz = pv + vec2(r.x * cs + r.y * sn, -r.x * sn + r.y * cs); }`);
-      };
-      mat.customProgramCacheKey = () => 'cfs-swing';
-      inst.sweep = uSweep;
-    }
-    const m = new THREE.Mesh(src.geometry, mat);
+    if (src.userData.hud) { src.geometry.computeBoundingBox(); hudBox.union(src.geometry.boundingBox!); }
+    const m = new THREE.Mesh(src.geometry, src.material);
+    m.userData.role = role;
     if (role === 'gearDown') inst.gearDown.push(m);
     if (role === 'gearUp') inst.gearUp.push(m);
     if (role === 'cockpit') inst.cockpit.push(m);
     const mm = m.material as THREE.Material;
     if (mm.transparent || /glass|canopy/i.test(mm.name)) inst.glass.push(m);
-    root.add(m);
+    const w = src.userData.wing as number;
+    if (inst.wings && w) {
+      // the wing group sits at the pivot, so the mesh is offset back by it
+      const grp = w < 0 ? inst.wings.left : inst.wings.right;
+      m.position.set(-grp.position.x, 0, -grp.position.z);
+      grp.add(m);
+    } else root.add(m);
   }
   // eye: explicit; else the design eye point ~0.65 m behind and just above the HUD combiner; else from the cockpit
   const cb = new THREE.Box3();
@@ -203,7 +235,7 @@ function instantiate(t: Template): HdInstance {
 /** Start loading (if enabled) and call back with a fresh instance when ready. */
 export function requestHdModel(def: AircraftDef, cb: (inst: HdInstance) => void) {
   if (!enabled || !hdSpecFor(def) || typeof window === 'undefined') return;
-  void loadTemplate(def).then((t) => { if (t) cb(instantiate(t)); });
+  void loadTemplate(def).then((t) => { if (t) cb(instantiateHd(t)); });
 }
 
 /** Credits for the credits screen. */
@@ -211,9 +243,17 @@ export function hdCredits() {
   return Object.entries(HD_SPECS).map(([id, s]) => ({ id, title: s.title, author: s.author, source: s.source, license: s.license }));
 }
 
+/** sweep (deg) → wing group rotation (rad) relative to the sweep the model was built at */
+export function wingRotation(sweepDeg: number, refSweep: number) { return (sweepDeg - refSweep) * Math.PI / 180; }
+
 export function updateHdInstance(inst: HdInstance, gearPos: number, sweepDeg: number) {
   const down = gearPos > 0.5;
   for (const g of inst.gearDown) g.visible = down;
   for (const g of inst.gearUp) g.visible = !down;
-  if (inst.sweep) inst.sweep.value = (sweepDeg - inst.refSweep) * Math.PI / 180;
+  if (inst.wings) {
+    // swept back, both tips move aft (+z): the left wing (−x) turns positive about +y, the right one negative
+    const a = wingRotation(sweepDeg, inst.wings.refSweep);
+    inst.wings.left.rotation.y = a;
+    inst.wings.right.rotation.y = -a;
+  }
 }
