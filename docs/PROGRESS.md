@@ -4,7 +4,7 @@ This file is the single source of truth for continuing the roadmap across sessio
 session at any time). Update it and `git commit && git push` after every finished step.
 
 ## Heartbeat (lock)
-- heartbeat: 2026-10-11T14:31:18+02:00
+- heartbeat: 2026-10-11T14:33:24+02:00
 - owner: scheduled resume run
 
 Rule: a session that is actively working updates `heartbeat` (local ISO time, `date -Iseconds`) at least every
@@ -44,7 +44,7 @@ less than 60 minutes old (someone else is working). When taking over, set `owner
 
 ## Round 2 — tester feedback (plan: C:/Users/haasn/.claude/plans/background-from-the-session-adaptive-reddy.md)
 Decisions: hard limiters on FBW, soft (warning + fading stick) on analog/CAS; AoA in degrees; models: bohmerang F/A-18F, F-16, F-4 + KOG_THORNS F-14D (CC-BY, credit link+licence); VR = seated WebXR.
-- [ ] Phase A — editor/theater crash, HOTAS binding (edge capture, axis switches), G-LOC tolerance model → v0.1.12
+- [x] Phase A — editor/theater crash, HOTAS binding (edge capture, axis switches), G-LOC tolerance model → v0.1.12
 - [ ] Phase B — limiters (table), FCS feel per type, Dutch-roll fix → v0.1.13
 - [ ] Phase C — F/A-18F, new HD models, F-14 sweep fix (F-14D node sweep + component classification), Gripen eye, HD cockpit MFDs, weapons on stations → v0.1.14
 - [ ] Phase D — airports + terrain quality/depth → v0.1.15
@@ -88,6 +88,7 @@ terrain vertex positions (h -= d²/(2R) relative to the camera) for the horizon;
 Tiles (Mapzen: SRTM/GMTED/ETOPO1 etc.) and OurAirports (public domain). Tests: projection round trip, baked tile sampling, airbases on land.
 
 ## Log
+- 2026-10-11 — Round 2 Phase A: editor map fix, HOTAS binding, G tolerance; 82 tests; v0.1.12.
 - 2026-10-11 — Phase 10 done: Persian Gulf 1991 map, radio menu + voice commands; 72 tests; release v0.1.11. All planned phases complete.
 - 2026-10-10 — Phase 9 done: carriers (cat, wires, LSO, ball), 65 tests; release v0.1.10.
 - 2026-10-10 — Phase 8 done: Northern Europe theater (1 km DEM, 26 airfields, theater picker, borders/cities map, latitude snowline, forests), legal check; 57 tests; release v0.1.9.

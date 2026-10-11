@@ -12,6 +12,9 @@ import { isWater, lineOfSight, surfaceHeight, terrainHeight, AIRBASES } from '..
 import { clamp, DEG } from '../core/math.js';
 import { G0 } from './atmosphere.js';
 
+/** reclined ejection seats (F-16 30°, Su-57, Typhoon, Gripen, Rafale) give about 1 g more tolerance */
+const RECLINED = /F-16|Su-57|Typhoon|JAS 39|Rafale/;
+
 export type EffectType = 'explosion' | 'airburst' | 'hit' | 'dust' | 'fireball' | 'launch';
 export interface Effect { type: EffectType; pos: THREE.Vector3; size: number }
 export interface RadioMsg { text: string; time: number; color: string }
@@ -120,6 +123,8 @@ export class World {
       if (ac.ai && ac.alive && local) ac.ai.update(dt, this);
       if (local) {
         const wasCrashed = ac.fm.crashed;
+        // an unconscious pilot (G-LOC) lets go of the stick
+        if (ac.glocTimer > 0) { ac.ctrl.pitch = 0; ac.ctrl.roll = 0; ac.ctrl.yaw = 0; }
         ac.fm.step(dt, ac.ctrl, this.env, this.fmOpts(ac));
         if (ac.fm.crashed && !wasCrashed) this.onCrash(ac);
         if (ac.isPlayer && this.carriers.length) {
@@ -471,14 +476,28 @@ export class World {
     return null;
   }
 
-  private updateGEffects(ac: Aircraft, dt: number) {
-    if (!this.opts.gEffects) { ac.gLoc = 0; return; }
+  /**
+   * Pilot G tolerance: a G-suit and straining hold ~7.5 g indefinitely (8.5 g in reclined-seat jets); above that a
+   * reserve drains — 9 g takes ~10 s to black out — and recovers fast below 5 g. Fast onsets cost a little extra.
+   * Grey-out starts at 40 % stress; at 100 % the pilot is unconscious for ~4 s (no control inputs), then recovers.
+   */
+  updateGEffects(ac: Aircraft, dt: number) {
+    if (!this.opts.gEffects) { ac.gLoc = 0; ac.gStress = 0; ac.glocTimer = 0; return; }
     const n = ac.fm.nz;
-    if (n > 6.5) ac.gStress += (n - 6.5) * dt * 0.25;
-    else if (n < -2.5) ac.gStress += (-2.5 - n) * dt * 0.4;
-    else ac.gStress = Math.max(0, ac.gStress - dt * (n < 4 ? 0.35 : 0.1));
-    ac.gStress = Math.min(ac.gStress, 1.6);
-    ac.gLoc = clamp(ac.gStress, 0, 1);
+    ac.trackOnset(n, dt);
+    const tol = 7.5 + (RECLINED.test(ac.def.family ?? ac.def.name) ? 1 : 0);
+    if (n > tol) ac.gStress += ((n - tol) / 15 + (n > 6 ? Math.max(0, ac.gOnset - 6) * 0.004 : 0)) * dt;
+    else if (n < -2) ac.gStress += (-2 - n) * dt * 0.08;   // red-out builds slower than black-out
+    else if (n < 5 && n > -1) ac.gStress -= dt * 0.5;
+    else ac.gStress -= dt * 0.05;
+    ac.gStress = clamp(ac.gStress, 0, 1.2);
+    if (ac.gStress >= 1 && ac.glocTimer <= 0) ac.glocTimer = 4;
+    if (ac.glocTimer > 0) {
+      ac.glocTimer -= dt;
+      ac.gStress = Math.max(ac.gStress, 0.95);   // stays dark while unconscious
+      if (ac.glocTimer <= 0) ac.gStress = 0.6;   // waking up: grey, recovering
+    }
+    ac.gLoc = ac.glocTimer > 0 ? 1 : clamp((ac.gStress - 0.4) / 0.6, 0, 1);
   }
 
   // ------------------------------------------------------------------ ground & SAMs

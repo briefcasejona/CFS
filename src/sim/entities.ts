@@ -64,6 +64,16 @@ export class Aircraft {
   incoming: number[] = [];  // missile ids guiding on this aircraft
   gLoc = 0;                 // 0..1 vision loss
   gStress = 0;
+  /** seconds of G-induced loss of consciousness left (no control inputs) */
+  glocTimer = 0;
+  private lastNz = 1;
+  /** g onset rate (g/s), smoothed — fast onsets are harder to strain against */
+  gOnset = 0;
+  trackOnset(nz: number, dt: number) {
+    const rate = (nz - this.lastNz) / Math.max(dt, 1e-3);
+    this.lastNz = nz;
+    this.gOnset += (rate - this.gOnset) * Math.min(1, dt * 4);
+  }
   landed = false;
   /** tailhook lowered (carrier-capable jets) */
   hook = false;
