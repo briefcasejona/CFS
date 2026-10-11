@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { terrainHeight, AIRBASES, OBJECTIVES, THEATER_HALF, runwayEnds, fbm, terrainPalette, type TerrainPalette } from '../world/theater.js';
+import { terrainHeight, AIRBASES, OBJECTIVES, THEATER_HALF, fbm, terrainPalette, type TerrainPalette } from '../world/theater.js';
+import { buildAirfield } from './airfield.js';
 
 const CHUNK = 16000; // m
 const LODS = [
@@ -242,46 +243,9 @@ export function buildScenery(): THREE.Group {
   sea.rotation.x = -Math.PI / 2;
   g.add(sea);
 
-  const rwyTex = makeRunwayTexture();
-  for (const ab of AIRBASES) {
-    const len = ab.length, wid = 45;
-    const hr = ab.hdg * Math.PI / 180;
-    const rwy = new THREE.Mesh(new THREE.PlaneGeometry(wid, len),
-      new THREE.MeshLambertMaterial({ map: rwyTex, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
-    rwy.rotation.order = 'YXZ';
-    rwy.rotation.set(-Math.PI / 2, -hr, 0);
-    rwy.position.set(ab.x, ab.elev + 0.15, ab.z);
-    g.add(rwy);
-    const side = new THREE.Vector3(Math.cos(hr), 0, Math.sin(hr));
-    const fwd = new THREE.Vector3(Math.sin(hr), 0, -Math.cos(hr));
-    const apron = new THREE.Mesh(new THREE.PlaneGeometry(300, len * 0.5),
-      new THREE.MeshLambertMaterial({ color: 0x55585a, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
-    apron.rotation.order = 'YXZ';
-    apron.rotation.set(-Math.PI / 2, -hr, 0);
-    apron.position.set(ab.x + side.x * 260, ab.elev + 0.1, ab.z + side.z * 260);
-    g.add(apron);
-    const hangarMat = new THREE.MeshLambertMaterial({ color: ab.side === 'blue' ? 0x7d8278 : 0x7a7466 });
-    for (let k = -3; k <= 3; k++) {
-      const h = new THREE.Mesh(new THREE.BoxGeometry(40, 14, 36), hangarMat);
-      h.position.copy(new THREE.Vector3(ab.x, ab.elev + 7, ab.z).addScaledVector(side, 470).addScaledVector(fwd, k * 90));
-      h.rotation.y = -hr;
-      g.add(h);
-    }
-    const tower = new THREE.Mesh(new THREE.BoxGeometry(10, 30, 10), new THREE.MeshLambertMaterial({ color: 0xbbbbaa }));
-    tower.position.copy(new THREE.Vector3(ab.x, ab.elev + 15, ab.z).addScaledVector(side, 380).addScaledVector(fwd, -len * 0.35));
-    g.add(tower);
-    const ends = runwayEnds(ab);
-    const lightMat = new THREE.MeshBasicMaterial({ color: 0xffeeaa });
-    for (const [e, out] of [[ends.start, -1], [ends.end, 1]] as const) {
-      for (let k = 1; k <= 10; k++) {
-        const lx = e.x + fwd.x * out * k * 30, lz = e.z + fwd.z * out * k * 30;
-        const l = new THREE.Mesh(new THREE.BoxGeometry(18, 0.6, 1.5), lightMat);
-        l.position.set(lx, terrainHeight(lx, lz) + 0.6, lz);
-        l.rotation.y = -hr;
-        g.add(l);
-      }
-    }
-  }
+  const fields = AIRBASES.map((ab) => buildAirfield(ab));
+  for (const fld of fields) g.add(fld.group);
+  g.userData.airfields = fields;
   const cityMat = new THREE.MeshLambertMaterial({ color: 0x8a8378 });
   for (const o of OBJECTIVES) {
     if (o.kind !== 'city') continue;
@@ -302,20 +266,3 @@ export function buildScenery(): THREE.Group {
   return g;
 }
 
-function makeRunwayTexture(): THREE.Texture {
-  const cv = document.createElement('canvas');
-  cv.width = 64; cv.height = 1024;
-  const x = cv.getContext('2d')!;
-  x.fillStyle = '#3b3d3f'; x.fillRect(0, 0, 64, 1024);
-  x.fillStyle = '#dcdcd2';
-  for (let y = 40; y < 984; y += 40) x.fillRect(31, y, 2, 20);
-  for (let k = 0; k < 6; k++) {
-    x.fillRect(4 + k * 4, 6, 2, 30); x.fillRect(36 + k * 4, 6, 2, 30);
-    x.fillRect(4 + k * 4, 988, 2, 30); x.fillRect(36 + k * 4, 988, 2, 30);
-  }
-  x.fillRect(1, 0, 1, 1024); x.fillRect(62, 0, 1, 1024);
-  const t = new THREE.CanvasTexture(cv);
-  t.anisotropy = 8;
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}

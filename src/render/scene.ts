@@ -6,6 +6,7 @@ import { TerrainRenderer, buildScenery } from './terrainMesh.js';
 import { buildCarrierMesh } from './carrierMesh.js';
 import { buildAircraftModel, updateAircraftModel, syncStores, groundMesh, storeMesh, type AircraftModel } from './models.js';
 import { hdSpecFor } from './hdModels.js';
+import { updatePapi, type Airfield } from './airfield.js';
 import { surfaceHeight, theaterVersion } from '../world/theater.js';
 import { buildCockpit, type Cockpit } from './cockpit.js';
 import { clamp } from '../core/math.js';
@@ -520,6 +521,10 @@ export class SceneRenderer {
     this.sky.position.copy(cp);
     this.terrain.update(cp, this.viewDist);
     this.terrain.updateTrees(cp);
+    // PAPI lights of the nearest field show red/white for the viewer's glidepath
+    let near: Airfield | null = null, nd = 20000;
+    for (const f of (this.scenery.userData.airfields ?? []) as Airfield[]) { const d = f.papiPos.distanceTo(cp); if (d < nd) { nd = d; near = f; } }
+    if (near) updatePapi(near, cp);
     this.clouds.position.x = cp.x; this.clouds.position.z = cp.z;
     const tex = (this.clouds.material as THREE.MeshLambertMaterial).map!;
     tex.offset.set(cp.x / 10000, -cp.z / 10000);
