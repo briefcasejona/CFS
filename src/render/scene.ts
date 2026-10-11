@@ -5,6 +5,7 @@ import type { Missile } from '../weapons/missile.js';
 import { TerrainRenderer, buildScenery } from './terrainMesh.js';
 import { buildCarrierMesh } from './carrierMesh.js';
 import { buildAircraftModel, updateAircraftModel, syncStores, groundMesh, storeMesh, type AircraftModel } from './models.js';
+import { hdSpecFor } from './hdModels.js';
 import { surfaceHeight, theaterVersion } from '../world/theater.js';
 import { buildCockpit, type Cockpit } from './cockpit.js';
 import { clamp } from '../core/math.js';
@@ -367,6 +368,30 @@ export class SceneRenderer {
     } else if (this.cockpit) {
       this.cockpit.group.visible = false;
     }
+    // HD cockpits: live MFD pages on the model's own screens
+    if (m.hd) this.updateHdMfds(m, ac, inside && useHdPit);
+  }
+
+  private hdMfdTextures: THREE.CanvasTexture[] = [];
+  private updateHdMfds(m: AircraftModel, ac: Aircraft, show: boolean) {
+    const spec = hdSpecFor(ac.def);
+    if (!spec?.mfds || !m.hd) return;
+    let quads = m.hd.root.userData.mfdQuads as THREE.Mesh[] | undefined;
+    if (!quads) {
+      if (!this.hdMfdTextures.length) this.hdMfdTextures = this.mfdCanvases.map((c) => { const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; });
+      quads = spec.mfds.map((d) => {
+        const q = new THREE.Mesh(new THREE.PlaneGeometry(d.w, d.h), new THREE.MeshBasicMaterial({ map: this.hdMfdTextures[d.screen] ?? null, toneMapped: false }));
+        const c = new THREE.Vector3(...d.c), n = new THREE.Vector3(...d.n).normalize();
+        q.position.copy(c).addScaledVector(n, 0.003);   // just proud of the painted screen
+        q.lookAt(c.clone().add(n));
+        q.renderOrder = 2;
+        m.hd!.root.add(q);
+        return q;
+      });
+      m.hd.root.userData.mfdQuads = quads;
+    }
+    for (const q of quads) q.visible = show;
+    if (show) for (const t of this.hdMfdTextures) t.needsUpdate = true;
   }
 
   eyeOffset(ac: Aircraft) {

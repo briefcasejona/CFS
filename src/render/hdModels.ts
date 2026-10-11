@@ -21,6 +21,9 @@ export interface HdSpec {
   eye?: { y: number; z: number };
   /** HUD combiner node (for the default eye point); default /hud/i */
   hud?: RegExp;
+  /** live MFD screens laid over the model's painted ones (game body frame, metres): centre, size, facing normal and
+   *  which display (0 = left MFD canvas, 1 = right) — measured by raycasting the cockpit from the eye point */
+  mfds?: Array<{ c: [number, number, number]; w: number; h: number; n: [number, number, number]; screen: 0 | 1 }>;
 }
 
 const BOHMERANG = { author: 'bohmerang', license: 'CC BY-NC-SA 4.0' };
@@ -39,19 +42,36 @@ export const HD_SPECS: Record<string, HdSpec> = {
     cockpit: /MFD Display|DISPLAY|\/HUD\/|cockpit|Meshpart|RIO|\/Glass\//i,
     hud: /\/HUD\//,
     wings: { parts: /vehicle#(wing_[lr]_|slat_[lr]_|flap\w*?_[lr]_|aileron_interceptor_[lr]_)/i, pivot: { x: 2.72, z: 0.32 }, refSweep: 20 },
+    mfds: [
+      { c: [0.007, 1.164, -5.652], w: 0.11, h: 0.105, n: [0, 0.17, 0.99], screen: 0 },
+      { c: [0.187, 1.176, -5.653], w: 0.11, h: 0.105, n: [0, 0.17, 0.99], screen: 1 },
+    ],
   },
   'JAS 39': {
     url: 'assets/models/cc-by-nc-sa/gripen.glb', title: 'Saab JAS 39 Gripen - Fighter Jet - Free', ...BOHMERANG,
     source: 'https://sketchfab.com/3d-models/saab-jas-39-gripen-fighter-jet-free-03d4f4f0f7e94f469299ba7db4c707c4', ...BOH_PARTS,
+    // tactical (centre) display carries the radar page, the right one the RWR/stores page
+    mfds: [
+      { c: [0, 0.518, -3.463], w: 0.165, h: 0.15, n: [0, 0.1, 1], screen: 0 },
+      { c: [0.168, 0.518, -3.463], w: 0.108, h: 0.145, n: [0, 0.1, 1], screen: 1 },
+    ],
   },
   'F-16': {
     url: 'assets/models/cc-by-nc-sa/f16.glb', title: 'F-16 Fighting Falcon - Fighter Jet - Free', ...BOHMERANG,
     source: 'https://sketchfab.com/3d-models/f-16-fighting-falcon-fighter-jet-free-f0b00989e5634764848ef2c235c64db5', ...BOH_PARTS,
+    mfds: [
+      { c: [-0.168, 0.835, -3.923], w: 0.08, h: 0.088, n: [0, 0.23, 0.97], screen: 0 },
+      { c: [0.172, 0.835, -3.923], w: 0.08, h: 0.088, n: [0, 0.23, 0.97], screen: 1 },
+    ],
   },
   // the Super Hornet model only: the legacy F/A-18C has a different (smaller) airframe and keeps the procedural model
   fa18e: {
     url: 'assets/models/cc-by-nc-sa/fa18f.glb', title: 'Boeing F/A-18F Super Hornet - Free', ...BOHMERANG,
     source: 'https://sketchfab.com/3d-models/boeing-fa-18f-super-hornet-free-447caa975f534554a83f70f0877b73fb', ...BOH_PARTS,
+    mfds: [
+      { c: [-0.186, 1.268, -4.808], w: 0.125, h: 0.112, n: [0, 0.21, 0.98], screen: 0 },
+      { c: [0.187, 1.268, -4.808], w: 0.125, h: 0.112, n: [0, 0.21, 0.98], screen: 1 },
+    ],
   },
   f4e: {
     url: 'assets/models/cc-by-nc-sa/f4.glb', title: 'F-4 Phantom II - Fighter Jet - Free', ...BOHMERANG,
