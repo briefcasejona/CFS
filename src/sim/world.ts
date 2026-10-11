@@ -8,6 +8,7 @@ import { Bullets } from '../weapons/gun.js';
 import { WEAPONS, type WeaponDef } from '../weapons/stores.js';
 import { Radar, paintRwr } from '../avionics/radar.js';
 import { Carrier, CarrierOps } from './carrier.js';
+import { stationLayout } from '../aircraft/stations.js';
 import { isWater, lineOfSight, surfaceHeight, terrainHeight, AIRBASES } from '../world/theater.js';
 import { clamp, DEG } from '../core/math.js';
 import { G0 } from './atmosphere.js';
@@ -278,11 +279,10 @@ export class World {
   }
 
   // ------------------------------------------------------------------ weapons
+  /** where store i hangs (body frame): the jet's real station layout for its loadout, fixed at the first call */
   stationOffset(ac: Aircraft, station: number) {
-    const n = Math.max(ac.stores.length, 1);
-    const side = station % 2 === 0 ? -1 : 1;
-    const along = Math.floor(station / 2) / Math.max(1, Math.ceil(n / 2));
-    return new THREE.Vector3(side * (0.6 + along * ac.def.span * 0.38), -0.8, 0.5);
+    ac.stationPos ??= stationLayout(ac.def, ac.stores);
+    return (ac.stationPos[station] ?? new THREE.Vector3(0, -0.8, 0.5)).clone();
   }
 
   /** Release the selected weapon. Returns a status string. */

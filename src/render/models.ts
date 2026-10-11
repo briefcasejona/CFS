@@ -48,6 +48,8 @@ export interface AircraftModel {
   proc: THREE.Object3D[];
   /** optional high-detail glTF model (see hdModels.ts) */
   hd: HdInstance | null;
+  /** stores hung against the HD airframe (done once after it loads) */
+  storesSnapped?: boolean;
 }
 
 const storeMats = {
@@ -261,6 +263,30 @@ export function syncStores(model: AircraftModel, ac: Aircraft, stationOffset: (i
     const m = model.stores[i];
     if (m) m.visible = !!ac.stores[i] && ac.def.id !== 'su57';
   }
+  // once the HD airframe is in, hang every store right under the surface above its station
+  if (model.hd && !model.storesSnapped) { snapStores(model, stationOffset); model.storesSnapped = true; }
+}
+
+const snapRay = new THREE.Raycaster();
+/** raise/lower each store so its top touches the airframe (wing, pylon or fuselage) directly above its station */
+function snapStores(model: AircraftModel, stationOffset: (i: number) => THREE.Vector3) {
+  const hd = model.hd!;
+  const targets: THREE.Object3D[] = [];
+  hd.root.traverse((o) => { if ((o as THREE.Mesh).isMesh && o.userData.role === 'body' && !hd.glass.includes(o)) targets.push(o); });
+  model.root.updateMatrixWorld(true);
+  const up = new THREE.Vector3(0, 1, 0).transformDirection(model.body.matrixWorld);
+  model.stores.forEach((m, i) => {
+    if (!m) return;
+    const st = stationOffset(i);
+    const box = new THREE.Box3().setFromObject(m, true);
+    const top = box.max.y - m.getWorldPosition(new THREE.Vector3()).y;   // store top above its origin (≈ radius)
+    snapRay.set(model.body.localToWorld(new THREE.Vector3(st.x, st.y - 4, st.z)), up);
+    snapRay.far = 8;
+    const hit = snapRay.intersectObjects(targets, false)[0];
+    if (!hit) return;
+    const local = model.body.worldToLocal(hit.point.clone());
+    m.position.set(st.x, local.y - top - 0.04, st.z);   // a hand's width of pylon/rail between store and skin
+  });
 }
 
 export function updateAircraftModel(model: AircraftModel, ac: Aircraft, t: number, camDist = 0) {

@@ -75,6 +75,8 @@ export class Aircraft {
     this.gOnset += (rate - this.gOnset) * Math.min(1, dt * 4);
   }
   landed = false;
+  /** station positions of the starting loadout (body frame), see aircraft/stations.ts */
+  stationPos: THREE.Vector3[] | null = null;
   /** tailhook lowered (carrier-capable jets) */
   hook = false;
   /** has left the ground at least once (a runway start isn't a landing) */
