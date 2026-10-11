@@ -7,6 +7,14 @@ import { buildCarrierMesh } from './carrierMesh.js';
 import { buildAircraftModel, updateAircraftModel, syncStores, groundMesh, storeMesh, type AircraftModel } from './models.js';
 import { hdSpecFor } from './hdModels.js';
 import { updatePapi, type Airfield } from './airfield.js';
+
+/** the VR HUD quad sits far out so it reads as collimated (at infinity) */
+export const VR_HUD_DIST = 30;
+/** size (w, h) of a quad at distance d that covers a camera's view (vertical fov in degrees) */
+export function hudQuadSize(fovDeg: number, aspect: number, d: number): [number, number] {
+  const h = 2 * d * Math.tan((fovDeg * Math.PI / 180) / 2);
+  return [h * aspect, h];
+}
 import { surfaceHeight, theaterVersion } from '../world/theater.js';
 import { buildCockpit, type Cockpit } from './cockpit.js';
 import { clamp } from '../core/math.js';
@@ -157,7 +165,12 @@ export class SceneRenderer {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.camera = new THREE.PerspectiveCamera(this.fovBase, 1, 0.3, 450000);
-    this.scene.add(this.camera);
+    // the camera lives in a rig: on a monitor the rig stays at the origin; in VR it carries the cockpit eye point and
+    // the jet's attitude while the headset pose moves the camera inside it
+    this.rig.add(this.camera);
+    this.scene.add(this.rig);
+    this.renderer.xr.enabled = true;
+    this.renderer.xr.setReferenceSpaceType('local');
     this.scene.add(this.sun, this.sun.target, this.hemi);
     this.scene.add(this.terrain.group);
     this.scenery = buildScenery();
@@ -253,7 +266,7 @@ export class SceneRenderer {
       let m = this.acModels.get(ac.id);
       if (!m) { m = buildAircraftModel(ac.def, ac.side); this.acModels.set(ac.id, m); this.scene.add(m.root); }
       syncStores(m, ac, (i) => world.stationOffset(ac, i));
-      updateAircraftModel(m, ac, t, m.root.position.distanceTo(this.camera.position));
+      updateAircraftModel(m, ac, t, m.root.position.distanceTo(this.viewCam.position));
       m.root.visible = true;
       if (ac.isPlayer) this.updatePlayerCockpit(m, ac, this.view === 'cockpit');
     }
@@ -484,6 +497,61 @@ export class SceneRenderer {
     // closer near plane inside the cockpit (panel and frames are within a metre of the eye)
     const near = view === 'cockpit' ? 0.08 : 0.3;
     if (Math.abs(cam.fov - fov) > 0.01 || cam.near !== near) { cam.fov = fov; cam.near = near; cam.updateProjectionMatrix(); }
+    this.placeRig(view === 'cockpit' ? focus : null);
+  }
+
+  // ------------------------------------------------------------------ VR (WebXR, seated)
+  readonly rig = new THREE.Group();
+  private vrHud: THREE.Mesh | null = null;
+  private vrHudTex: THREE.CanvasTexture | null = null;
+  /** recentre offset: undoes where the head was when "Center view" was pressed */
+  private vrCenter = { pos: new THREE.Vector3(), yaw: 0 };
+  get vrActive() { return this.renderer.xr.isPresenting; }
+  /** the monitor-equivalent camera (pose before VR takes over): HUD symbology and screen projections use it */
+  private flatCam = new THREE.PerspectiveCamera();
+  get viewCam(): THREE.PerspectiveCamera { return this.vrActive ? this.flatCam : this.camera; }
+
+  /** Start an immersive-vr session (call from a click). Resolves when it ends. */
+  async enterVr(hudCanvas: HTMLCanvasElement): Promise<void> {
+    const xr = (navigator as Navigator & { xr?: { requestSession(m: string, o?: object): Promise<XRSession> } }).xr;
+    if (!xr) throw new Error('WebXR is not available in this browser');
+    const session = await xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor'] });
+    await this.renderer.xr.setSession(session as never);
+    this.vrHudTex = new THREE.CanvasTexture(hudCanvas);
+    this.vrHudTex.colorSpace = THREE.SRGBColorSpace;
+    const [w, h] = hudQuadSize(this.fovBase, hudCanvas.width / Math.max(1, hudCanvas.height), VR_HUD_DIST);
+    this.vrHud = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: this.vrHudTex, transparent: true, depthTest: false, depthWrite: false, toneMapped: false }));
+    this.vrHud.renderOrder = 999;
+    this.vrHud.position.set(0, 0, -VR_HUD_DIST);
+    this.rig.add(this.vrHud);
+    this.vrCenter = { pos: new THREE.Vector3(), yaw: 0 };
+    await new Promise<void>((done) => session.addEventListener('end', () => {
+      if (this.vrHud) { this.rig.remove(this.vrHud); this.vrHud.geometry.dispose(); }
+      this.vrHud = null; this.vrHudTex?.dispose(); this.vrHudTex = null;
+      done();
+    }));
+  }
+
+  /** "Center view" in VR: the current head position/heading becomes the design eye looking forward */
+  recenterVr() {
+    if (!this.vrActive) return;
+    const head = this.renderer.xr.getCamera();
+    const e = new THREE.Euler().setFromQuaternion(head.quaternion, 'YXZ');
+    this.vrCenter = { pos: head.position.clone(), yaw: e.y };
+  }
+
+  /** in VR the rig takes the eye point + attitude (cockpit view) or the camera pose (other views) */
+  private placeRig(cockpitOf: Aircraft | null) {
+    const cam = this.camera;
+    if (!this.vrActive) { this.rig.position.set(0, 0, 0); this.rig.quaternion.identity(); return; }
+    this.flatCam.copy(cam); this.flatCam.updateMatrixWorld();
+    this.rig.position.copy(cam.position);
+    this.rig.quaternion.copy(cockpitOf ? cockpitOf.quat : cam.quaternion);
+    // recentre: undo the head offset/heading captured at "Center view"
+    this.rig.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -this.vrCenter.yaw));
+    this.rig.position.sub(this.vrCenter.pos.clone().applyQuaternion(this.rig.quaternion));
+    cam.position.set(0, 0, 0); cam.quaternion.identity();
+    if (this.vrHudTex) this.vrHudTex.needsUpdate = true;
   }
 
   pickTarget(world: World, focus: Aircraft): Aircraft | GroundUnit | null {
@@ -520,7 +588,8 @@ export class SceneRenderer {
     this.syncEntities(world);
     this.updateParticles(world, dt);
     this.updateCamera(world, dt);
-    const cp = this.camera.position;
+    // world eye point (in VR the camera is posed inside the rig)
+    const cp = this.vrActive ? this.rig.position : this.camera.position;
     this.sky.position.copy(cp);
     // haze sits in the lower atmosphere: looking out from altitude the air is clearer
     (this.scene.fog as THREE.FogExp2).density = this.baseFog * (0.45 + 0.55 * Math.exp(-Math.max(0, cp.y) / 5000));
@@ -540,9 +609,9 @@ export class SceneRenderer {
 
   /** Project world point to screen pixels; null if behind the camera. */
   project(p: THREE.Vector3, w: number, h: number): { x: number; y: number } | null {
-    const camDir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
-    if (p.clone().sub(this.camera.position).dot(camDir) <= 0) return null;
-    const v = p.clone().project(this.camera);
+    const camDir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.viewCam.quaternion);
+    if (p.clone().sub(this.viewCam.position).dot(camDir) <= 0) return null;
+    const v = p.clone().project(this.viewCam);
     return { x: (v.x * 0.5 + 0.5) * w, y: (-v.y * 0.5 + 0.5) * h };
   }
 

@@ -176,6 +176,36 @@ export class FlightSession {
     if (this.built.steerpoints.length) this.built.world.radio(`Steerpoint 1: ${this.built.steerpoints[0].name}`, '#ccc');
     cancelAnimationFrame(this.raf);
     this.raf = requestAnimationFrame((t) => this.frame(t));
+    void this.setupVrButton();
+  }
+
+  /** "Enter VR" (shown only when the browser has an immersive-vr device, e.g. a Quest over Link) */
+  private vrButton: HTMLButtonElement | null = null;
+  private async setupVrButton() {
+    const xr = (navigator as Navigator & { xr?: { isSessionSupported(m: string): Promise<boolean> } }).xr;
+    let ok = false;
+    try { ok = !!xr && await xr.isSessionSupported('immersive-vr'); } catch { ok = false; }
+    if (!ok || this.vrButton) return;
+    const b = document.createElement('button');
+    b.textContent = '🥽 Enter VR';
+    b.title = 'Fly in VR (seated). Recentre with the "Center view" key.';
+    b.style.cssText = 'position:absolute;right:14px;top:14px;z-index:6;padding:6px 12px;border-radius:6px;border:1px solid #3dff7a88;background:rgba(0,0,0,.6);color:#9fffb8;font:13px system-ui;cursor:pointer';
+    b.addEventListener('click', () => void this.enterVr());
+    this.ui.root.append(b);
+    this.vrButton = b;
+  }
+
+  private async enterVr() {
+    if (this.scene.vrActive || !this.running) return;
+    const ended = this.scene.enterVr(this.ui.hud).catch((err) => { this.built?.world.radio(`VR: ${(err as Error).message}`, '#fc8'); });
+    // hand the loop to the headset while it presents
+    cancelAnimationFrame(this.raf);
+    this.scene.renderer.setAnimationLoop((t) => this.frame(t));
+    if (this.vrButton) this.vrButton.style.display = 'none';
+    await ended;
+    this.scene.renderer.setAnimationLoop(null);
+    if (this.vrButton) this.vrButton.style.display = '';
+    if (this.running) { cancelAnimationFrame(this.raf); this.raf = requestAnimationFrame((t) => this.frame(t)); }
   }
 
   private setComms(open: boolean) {
@@ -206,7 +236,8 @@ export class FlightSession {
 
   private frame(t: number) {
     if (!this.running) return;
-    this.raf = requestAnimationFrame((tt) => this.frame(tt));
+    // in VR the headset drives the loop (renderer.setAnimationLoop); otherwise the window does
+    if (!this.scene.vrActive) this.raf = requestAnimationFrame((tt) => this.frame(tt));
     let dt = (t - this.last) / 1000;
     this.last = t;
     if (dt > 0.25) dt = 0.25;
@@ -317,7 +348,7 @@ export class FlightSession {
     if (ly !== null) this.scene.headPitch = -ly * 1.2;
     this.scene.headYaw = clamp(this.scene.headYaw, -2.6, 2.6);
     this.scene.headPitch = clamp(this.scene.headPitch, -0.9, 1.4);
-    if (i.pressed('lookCenter')) { this.scene.headYaw = 0; this.scene.headPitch = 0; this.scene.zoom = 1; this.padlock = false; }
+    if (i.pressed('lookCenter')) { this.scene.recenterVr(); this.scene.headYaw = 0; this.scene.headPitch = 0; this.scene.zoom = 1; this.padlock = false; }
     if (i.pressed('padlock')) this.padlock = !this.padlock;
     if (this.padlock) this.updatePadlock();
     if (i.down('zoomIn')) this.scene.zoom = clamp(this.scene.zoom * (1 + dt * 1.5), 1, 5);

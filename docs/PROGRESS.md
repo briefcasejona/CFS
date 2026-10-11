@@ -4,7 +4,7 @@ This file is the single source of truth for continuing the roadmap across sessio
 session at any time). Update it and `git commit && git push` after every finished step.
 
 ## Heartbeat (lock)
-- heartbeat: 2026-10-11T17:18:45+02:00
+- heartbeat: 2026-10-11T17:22:37+02:00
 - owner: scheduled resume run
 
 Rule: a session that is actively working updates `heartbeat` (local ISO time, `date -Iseconds`) at least every
@@ -48,7 +48,7 @@ Decisions: hard limiters on FBW, soft (warning + fading stick) on analog/CAS; Ao
 - [x] Phase B — limiters (table), FCS feel per type, Dutch-roll fix → v0.1.13
 - [x] Phase C — F/A-18F, new HD models, F-14 sweep fix (F-14D node sweep + component classification), Gripen eye, HD cockpit MFDs, weapons on stations → v0.1.14
 - [x] Phase D — airports + terrain quality/depth → v0.1.15
-- [ ] Phase E — WebXR seated VR → v0.1.16
+- [x] Phase E — WebXR seated VR → v0.1.16
 
 ## 3D models (user-supplied, 2026-10-10)
 - `f-14_tomcat_-_fighter_jet_-_free.glb` — bohmerang (Sketchfab), CC BY-NC-SA 4.0, 43k tris, 42 MB (PNG textures), has cockpit/canopy/gear nodes.
@@ -88,6 +88,7 @@ terrain vertex positions (h -= d²/(2R) relative to the camera) for the horizon;
 Tiles (Mapzen: SRTM/GMTED/ETOPO1 etc.) and OurAirports (public domain). Tests: projection round trip, baked tile sampling, airbases on land.
 
 ## Log
+- 2026-10-11 — Round 2 Phase E: WebXR seated VR (camera rig, XR loop handover, HUD quad at 30 m, viewCam for HUD/projections, recentre); 89 tests; v0.1.16. ROUND 2 COMPLETE. Untested on a real headset — ask the tester.
 - 2026-10-11 — Round 2 Phase D: airfields (markings, taxiways, apron, HAS, tower, lights, PAPI), terrain LOD 83 m within 6 km, detail texture shader, slope AO, altitude haze; 88 tests; v0.1.15. (Shadows / graphics-quality setting not done — perf fine: ~710k tris, 178 calls over the Alps.)
 - 2026-10-11 — Round 2 Phase C: F/A-18F, HD F-16/F/A-18F/F-4, F-14 = articulated KOG F-14D (pivot fitted to real spans), HUD-based eye points, live MFDs in HD cockpits, weapons on real stations; 88 tests; v0.1.14. Notes: F-4 HD texture has JASDF roundels; legacy F/A-18C keeps the procedural model.
 - 2026-10-11 — Round 2 Phase B: limit table, FBW hard / CAS+analog soft limiters, stability-axis coordination + inertia-coupling feed-forward + roll-sideslip interconnect (no more yaw sway), pitch ratio changer, F-14A manual; tests/handling.test.ts; diag scripts build/diag (not committed); 85 tests; v0.1.13.

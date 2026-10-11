@@ -117,7 +117,7 @@ export class Hud {
 
   /** Project a direction from the eye point (conformal symbology at infinity). */
   private projDir(scene: SceneRenderer, dir: THREE.Vector3): Pt | null {
-    const far = scene.camera.position.clone().addScaledVector(dir.clone().normalize(), 10000);
+    const far = scene.viewCam.position.clone().addScaledVector(dir.clone().normalize(), 10000);
     return scene.project(far, this.w, this.h);
   }
 
@@ -188,7 +188,7 @@ export class Hud {
     this.drawTargeting(world, scene, p, st, bore, fpm, scale, { hx0, hx1, hy0, hy1 });
 
     if (st.steerpoint) {
-      const sp = this.projDir(scene, st.steerpoint.clone().sub(scene.camera.position));
+      const sp = this.projDir(scene, st.steerpoint.clone().sub(scene.viewCam.position));
       if (sp) { c.beginPath(); c.moveTo(sp.x, sp.y - 6); c.lineTo(sp.x + 6, sp.y); c.lineTo(sp.x, sp.y + 6); c.lineTo(sp.x - 6, sp.y); c.closePath(); c.stroke(); }
     }
     c.restore();
@@ -310,7 +310,7 @@ export class Hud {
     const cx = (box.hx0 + box.hx1) / 2, cy = (box.hy0 + box.hy1) / 2;
     const inv = p.quat.clone().invert();
     if (tgt) {
-      const s = this.projDir(scene, tgt.pos.clone().sub(scene.camera.position));
+      const s = this.projDir(scene, tgt.pos.clone().sub(scene.viewCam.position));
       const range = tgt.pos.distanceTo(p.pos);
       const inBox = s && s.x > box.hx0 && s.x < box.hx1 && s.y > box.hy0 && s.y < box.hy1;
       if (s && inBox) {
@@ -355,7 +355,7 @@ export class Hud {
     }
     if (wdef && wdef.kind === 'ir') {
       if (p.irLock) {
-        const s = this.projDir(scene, p.irLock.pos.clone().sub(scene.camera.position));
+        const s = this.projDir(scene, p.irLock.pos.clone().sub(scene.viewCam.position));
         if (s) { c.beginPath(); c.arc(s.x, s.y, 14 * scale, 0, Math.PI * 2); c.stroke(); c.beginPath(); c.arc(s.x, s.y, 3, 0, Math.PI * 2); c.stroke(); }
       } else {
         c.setLineDash([4, 4]);
@@ -380,7 +380,7 @@ export class Hud {
     if (wdef && (wdef.kind === 'bomb' || wdef.kind === 'lgb')) {
       const pred = world.predictImpact(p, wdef);
       if (pred) {
-        const s = this.projDir(scene, pred.point.clone().sub(scene.camera.position));
+        const s = this.projDir(scene, pred.point.clone().sub(scene.viewCam.position));
         if (s) {
           c.beginPath(); c.moveTo(fpm.x, fpm.y); c.lineTo(s.x, s.y); c.stroke();
           c.beginPath(); c.arc(s.x, s.y, 7 * scale, 0, Math.PI * 2); c.stroke();
@@ -393,7 +393,7 @@ export class Hud {
       const g = p.agTarget;
       const pt = g?.alive ? g.pos : p.agPoint;
       if (pt) {
-        const s = this.projDir(scene, pt.clone().sub(scene.camera.position));
+        const s = this.projDir(scene, pt.clone().sub(scene.viewCam.position));
         if (s) {
           c.beginPath(); c.moveTo(s.x, s.y - 9); c.lineTo(s.x + 9, s.y); c.lineTo(s.x, s.y + 9); c.lineTo(s.x - 9, s.y); c.closePath(); c.stroke();
           if (wdef.kind === 'agm') c.strokeRect(s.x - 14, s.y - 14, 28, 28);
@@ -407,7 +407,7 @@ export class Hud {
     if (wdef && wdef.kind === 'arm') {
       const em = world.findEmitter(p, wdef);
       if (em) {
-        const s = this.projDir(scene, em.pos.clone().sub(scene.camera.position));
+        const s = this.projDir(scene, em.pos.clone().sub(scene.viewCam.position));
         if (s) { c.strokeRect(s.x - 10, s.y - 10, 20, 20); this.text(em.symbol || 'SAM', s.x, s.y - 18, col, 11 * scale, 'center'); }
         this.text(`HARM ${em.name} ${(em.pos.distanceTo(p.pos) / NM).toFixed(0)}NM`, box.hx1 - 10 * scale, box.hy0 + 82 * scale, col, 12 * scale, 'right');
       } else this.text('HARM NO EMITTER', box.hx1 - 10 * scale, box.hy0 + 82 * scale, col, 12 * scale, 'right');
