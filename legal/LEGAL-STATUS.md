@@ -2,7 +2,7 @@
 
 RESEARCH NOTES — NOT LEGAL ADVICE — REVIEW WITH A LICENSED LAWYER BEFORE RELYING ON IT
 
-**App version:** 0.1.12
+**App version:** 0.1.13
 **Last checked:** 2026-10-11
 **Mode:** check (first run — full inventory, no previous baseline)
 
