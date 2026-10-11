@@ -28,6 +28,8 @@ export const ACTIONS: ActionDef[] = [
   { id: 'gear', label: 'Landing gear toggle', type: 'button', group: 'Systems' },
   { id: 'hook', label: 'Tailhook up/down', type: 'button', group: 'Systems' },
   { id: 'catLaunch', label: 'Catapult: salute / launch', type: 'button', group: 'Systems' },
+  { id: 'commsMenu', label: 'Radio / comms menu', type: 'button', group: 'Systems' },
+  { id: 'voicePtt', label: 'Voice command (push to talk)', type: 'button', group: 'Systems' },
   { id: 'flaps', label: 'Flaps cycle', type: 'button', group: 'Systems' },
   { id: 'speedbrake', label: 'Speed brake (toggle)', type: 'button', group: 'Systems' },
   { id: 'speedbrakeHold', label: 'Speed brake (hold)', type: 'button', group: 'Systems' },
@@ -101,7 +103,7 @@ export function defaultKeyboard(): BindingMap {
     trimUp: [K('ArrowDown', { ctrl: true })], trimDown: [K('ArrowUp', { ctrl: true })],
     trimLeft: [K('ArrowLeft', { ctrl: true })], trimRight: [K('ArrowRight', { ctrl: true })],
     trimYawLeft: [K('Comma', { ctrl: true })], trimYawRight: [K('Period', { ctrl: true })], trimReset: [K('KeyT', { shift: true })],
-    gear: [K('KeyG')], hook: [K('KeyH')], catLaunch: [K('KeyC')], flaps: [K('KeyF')], speedbrake: [K('KeyB')], wheelBrake: [K('KeyW')],
+    gear: [K('KeyG')], hook: [K('KeyH')], catLaunch: [K('KeyC')], commsMenu: [K('Backslash')], voicePtt: [K('Backquote')], flaps: [K('KeyF')], speedbrake: [K('KeyB')], wheelBrake: [K('KeyW')],
     // note: Ctrl+W / Ctrl+T cannot be intercepted by a web page (they close/open browser tabs)
     nozzleUp: [K('KeyM')], nozzleDown: [K('KeyN')], autopilot: [K('KeyA')], jettison: [K('KeyW', { shift: true })], eject: [K('KeyE', { shift: true })],
     fire: [K('Space')], weaponNext: [K('KeyD')], weaponPrev: [K('KeyD', { shift: true })],

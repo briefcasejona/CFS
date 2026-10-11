@@ -377,6 +377,7 @@ export function settingsScreen(app: AppApi): HTMLElement {
           <div class="muted small credits">Northern Europe and Persian Gulf maps: elevation from <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noopener">AWS Terrain Tiles</a> (Mapzen/Tilezen; SRTM, GMTED2010, ETOPO1, EU-DEM and others — <a href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md" target="_blank" rel="noopener">attribution</a>); coastlines, lakes, borders and cities from <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a> (public domain). Airfield positions approximate; the Europe scenario is fictional and the Gulf setting a simplified 1991 order of battle.</div>
           <h3>Audio & HUD</h3>
           <label>Volume (0–1) <input data-n="volume" type="number" min="0" max="1" step="0.05" value="${s.volume}"></label>
+          ${chk('voiceCommands', 'Voice commands', 'push-to-talk (&#96; key) radio calls such as &quot;request picture&quot; or &quot;flight rejoin&quot;. Uses your browser&#39;s speech recognition: in Chrome/Edge the audio of each command is sent to Google/Microsoft to be transcribed. Off by default; the comms menu (\\ key) works without it.')}
           <label>HUD color <input data-c="hudColor" type="color" value="${s.hudColor}"></label>
           <div class="btnrow"><button data-a="save" class="primary">Save</button><button data-a="defaults">Restore defaults</button></div>
         </div>

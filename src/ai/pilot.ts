@@ -55,6 +55,9 @@ export class AIPilot {
   private defendTimer = 0;
   private attackPhase = 0;
   private bingo = false;
+  /** flight-lead orders (comms menu / voice): a specific bandit to kill, or go home */
+  orderedTarget: Aircraft | null = null;
+  orderedRtb = false;
 
   constructor(ac: Aircraft, task: AITask, skill: Skill) {
     this.ac = ac;
@@ -97,6 +100,27 @@ export class AIPilot {
   }
 
   // ------------------------------------------------------------------ decisions
+  /** Orders from the flight lead. Returns the wingman's radio reply. */
+  order(cmd: 'attack' | 'engage' | 'rejoin' | 'rtb', target: Aircraft | null = null): string {
+    if (!this.ac.active) return '';
+    switch (cmd) {
+      case 'attack':
+        if (!target || !target.active) return 'Say again — no target.';
+        this.orderedTarget = target; this.weaponsFree = true; this.orderedRtb = false;
+        return `Copy, engaging ${target.def.name}.`;
+      case 'engage':
+        this.weaponsFree = true; this.commitRange = Math.max(this.commitRange, 90000); this.orderedRtb = false;
+        return 'Weapons free, engaging.';
+      case 'rejoin':
+        this.orderedTarget = null; this.target = null; this.weaponsFree = false; this.orderedRtb = false;
+        if (this.leader?.active) this.state = 'follow';
+        return 'Rejoining.';
+      case 'rtb':
+        this.orderedTarget = null; this.orderedRtb = true;
+        return 'RTB, wilco.';
+    }
+  }
+
   private think(world: World) {
     const ac = this.ac;
     const fm = ac.fm;
@@ -120,7 +144,11 @@ export class AIPilot {
       if (this.defendTimer > 3) this.state = this.target?.active ? 'engage' : 'enroute';
       return;
     }
-    if (this.bingo) { this.state = 'rtb'; return; }
+    if (this.bingo || this.orderedRtb) { this.state = 'rtb'; return; }
+    if (this.orderedTarget) {
+      if (this.orderedTarget.active) { this.target = this.orderedTarget; this.state = 'engage'; return; }
+      this.orderedTarget = null;
+    }
 
     const isA2A = ['cap', 'sweep', 'escort', 'intercept', 'patrol'].includes(this.task);
     const commit = isA2A ? this.commitRange : 12000;

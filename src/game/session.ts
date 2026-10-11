@@ -10,6 +10,8 @@ import { buildMission, evaluate, type BuiltMission, type MissionResult, type Mis
 import { WEAPONS } from '../weapons/stores.js';
 import { approach, clamp, DEG } from '../core/math.js';
 import { NM } from '../sim/atmosphere.js';
+import { COMMS, matchCommand, type CommsCommand } from './comms.js';
+import { VoiceInput } from '../input/voice.js';
 
 const DT = 1 / 120;
 
@@ -62,6 +64,10 @@ export class FlightSession {
   private mouse = { down: false, button: 0, x: 0, y: 0 };
   private lastKillCount = 0;
   private lastStallCount = 0;
+  /** radio: keyboard comms menu ( then 1–9) and push-to-talk voice commands */
+  private commsEl: HTMLElement;
+  private commsOpen = false;
+  private voice = new VoiceInput();
 
   constructor(ui: SessionUI, input: InputManager, audio: AudioSystem, settings: Settings) {
     this.ui = ui;
@@ -78,6 +84,28 @@ export class FlightSession {
     ui.map.addEventListener('mousedown', (e) => { this.mouse = { down: true, button: 9, x: e.clientX, y: e.clientY }; });
     window.addEventListener('mouseup', () => { this.mouse.down = false; });
     window.addEventListener('mousemove', (e) => this.onMouseMove(e));
+    this.commsEl = document.createElement('div');
+    this.commsEl.className = 'comms-menu';
+    this.commsEl.style.cssText = 'position:absolute;left:14px;top:90px;z-index:5;display:none;padding:10px 14px;background:rgba(0,0,0,.65);border:1px solid #3dff7a55;border-radius:6px;font:13px/1.6 monospace;color:#9fffb8;pointer-events:none';
+    this.commsEl.innerHTML = '<b>RADIO</b><br>' + COMMS.map((c, k) => `${(k + 1) % 10}. ${c.label}`).join('<br>') + '<br><span style="opacity:.6">Esc or &#92; to close</span>';
+    ui.root.append(this.commsEl);
+    // while the menu is open, digits pick a call instead of reaching the cockpit bindings (capture phase runs first)
+    window.addEventListener('keydown', (e) => {
+      if (!this.commsOpen || !this.running) return;
+      const n = /^(?:Digit|Numpad)([0-9])$/.exec(e.code)?.[1];   // 1–9, and 0 for the tenth call
+      if (n || e.code === 'Escape' || e.code === 'Backslash') {
+        e.preventDefault(); e.stopImmediatePropagation();
+        this.setComms(false);
+        const cmd = n ? COMMS[(Number(n) + 9) % 10] : undefined;
+        if (cmd) this.runComms(cmd);
+      }
+    }, { capture: true });
+    this.voice.onStatus = (t) => this.built?.world.radio(t, '#9fd8ff');
+    this.voice.onPhrase = (alts) => {
+      const cmd = matchCommand(alts);
+      if (cmd) this.runComms(cmd);
+      else this.built?.world.radio(`Voice: didn't catch "${alts[0] ?? ''}" — try e.g. "request picture", "flight rejoin".`, '#9fd8ff');
+    };
     ui.map.addEventListener('wheel', (e) => { this.mapView.mpp = clamp(this.mapView.mpp * (e.deltaY > 0 ? 1.2 : 1 / 1.2), 20, 1200); e.preventDefault(); }, { passive: false });
   }
 
@@ -150,7 +178,22 @@ export class FlightSession {
     this.raf = requestAnimationFrame((t) => this.frame(t));
   }
 
+  private setComms(open: boolean) {
+    this.commsOpen = open;
+    this.commsEl.style.display = open ? 'block' : 'none';
+  }
+
+  private runComms(cmd: CommsCommand) {
+    const b = this.built;
+    if (!b || !b.player.alive) return;
+    for (const [who, text] of cmd.run({ world: b.world, player: b.player, flight: b.playerFlight })) {
+      b.world.radio(who === '—' ? text : `${who}: ${text}`, who === b.player.callsign ? '#cfe8ff' : '#9fd8ff');
+    }
+  }
+
   stop() {
+    this.setComms(false);
+    this.voice.dispose();
     this.netHook?.end();
     this.netHook = null;
     this.running = false;
@@ -331,6 +374,11 @@ export class FlightSession {
     if (i.pressed('hook')) {
       if (!p.def.capabilities?.includes('carrier')) world.radio('No tailhook on this jet.', '#fc8');
       else { p.hook = !p.hook; world.radio(`Hook ${p.hook ? 'down' : 'up'}.`, '#ccc'); }
+    }
+    if (i.pressed('commsMenu')) this.setComms(!this.commsOpen);
+    if (i.pressed('voicePtt')) {
+      if (this.settings.voiceCommands) this.voice.start();
+      else world.radio('Voice commands are off — enable them in Settings (they use your browser\'s speech service). The comms menu (\\) always works.', '#9fd8ff');
     }
     if (i.pressed('catLaunch')) {
       const msg = world.carrierOps.launch(p);

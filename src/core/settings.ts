@@ -18,6 +18,8 @@ export interface Settings {
   hdModels: boolean;
   // audio
   volume: number;
+  /** push-to-talk voice commands (browser speech recognition; off by default — audio goes to the browser's speech service) */
+  voiceCommands: boolean;
   // HUD
   hudColor: string;
 }
@@ -35,6 +37,7 @@ export const DEFAULT_SETTINGS: Settings = {
   visibilityKm: 80,
   hdModels: true,
   volume: 0.6,
+  voiceCommands: false,
   hudColor: '#3dff7a',
 };
 
