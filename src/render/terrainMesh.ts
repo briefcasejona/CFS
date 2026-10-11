@@ -5,7 +5,8 @@ import { buildAirfield } from './airfield.js';
 
 const CHUNK = 16000; // m
 const LODS = [
-  { dist: 18000, res: 96 },
+  { dist: 6000, res: 192 },     // ~83 m spacing close in: ridges and valleys read properly at low level
+  { dist: 18000, res: 112 },
   { dist: 45000, res: 48 },
   { dist: 100000, res: 20 },
   { dist: 260000, res: 8 },
@@ -54,6 +55,41 @@ function nearRunway(x: number, z: number) {
   return false;
 }
 
+/** tiling grain (soil, grass clumps, fields) mixed into the vertex colours at two scales near the camera */
+function detailTexture() {
+  const N = 256, c = document.createElement('canvas'); c.width = c.height = N;
+  const x = c.getContext('2d')!, img = x.createImageData(N, N);
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    // tileable value noise from fbm sampled on a torus
+    const a = i / N * Math.PI * 2, b = j / N * Math.PI * 2;
+    const v = fbm(Math.cos(a) * 3 + 17, Math.sin(a) * 3 + Math.cos(b) * 3 + 5, 4) * 0.5 + fbm(Math.sin(b) * 6, Math.cos(a) * 6 + 9, 3) * 0.5;
+    const g = 128 + v * 110;
+    const k = (j * N + i) * 4;
+    img.data[k] = img.data[k + 1] = img.data[k + 2] = Math.max(0, Math.min(255, g)); img.data[k + 3] = 255;
+  }
+  x.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 8;
+  return t;
+}
+function addDetailTexture(mat: THREE.MeshLambertMaterial) {
+  const tex = detailTexture();
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uDetail = { value: tex };
+    sh.vertexShader = `varying vec3 vWorldPos;\n` + sh.vertexShader.replace('#include <worldpos_vertex>',
+      `#include <worldpos_vertex>\n vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
+    sh.fragmentShader = `uniform sampler2D uDetail;\nvarying vec3 vWorldPos;\n` + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+      float dist = length(vWorldPos - cameraPosition);
+      float fine = texture2D(uDetail, vWorldPos.xz / 45.0).r;
+      float coarse = texture2D(uDetail, vWorldPos.xz / 420.0).r;
+      float fade = 1.0 - smoothstep(1500.0, 9000.0, dist);
+      float fadeC = 1.0 - smoothstep(6000.0, 40000.0, dist);
+      diffuseColor.rgb *= mix(1.0, 0.72 + 0.56 * fine, 0.55 * fade) * mix(1.0, 0.8 + 0.4 * coarse, 0.6 * fadeC);`);
+  };
+  mat.customProgramCacheKey = () => 'cfs-terrain-detail';
+}
+
 interface ChunkEntry { mesh: THREE.Mesh; lod: number; used: number }
 
 /** Chunked LOD terrain with skirts. Geometry is generated lazily and cached. */
@@ -66,6 +102,7 @@ export class TerrainRenderer {
 
   constructor() {
     this.material = new THREE.MeshLambertMaterial({ vertexColors: true });
+    addDetailTexture(this.material);
     this.group.name = 'terrain';
   }
 
@@ -97,6 +134,8 @@ export class TerrainRenderer {
         const slope = Math.hypot(hx, hz) / (2 * step);
         pos[v * 3] = i * step; pos[v * 3 + 1] = Math.max(h, -2); pos[v * 3 + 2] = j * step;
         terrainColor(h, slope, x0 + i * step, z0 + j * step, pal, c);
+        // steeper ground a little darker: cheap ambient occlusion that gives the relief depth
+        if (h > 0.5) c.multiplyScalar(1 - 0.22 * Math.min(1, slope * 1.6));
         col[v * 3] = c.r; col[v * 3 + 1] = c.g; col[v * 3 + 2] = c.b;
         v++;
       }

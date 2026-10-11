@@ -131,6 +131,8 @@ export class SceneRenderer {
   fovBase = 75;
   zoom = 1;
   viewDist = 150000;
+  /** fog density set by the weather (at ground level) */
+  private baseFog = 0.00004;
   private acModels = new Map<number, AircraftModel>();
   private groundModels = new Map<number, THREE.Object3D>();
   private missileModels = new Map<number, THREE.Object3D>();
@@ -209,6 +211,7 @@ export class SceneRenderer {
     const fog = this.scene.fog as THREE.FogExp2;
     fog.color.copy(horizon);
     fog.density = 3.0 / (Math.max(5, w.visibilityKm) * 1000);
+    this.baseFog = fog.density;
     this.viewDist = Math.min(260000, w.visibilityKm * 1000 * 2.2);
     this.clouds.visible = w.clouds !== 'clear';
     const cm = this.clouds.material as THREE.MeshLambertMaterial;
@@ -519,6 +522,8 @@ export class SceneRenderer {
     this.updateCamera(world, dt);
     const cp = this.camera.position;
     this.sky.position.copy(cp);
+    // haze sits in the lower atmosphere: looking out from altitude the air is clearer
+    (this.scene.fog as THREE.FogExp2).density = this.baseFog * (0.45 + 0.55 * Math.exp(-Math.max(0, cp.y) / 5000));
     this.terrain.update(cp, this.viewDist);
     this.terrain.updateTrees(cp);
     // PAPI lights of the nearest field show red/white for the viewer's glidepath
