@@ -48,6 +48,21 @@ All 16 fly on the same **6-DOF rigid-body flight model**, and each jet supplies 
 * SAM sites (SA-10, SA-6, SA-2, SA-15, Patriot, Hawk) and AAA.
 * AI pilots fly the same flight model. They shoot and crank in BVR, fight BFM with lead/lag pursuit, defend by beaming and notching with countermeasures, and attack ground targets.
 
+## VR (Meta Quest via Link, seated)
+
+1. Connect the headset to the PC with Quest Link or Air Link.
+2. Open the public link in **Chrome or Edge** and start a flight.
+3. An **🥽 Enter VR** button appears top right whenever the browser reports a VR headset. Click it.
+
+In VR:
+* You sit in the cockpit with head tracking.
+* The HUD is projected out in front of you as if at infinity, and the MFDs show on the cockpit screens.
+* Fly with your HOTAS or keyboard.
+* The **Center view** key (Numpad 5) recentres the headset.
+* Menus stay on the monitor.
+
+The browser version is the supported way to fly in VR. The desktop app only shows the button if its built-in browser engine exposes the headset.
+
 ## Radio and voice commands
 
 Press **\\** for the radio menu, then a number:
