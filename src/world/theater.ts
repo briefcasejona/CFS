@@ -191,7 +191,13 @@ export function frontZAt(front: number[], x: number): number {
 /** Default nation for a side in the active theater. */
 export function defaultNation(side: Side): string { return current.nations[side][0]; }
 
-export function airbaseById(id: string) { return AIRBASES.find((a) => a.id === id)!; }
+export function airbaseById(id: string): Airbase | undefined { return AIRBASES.find((a) => a.id === id); }
+/** like airbaseById, but a missing base is a readable error (e.g. a mission made for another map) */
+export function requireAirbase(id: string): Airbase {
+  const ab = airbaseById(id);
+  if (!ab) throw new Error(`Airbase "${id}" is not on the ${current.name} map — was this mission made for another map?`);
+  return ab;
+}
 export function nearestAirbase(x: number, z: number, side?: Side) {
   let best: Airbase | null = null, bd = Infinity;
   for (const a of AIRBASES) {

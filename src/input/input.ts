@@ -89,6 +89,8 @@ export type Binding =
   | { kind: 'key'; code: string; ctrl?: boolean; shift?: boolean; alt?: boolean }
   | { kind: 'button'; device: string; index: number }
   | { kind: 'hat'; device: string; index: number; value: number }
+  /** a switch the device reports as an axis (2/3-position switches, some rotaries): "on" near a captured value */
+  | { kind: 'axisbtn'; device: string; index: number; value: number }
   | AxisBinding;
 
 export type BindingMap = Record<string, Binding[]>;
@@ -188,6 +190,7 @@ export function bindingLabel(b: Binding): string {
     case 'key': return `${b.ctrl ? 'Ctrl+' : ''}${b.shift ? 'Shift+' : ''}${b.alt ? 'Alt+' : ''}${b.code.replace(/^Key|^Digit/, '')}`;
     case 'button': return `B${b.index + 1}`;
     case 'hat': return `HAT${b.index} ${hatDir(b.value)}`;
+    case 'axisbtn': return `A${b.index} ${b.value >= 0 ? '+' : ''}${b.value.toFixed(1)}`;
     case 'axis': return `AXIS ${b.index}${b.invert ? ' inv' : ''}${b.slider ? ' (slider)' : ''}`;
   }
 }
@@ -205,7 +208,10 @@ export function shortDev(id: string) {
 const STORAGE_KEY = 'cfs.bindings.v1';
 const KNOWN_KEY = 'cfs.devicesSeen.v1';
 
-interface CaptureRequest { type: ActionType; cb: (b: Binding | null) => void; start: number }
+interface CaptureRequest { type: ActionType; cb: (b: Binding | null) => void; start: number; prefer?: string }
+
+/** pressed, or an analog button past half travel (some devices only report value) */
+export const btnDown = (b: { pressed: boolean; value: number }) => b.pressed || b.value > 0.5;
 
 export class InputManager {
   bindings: BindingMap = {};
@@ -220,6 +226,10 @@ export class InputManager {
   private seenDevices = new Set<string>();
   private capture: CaptureRequest | null = null;
   private captureBaseline = new Map<string, number[]>();
+  /** buttons already held when Bind was pressed (on-on switches): ignored until released */
+  private captureButtons = new Map<string, boolean[]>();
+  /** axis-switch candidate must hold its new position a few polls (filters stick bumps) */
+  private axisSwitch: { device: string; index: number; value: number; polls: number } | null = null;
   enabled = true;
   /** true while a flight is running: game keys then override browser shortcuts. */
   flightKeys = false;
@@ -308,7 +318,11 @@ export class InputManager {
         return (this.keys.has(b.code) || this.tapped.has(b.code)) && !!b.ctrl === this.ctrl && !!b.shift === this.shift && !!b.alt === this.alt;
       case 'button': {
         const pad = this.pads.find((p) => p.id === b.device);
-        return !!pad && b.index < pad.buttons.length && pad.buttons[b.index].pressed;
+        return !!pad && b.index < pad.buttons.length && btnDown(pad.buttons[b.index]);
+      }
+      case 'axisbtn': {
+        const pad = this.pads.find((p) => p.id === b.device);
+        return !!pad && b.index < pad.axes.length && Math.abs(pad.axes[b.index] - b.value) < 0.25;
       }
       case 'hat': {
         const pad = this.pads.find((p) => p.id === b.device);
@@ -325,11 +339,14 @@ export class InputManager {
   axis(a: string): number | null { return this.axes.has(a) ? this.axes.get(a)! : null; }
 
   // ---------------------------------------------------------------- capture for the binding UI
-  startCapture(type: ActionType, cb: (b: Binding | null) => void) {
-    this.capture = { type, cb, start: performance.now() };
+  /** Listen for the next control. `prefer`: the device column the user bound from — its input wins. */
+  startCapture(type: ActionType, cb: (b: Binding | null) => void, prefer?: string) {
+    this.capture = { type, cb, start: performance.now(), prefer };
     this.captureBaseline.clear();
+    this.captureButtons.clear();
+    this.axisSwitch = null;
     const raw = navigator.getGamepads ? navigator.getGamepads() : [];
-    for (const g of raw) if (g) this.captureBaseline.set(g.id, [...g.axes]);
+    for (const g of raw) if (g) { this.captureBaseline.set(g.id, [...g.axes]); this.captureButtons.set(g.id, g.buttons.map(btnDown)); }
   }
   cancelCapture() { this.finishCapture(null); }
   get capturing() { return !!this.capture; }
@@ -341,17 +358,33 @@ export class InputManager {
   private pollCapture() {
     const c = this.capture!;
     if (performance.now() - c.start > 10000) { this.finishCapture(null); return; }
-    for (const p of this.pads) {
+    const pads = [...this.pads].sort((a, b) => (b.id === c.prefer ? 1 : 0) - (a.id === c.prefer ? 1 : 0));
+    for (const p of pads) {
       let base = this.captureBaseline.get(p.id);
       if (!base) { base = [...p.axes]; this.captureBaseline.set(p.id, base); }
+      let held = this.captureButtons.get(p.id);
+      if (!held) { held = p.buttons.map(btnDown); this.captureButtons.set(p.id, held); }
       if (c.type === 'button') {
-        const bi = p.buttons.findIndex((b) => b.pressed);
-        if (bi >= 0) { this.finishCapture({ kind: 'button', device: p.id, index: bi }); return; }
+        // only a fresh press counts: switches that were already on are ignored until they are released
+        for (let i = 0; i < p.buttons.length; i++) {
+          const down = btnDown(p.buttons[i]);
+          if (down && !held[i]) { this.finishCapture({ kind: 'button', device: p.id, index: i }); return; }
+          held[i] = down;
+        }
         for (let i = 0; i < p.axes.length; i++) {
           // POV hats rest outside [-1,1] in Chrome and jump to discrete values
           if (Math.abs(base[i]) > 1.05 && Math.abs(p.axes[i]) <= 1.0001) {
             this.finishCapture({ kind: 'hat', device: p.id, index: i, value: p.axes[i] }); return;
           }
+        }
+        // switches reported as axes: a big jump to a near-end position, held for a few polls
+        for (let i = 0; i < p.axes.length; i++) {
+          const v = p.axes[i];
+          if (Math.abs(base[i]) > 1.05 || Math.abs(v - base[i]) < 0.5 || Math.abs(v) < 0.9) continue;
+          const s = this.axisSwitch;
+          if (s && s.device === p.id && s.index === i && Math.abs(s.value - v) < 0.05) {
+            if (++s.polls >= 3) { this.finishCapture({ kind: 'axisbtn', device: p.id, index: i, value: Math.round(v * 100) / 100 }); return; }
+          } else this.axisSwitch = { device: p.id, index: i, value: v, polls: 1 };
         }
       } else {
         let best = -1, bd = 0.35;
@@ -421,6 +454,7 @@ export function sameControl(a: Binding, b: Binding) {
   if (a.kind === 'key' && b.kind === 'key') return a.code === b.code && !!a.ctrl === !!b.ctrl && !!a.shift === !!b.shift && !!a.alt === !!b.alt;
   if (a.kind === 'button' && b.kind === 'button') return a.device === b.device && a.index === b.index;
   if (a.kind === 'hat' && b.kind === 'hat') return a.device === b.device && a.index === b.index && Math.abs(a.value - b.value) < 0.05;
+  if (a.kind === 'axisbtn' && b.kind === 'axisbtn') return a.device === b.device && a.index === b.index && Math.abs(a.value - b.value) < 0.25;
   if (a.kind === 'axis' && b.kind === 'axis') return a.device === b.device && a.index === b.index;
   return false;
 }

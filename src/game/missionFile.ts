@@ -1,6 +1,7 @@
 // Mission files: validation, local library, and share links (#mission=… deflate + base64url).
 import { AIRCRAFT_BY_ID } from '../aircraft/defs.js';
 import type { MissionSpec } from './mission.js';
+import { listTheaters } from '../world/theater.js';
 
 export const MISSION_FILE_VERSION = 1;
 const LIB_KEY = 'cfs.missions.v1';
@@ -14,6 +15,11 @@ export function validateMissionSpec(o: any): MissionSpec {
   if (!Array.isArray(o.groups)) fail('groups missing');
   if (!Array.isArray(o.goals)) fail('goals missing');
   if (!o.weather || typeof o.weather.timeOfDay !== 'number') fail('weather missing');
+  // missions saved before maps existed are Varnia missions
+  o.theaterId ??= 'varnia';
+  const theater = listTheaters().find((t) => t.id === o.theaterId);
+  if (!theater) fail(`unknown map "${o.theaterId}"`);
+  const bases = theater!.airbases;
   const players = o.flights.filter((f: any) => f.player);
   if (players.length !== 1) fail('exactly one flight must be the player flight');
   const ids = new Set<string>();
@@ -23,6 +29,13 @@ export function validateMissionSpec(o: any): MissionSpec {
     if (!(f.count >= 1 && f.count <= 8)) fail(`bad count on ${f.id}`);
     if (!f.start || !['air', 'runway', 'carrier'].includes(f.start.kind)) fail(`bad start on ${f.id}`);
     if (f.start.kind === 'carrier' && !(o.carriers ?? []).some((c: any) => c.id === f.start.carrierId)) fail(`${f.id} starts on an unknown carrier`);
+    if (f.start.kind === 'runway' && !bases.some((b) => b.id === f.start.airbaseId)) fail(`${f.id} starts at airbase "${f.start.airbaseId}", which is not on the ${theater!.name} map`);
+    if (!bases.some((b) => b.id === f.homeBase)) {
+      // a stale home base is harmless: send the flight to its side's nearest field instead
+      const s = f.start.kind === 'air' ? f.start : f.start.kind === 'runway' ? bases.find((b) => b.id === f.start.airbaseId)! : { x: 0, z: 0 };
+      const own = bases.filter((b) => b.side === f.side);
+      f.homeBase = (own.length ? own : bases).slice().sort((a, b) => Math.hypot(a.x - s.x, a.z - s.z) - Math.hypot(b.x - s.x, b.z - s.z))[0].id;
+    }
     if (ids.has(f.id)) fail(`duplicate flight id ${f.id}`);
     ids.add(f.id);
   }

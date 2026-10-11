@@ -1,7 +1,7 @@
 import type { Side } from '../aircraft/types.js';
 import { AIRCRAFT_BY_ID, hasCapability } from '../aircraft/defs.js';
 import type { Capability } from '../aircraft/types.js';
-import { AIRBASES, OBJECTIVES, INITIAL_FRONT, SECTORS, sectorX, frontZAt, airbaseById, currentTheater, setTheater, type ObjectiveDef } from '../world/theater.js';
+import { AIRBASES, OBJECTIVES, INITIAL_FRONT, SECTORS, sectorX, frontZAt, airbaseById, requireAirbase, currentTheater, setTheater, type ObjectiveDef } from '../world/theater.js';
 import { pickLoadout, callsignFor, type FlightSpec, type GroupSpec, type MissionSpec, type MissionGoal, type BuiltMission, type MissionResult } from '../game/mission.js';
 import type { Skill, AITask } from '../ai/pilot.js';
 import { WEAPONS } from '../weapons/stores.js';
@@ -198,7 +198,7 @@ function planSide(st: CampaignState, side: Side, r: () => number) {
 
 // ------------------------------------------------------------------ mission generation for the player's flight
 export function flightRoute(st: CampaignState, f: CFlight) {
-  const base = airbaseById(squadron(st, f.squadronId).baseId);
+  const base = requireAirbase(squadron(st, f.squadronId).baseId);
   const ip = { x: base.x + (f.x - base.x) * 0.75, z: base.z + (f.z - base.z) * 0.75 };
   return { base, ip, target: { x: f.x, z: f.z } };
 }
@@ -257,7 +257,7 @@ export function missionForFlight(st: CampaignState, f: CFlight, start: 'runway' 
   const pkg = st.ato.find((p) => p.id === f.packageId);
   for (const o of pkg?.flights ?? []) {
     if (o.id === f.id) continue;
-    const b2 = airbaseById(squadron(st, o.squadronId).baseId);
+    const b2 = requireAirbase(squadron(st, o.squadronId).baseId);
     flights.push({
       id: o.id, callsign: o.callsign, side: o.side, aircraftId: o.aircraftId, stores: o.stores, count: o.count, skill: 'veteran',
       task: TASK_AI[o.task], squadronId: o.squadronId, homeBase: b2.id,

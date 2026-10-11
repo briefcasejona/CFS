@@ -225,7 +225,7 @@ export function briefing(app: AppApi, spec: MissionSpec, back: () => void, extra
           <table class="kv">
             <tr><td>Aircraft</td><td>${esc(def.fullName)} ×${pf.count}</td></tr>
             <tr><td>Callsign</td><td>${esc(pf.callsign)} 1-1</td></tr>
-            <tr><td>Start</td><td>${pf.start.kind === 'runway' ? `Runway, ${esc(airbaseById(pf.start.airbaseId).name)}` : pf.start.kind === 'carrier' ? `Catapult 1, ${esc(spec.carriers?.find((c) => c.id === (pf.start as { carrierId: string }).carrierId)?.name ?? 'carrier')}` : 'Airborne'}</td></tr>
+            <tr><td>Start</td><td>${pf.start.kind === 'runway' ? `Runway, ${esc(airbaseById(pf.start.airbaseId)?.name ?? pf.start.airbaseId)}` : pf.start.kind === 'carrier' ? `Catapult 1, ${esc(spec.carriers?.find((c) => c.id === (pf.start as { carrierId: string }).carrierId)?.name ?? 'carrier')}` : 'Airborne'}</td></tr>
             <tr><td>Stores</td><td class="stores">${esc(summarizeStores(pf.stores))}</td></tr>
             <tr><td>Weather</td><td>${spec.weather.clouds}, visibility ${spec.weather.visibilityKm} km, ${String(Math.floor(spec.weather.timeOfDay)).padStart(2, '0')}:00L</td></tr>
             <tr><td>Known threats</td><td>${esc(threatSummary(spec))}</td></tr>

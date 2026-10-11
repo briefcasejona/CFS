@@ -72,7 +72,7 @@ describe('Europe theater', () => {
     T.setTheater('europe');
     try {
       expect(T.THEATER_NAME).toBe('Northern Europe');
-      const v = T.airbaseById('volkel');
+      const v = T.requireAirbase('volkel');
       expect(T.terrainHeight(v.x, v.z)).toBeCloseTo(v.elev, 0);
       expect(T.defaultNation('blue')).toBe('nl');
       expect(T.defaultNation('red')).toBe('ru');

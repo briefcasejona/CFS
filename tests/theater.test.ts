@@ -29,12 +29,12 @@ describe('theaters', () => {
     try {
       expect(T.THEATER_HALF).toBe(50000);
       expect(T.AIRBASES.length).toBe(1);
-      expect(T.airbaseById('tb').name).toBe('Test Base');
+      expect(T.requireAirbase('tb').name).toBe('Test Base');
       expect(T.SECTORS).toBe(4);
       expect(T.theaterVersion).toBe(v0 + 1);
       expect(T.terrainHeight(1000, 1000)).toBe(100);
       expect(T.isWater(-45000, 0)).toBe(true);
-      expect(T.airbaseById('tb').elev).toBe(100);
+      expect(T.requireAirbase('tb').elev).toBe(100);
     } finally {
       T.setTheater('varnia');
     }

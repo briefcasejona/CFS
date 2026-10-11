@@ -1,4 +1,4 @@
-import { ACTIONS, bindingLabel, shapeAxis, shortDev, type AxisBinding, type Binding, type InputManager } from '../input/input.js';
+import { ACTIONS, bindingLabel, btnDown, shapeAxis, shortDev, type AxisBinding, type Binding, type InputManager } from '../input/input.js';
 import { el, esc, type AppApi } from './screens.js';
 
 /** DCS-style controls screen: one column per device, click to bind, axis tuning with live preview. */
@@ -90,7 +90,7 @@ export function controlsScreen(app: AppApi, input: InputManager): HTMLElement {
     (cap.querySelector('.cap-title') as HTMLElement).textContent = `Bind: ${def.label}`;
     (cap.querySelector('.cap-msg') as HTMLElement).textContent = def.type === 'axis'
       ? 'Move the axis you want to use through its full range…'
-      : column === 'keyboard' ? 'Press a key (Ctrl / Shift / Alt modifiers allowed)…' : 'Press a button or hat direction on the device…';
+      : column === 'keyboard' ? 'Press a key (Ctrl / Shift / Alt modifiers allowed)…' : 'Press a button, hat direction or flip a switch on the device… (switches that are already on are ignored — flip them to bind)';
     input.startCapture(def.type, (b: Binding | null) => {
       cap.classList.add('hidden');
       if (!b) { render(); return; }
@@ -102,7 +102,7 @@ export function controlsScreen(app: AppApi, input: InputManager): HTMLElement {
       if (conflicts.length) app.toast(`Removed from: ${conflicts.map((c) => ACTIONS.find((a) => a.id === c)?.label ?? c).join(', ')}`);
       if (b.kind === 'axis') tune = { action, b };
       render();
-    });
+    }, column !== 'keyboard' ? column : undefined);
   };
 
   const renderTune = () => {
@@ -166,7 +166,7 @@ export function controlsScreen(app: AppApi, input: InputManager): HTMLElement {
         const hat = Math.abs(v) > 1.05;
         html += `<div class="axrow"><span>A${i}</span><div class="axbar"><div style="left:${50 + Math.max(-1, Math.min(1, v)) * 50}%" class="${hat ? 'hat' : ''}"></div></div><span class="small">${v.toFixed(2)}</span></div>`;
       });
-      html += '<div class="btns">' + p.buttons.map((b, i) => `<span class="b ${b.pressed ? 'on' : ''}">${i + 1}</span>`).join('') + '</div></div>';
+      html += '<div class="btns">' + p.buttons.map((b, i) => `<span class="b ${btnDown(b) ? 'on' : ''}">${i + 1}</span>`).join('') + '</div></div>';
     }
     monitor.innerHTML = html || '<div class="muted">No devices. Connect a HOTAS/joystick and press a button on it.</div>';
     if (tune) {

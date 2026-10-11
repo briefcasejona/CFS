@@ -4,7 +4,7 @@ import { AIRCRAFT_BY_ID, getAircraft } from '../aircraft/defs.js';
 import { Aircraft, GroundUnit, SamSite, type GroundType } from '../sim/entities.js';
 import { World, type WorldOptions } from '../sim/world.js';
 import { AIPilot, type AITask, type Skill } from '../ai/pilot.js';
-import { airbaseById, defaultNation, runwayEnds, setTheater, terrainHeight, theaterById, type SamType } from '../world/theater.js';
+import { airbaseById, requireAirbase, defaultNation, runwayEnds, setTheater, terrainHeight, theaterById, type SamType } from '../world/theater.js';
 import { adaptSpecToTheater } from './theaterAdapt.js';
 import { Carrier, DECK_H, GLIDE_DEG, AIM_S, type CarrierSpec } from '../sim/carrier.js';
 import type { Weather } from '../render/scene.js';
@@ -308,7 +308,7 @@ export function buildMission(spec: MissionSpec, opts: WorldOptions): BuiltMissio
           ac.ctrl.throttle = 0.7;
         }
       } else {
-        const ab = airbaseById(f.start.airbaseId);
+        const ab = requireAirbase(f.start.airbaseId);
         const ends = runwayEnds(ab);
         const h = ab.hdg * Math.PI / 180;
         const right = new THREE.Vector3(Math.cos(h), 0, Math.sin(h));
@@ -334,7 +334,7 @@ export function buildMission(spec: MissionSpec, opts: WorldOptions): BuiltMissio
         ai.cruiseAlt = f.station?.alt ?? f.waypoints?.[0]?.alt ?? 7000;
         if (f.targetGroup) ai.groundTargets = groupUnits.get(f.targetGroup) ?? [];
         if (i > 0) ai.leader = members[0];
-        if (f.start.kind === 'runway') ai.startTakeoff(airbaseById(f.start.airbaseId).hdg * Math.PI / 180);
+        if (f.start.kind === 'runway') ai.startTakeoff(requireAirbase(f.start.airbaseId).hdg * Math.PI / 180);
         if (f.task === 'cap' || f.task === 'patrol') ai.commitRange = 60000;
         if (f.task === 'sweep' || f.task === 'intercept') ai.commitRange = 90000;
         if (f.task === 'escort') ai.commitRange = 40000;

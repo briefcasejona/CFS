@@ -6,7 +6,7 @@ import type { Side } from '../aircraft/types.js';
 import type { MissionSpec, FlightSpec, GroupKind, MissionGoal } from '../game/mission.js';
 import { startXZ as flightStartXZ } from '../game/mission.js';
 import { validateMissionSpec, encodeMission, listMissions, saveMission, deleteMission } from '../game/missionFile.js';
-import { AIRBASES, THEATER_HALF, airbaseById, type SamType } from '../world/theater.js';
+import { AIRBASES, THEATER_HALF, airbaseById, currentTheater, ensureTheater, listTheaters, setTheater, theaterById, type SamType } from '../world/theater.js';
 import { drawTheater, s2w, type MapMarker, type MapView } from './map.js';
 import { el, esc, briefing, debrief, type AppApi } from './screens.js';
 import type { AITask, Skill } from '../ai/pilot.js';
@@ -20,9 +20,11 @@ const SAMS: SamType[] = ['SA-10', 'SA-6', 'SA-2', 'SA-15', 'Patriot', 'Hawk', 'A
 type Sel = { t: 'flight'; id: string } | { t: 'group'; id: string } | null;
 type Tool = 'select' | 'flight' | 'group' | 'waypoint';
 
-export function newMission(): MissionSpec {
-  const hb = AIRBASES.find((a) => a.id === 'halvorsen') ?? AIRBASES.find((a) => a.side === 'blue') ?? AIRBASES[0];
+export function newMission(theaterId = currentTheater().id): MissionSpec {
+  const bases = theaterById(theaterId).airbases;
+  const hb = bases.find((a) => a.id === 'halvorsen') ?? bases.find((a) => a.side === 'blue') ?? bases[0];
   return {
+    theaterId: theaterById(theaterId).id,
     title: 'New mission', briefing: 'Describe the mission here.',
     weather: { visibilityKm: 80, clouds: 'scattered', cloudBase: 3500, timeOfDay: 11 },
     flights: [{ id: 'f1', callsign: 'Viper', side: 'blue', aircraftId: 'f16c', stores: AIRCRAFT_BY_ID.f16c.loadouts[0].stores, count: 2, skill: 'veteran',
@@ -35,13 +37,23 @@ let current: MissionSpec | null = null;
 
 export function editorScreen(app: AppApi, load?: MissionSpec): HTMLElement {
   const m: MissionSpec = load ? JSON.parse(JSON.stringify(load)) : current ?? newMission();
+  m.theaterId = theaterById(m.theaterId ?? currentTheater().id).id;
+  // the editor reads the active theater's airbases and map everywhere: make the mission's theater active first
+  if (currentTheater().id !== m.theaterId) {
+    ensureTheater(m.theaterId)
+      .then(() => { setTheater(m.theaterId); app.show(() => editorScreen(app, m)); })
+      .catch((err) => { app.toast(`Could not load the map: ${(err as Error).message}`); app.mainMenu(); });
+    return el(`<div class="screen"><h2>Mission Editor</h2><p class="muted">Loading ${esc(theaterById(m.theaterId).name)}…</p></div>`);
+  }
   current = m;
   let sel: Sel = { t: 'flight', id: m.flights.find((f) => f.player)?.id ?? m.flights[0].id };
   let tool: Tool = 'select';
   const view: MapView = { cx: 0, cz: 0, mpp: 700, w: 800, h: 700 };
   const e = el(`
     <div class="screen editor">
-      <div class="header"><button data-a="back">◀ Back</button><h2>Mission Editor</h2><span class="spacer"></span>
+      <div class="header"><button data-a="back">◀ Back</button><h2>Mission Editor</h2>
+        <select class="mtheater" title="Map">${listTheaters().map((t) => `<option value="${t.id}" ${t.id === m.theaterId ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select>
+        <span class="spacer"></span>
         <button data-a="new">New</button><button data-a="save">Save</button><button data-a="export">Export</button>
         <label class="btnlike">Import<input type="file" accept=".json,application/json" class="imp" hidden></label>
         <button data-a="share">Share link</button><button data-a="fly" class="primary">Briefing ▶</button></div>
@@ -285,7 +297,17 @@ export function editorScreen(app: AppApi, load?: MissionSpec): HTMLElement {
   // ---------------------------------------------------------------- header actions
   const valid = (): MissionSpec | null => { try { return validateMissionSpec(m); } catch (err) { app.toast((err as Error).message); return null; } };
   q('[data-a="back"]').addEventListener('click', () => app.mainMenu());
-  q('[data-a="new"]').addEventListener('click', () => { current = null; app.show(() => editorScreen(app, newMission())); });
+  q('[data-a="new"]').addEventListener('click', () => { current = null; app.show(() => editorScreen(app, newMission(m.theaterId))); });
+  q<HTMLSelectElement>('.mtheater').addEventListener('change', (ev) => {
+    const id = (ev.target as HTMLSelectElement).value;
+    // flights and targets are placed in map coordinates, so another map means a fresh mission
+    if (!window.confirm(`Switch to ${theaterById(id).name}? This starts a new mission on that map (save this one first if you want to keep it).`)) {
+      (ev.target as HTMLSelectElement).value = m.theaterId!;
+      return;
+    }
+    current = null;
+    app.show(() => editorScreen(app, newMission(id)));
+  });
   q('[data-a="save"]').addEventListener('click', () => { if (valid()) { app.toast(saveMission(m) ? 'Mission saved' : 'Could not save (storage full?)'); renderLib(); } });
   q('[data-a="export"]').addEventListener('click', () => {
     if (!valid()) return;
@@ -311,6 +333,7 @@ export function editorScreen(app: AppApi, load?: MissionSpec): HTMLElement {
     const spec = valid();
     if (!spec) return;
     const copy: MissionSpec = JSON.parse(JSON.stringify(spec));
+    setTheater(copy.theaterId);
     app.show(() => briefing(app, copy, () => app.show(() => editorScreen(app)), undefined,
       () => app.fly(copy, (r, b) => app.show(() => debrief(app, copy, r, b, () => app.show(() => editorScreen(app)))))));
   });
