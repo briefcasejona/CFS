@@ -4,8 +4,8 @@ This file is the single source of truth for continuing the roadmap across sessio
 session at any time). Update it and `git commit && git push` after every finished step.
 
 ## Heartbeat (lock)
-- heartbeat: 2026-10-10T23:31:34+02:00
-- owner: interactive session (wishlist session)
+- heartbeat: 2026-10-11T13:53:22+02:00
+- owner: scheduled resume run
 
 Rule: a session that is actively working updates `heartbeat` (local ISO time, `date -Iseconds`) at least every
 30 minutes and on every commit. An automatic resume run must exit without changing anything if the heartbeat is
