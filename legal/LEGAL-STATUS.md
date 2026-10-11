@@ -3,7 +3,7 @@
 RESEARCH NOTES — NOT LEGAL ADVICE — REVIEW WITH A LICENSED LAWYER BEFORE RELYING ON IT
 
 **App version:** 0.1.10
-**Last checked:** 2026-10-10
+**Last checked:** 2026-10-11
 **Mode:** check (first run — full inventory, no previous baseline)
 
 ## Findings
@@ -20,6 +20,7 @@ RESEARCH NOTES — NOT LEGAL ADVICE — REVIEW WITH A LICENSED LAWYER BEFORE REL
 | L8 | 🟢 | IP | CC BY-NC-SA 4.0 HD models (bohmerang/Sketchfab): attribution in Settings + assets/models/cc-by-nc-sa/LICENSE.md; game is free → NC satisfied; ShareAlike: optimized files stay CC BY-NC-SA | Keep the game non-commercial while they ship; monetizing = lawyer trigger | fixed |
 | L9 | 🟢 | IP | Europe terrain: AWS Terrain Tiles (Mapzen/Tilezen sources) and Natural Earth (public domain) | Credited in Settings + assets/theaters/europe/SOURCES.md | fixed |
 | L10 | 🟢 | Cookies | Only localStorage + service-worker cache for the user's own settings/saves; no cookies, no analytics/tracking | Strictly necessary — no consent banner needed [model knowledge — verify] | fixed |
+| L12 | 🟢 | Privacy | Voice commands send command audio to the browser vendor's speech service (Google/Microsoft) | Opt-in setting, off by default, disclosed in Settings, README and the privacy-policy draft; push-to-talk only; nothing stored by CFS | fixed |
 | L11 | 🟢 | Privacy | Microphone only after an explicit click + browser permission prompt; not recorded | — | fixed |
 
 ## Documents

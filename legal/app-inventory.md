@@ -18,6 +18,7 @@ RESEARCH NOTES — NOT LEGAL ADVICE — REVIEW WITH A LICENSED LAWYER BEFORE REL
 - Stored on the device only (localStorage): settings `src/core/settings.ts`, controller bindings/known devices `src/input/input.ts`, campaign saves `src/campaign/campaign.ts`, mission library `src/game/missionFile.ts`.
 - Multiplayer (`src/net/link.ts`, `src/ui/multiplayer.ts`): a player-chosen **display name** and chat text go to the other players in the room; peers connect directly (WebRTC), so **IP addresses are visible to the other players**, the public WebTorrent trackers and the STUN servers.
 - Voice chat (optional, button): microphone audio streamed peer-to-peer to the room (`src/ui/multiplayer.ts:158-163`), only after the user clicks and the browser grants mic permission.
+- Voice commands (optional, Settings → Voice commands, off by default): push-to-talk uses the browser's Web Speech API (`src/input/voice.ts`); in Chrome/Edge each spoken command's audio is sent by the browser to Google/Microsoft speech services for transcription. CFS itself only receives the text and matches it to a radio call (`src/game/comms.ts`); nothing is stored. The setting is described in Settings (`src/ui/screens.ts`).
 - Shared mission links: the mission is encoded in the URL **hash** (`#mission=`, `src/game/missionFile.ts`, `src/main.ts:38`) — the hash is not sent to GitHub's servers.
 - Error overlay "copy log" copies to the clipboard only (`src/ui/errorOverlay.ts`).
 
@@ -29,6 +30,7 @@ RESEARCH NOTES — NOT LEGAL ADVICE — REVIEW WITH A LICENSED LAWYER BEFORE REL
 | wss://tracker.openwebtorrent.com, wss://tracker.webtorrent.dev (third-party WebTorrent trackers) | multiplayer peer discovery (only when Multiplayer is opened) | IP, hashed room id, WebRTC offers | `@trystero-p2p/torrent` defaults, `src/net/link.ts:16-17` |
 | stun.l.google.com / stun1-2.l.google.com:19302, stun.cloudflare.com:3478 | NAT traversal (multiplayer only) | IP | `node_modules/@trystero-p2p/core/dist/peer.mjs:378` |
 | other players (peer-to-peer) | game state, chat, name, optional voice | IP, name, chat, audio | `src/net/coop.ts`, `src/ui/multiplayer.ts` |
+| Browser speech service (Google in Chrome, Microsoft in Edge) — chosen by the browser, not by CFS | voice commands, only when enabled and the push-to-talk key is pressed | microphone audio of the command, IP | `src/input/voice.ts` |
 | Outbound links only (user clicks): sketchfab.com, registry.opendata.aws, github.com/tilezen, naturalearthdata.com | credits | — | `src/ui/screens.ts` credits |
 - Build-time only (not runtime): AWS Terrain Tiles and Natural Earth GitHub raw files fetched by `scripts/terrain/*.mjs`.
 
@@ -36,7 +38,7 @@ RESEARCH NOTES — NOT LEGAL ADVICE — REVIEW WITH A LICENSED LAWYER BEFORE REL
 ## 6. Cookies & storage — no cookies. localStorage (see §3) and service-worker Cache Storage (the app's own files). All strictly necessary for features the user uses (own settings/saves). Set by the app itself.
 ## 7. Tracking / analytics / crash reporting — none.
 ## 8. Payments, ads, IAP — none. **Must stay non-commercial** while CC BY-NC-SA models ship (§12).
-## 9. AI features — none.
+## 9. AI features — none (speech recognition is the browser's built-in feature, used only to pick one of ten fixed radio calls; no decisions about people).
 ## 10. UGC / sharing / messaging — multiplayer text chat + voice among people who share a room code (private rooms, not public); mission share links. No public profiles, no moderation surface.
 
 ## 11. Dependencies (shipped)
