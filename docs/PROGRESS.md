@@ -4,7 +4,7 @@ This file is the single source of truth for continuing the roadmap across sessio
 session at any time). Update it and `git commit && git push` after every finished step.
 
 ## Heartbeat (lock)
-- heartbeat: 2026-10-11T13:53:22+02:00
+- heartbeat: 2026-10-11T13:54:17+02:00
 - owner: scheduled resume run
 
 Rule: a session that is actively working updates `heartbeat` (local ISO time, `date -Iseconds`) at least every
@@ -62,7 +62,8 @@ DONE step (5a): Theater.palette (beach/snowLine/rockBelowSnow; Europe snowline b
 DONE (5b): instanced conifers (≤12k, 5 km radius, rebuilt per km, hidden >3000 m AGL) in forest-noise patches, clear of runways.
 DONE: /app-legal-guard check → legal/ (no 🔴; L1–L7 wait for Jonathan: contact address, license, OK for privacy link/lobby notice/licenses link). Release v0.1.9.
 DONE Phase 9: src/sim/carrier.ts (Carrier: moving deck as pure function of time, angled deck, 4 wires, 2 bow cats, island; CarrierOps: cat hold/launch (C) + end-of-stroke rotation, wire arrest within 100 m runout, trapped hold, bolter detection, LSO calls, approach info), FlightEnv.groundVelocity (deck-relative tyre friction), World.carriers/carrierOps + stoppedOnDeck landing, StartSpec kind carrier, MissionSpec.carriers, Theater.carriers (CVN-71 off Varnia west coast, CVN-75 in the North Sea), scenarios carrier_ops/carrier_trap (trimApproach solver, on-speed approach at recovery weight, crabbed for deck drift), HUD ball/lineup + HOOK flag, src/render/carrierMesh.ts, hook (H)/catLaunch (C) actions, FBW law includes flap lift, mechanical-jet trim authority 0.5, tests/carrier.test.ts (6). 65 tests.
-NEXT: Phase 10 — Gulf map (same pure-JS bake pipeline as Europe: scripts/terrain/bake-europe.mjs generalised; region ~ Kuwait/S-Iraq/N-Gulf, e.g. lat 27–33, lon 44–51; LCC or TM centred ~30N 47.5E; airfields: real (Ali Al Salem, Ahmed Al Jaber, KKMC, Shaikh Isa, Tallil, Jalibah, …) with 1991-style coalition vs Iraq framing; carrier in the N Gulf) + voice commands (src/input/voice.ts, Web Speech API push-to-talk ~20 phrases → wingman/ATC/tanker/LSO commands; keyboard comms menu fallback). Then optional: multicrew back seat, Europe campaign (N-S front), editor carrier placement.
+DONE Phase 10a (Gulf map): scripts/terrain/bake-theater.mjs <europe|gulf> + bake-overlay.mjs (generalised, Europe output byte-identical), src/world/demTheater.ts (DemGrid shared by Europe+Gulf), src/world/theaters/gulf.ts (Persian Gulf 1991: 5 coalition + 5 Iraqi/occupied-Kuwait fields, 14 objectives, CVN-71 in N Gulf, desert palette, no trees, campaign:false), TerrainPalette.style/trees, desert map colours, tests/gulf.test.ts. 68 tests.
+NEXT: Phase 10b voice commands (see below), then release. Original Phase 10 note: Gulf map (same pure-JS bake pipeline as Europe: scripts/terrain/bake-europe.mjs generalised; region ~ Kuwait/S-Iraq/N-Gulf, e.g. lat 27–33, lon 44–51; LCC or TM centred ~30N 47.5E; airfields: real (Ali Al Salem, Ahmed Al Jaber, KKMC, Shaikh Isa, Tallil, Jalibah, …) with 1991-style coalition vs Iraq framing; carrier in the N Gulf) + voice commands (src/input/voice.ts, Web Speech API push-to-talk ~20 phrases → wingman/ATC/tanker/LSO commands; keyboard comms menu fallback). Then optional: multicrew back seat, Europe campaign (N-S front), editor carrier placement.
 Original plan (for reference):
 (1) scripts/terrain/bake-europe.mjs (pure JS: fetch AWS Terrarium tiles https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png,
 decode with pngjs, height = (R*256 + G + B/256) - 32768) for lon −6…20, lat 42…62 at zoom ~7–8 → resample into a Transverse-Mercator

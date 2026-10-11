@@ -1,21 +1,26 @@
 #!/usr/bin/env node
-// Bake the Europe theater height grid from AWS Terrain Tiles (Terrarium PNG, public dataset; sources: SRTM, GMTED,
+// Bake a real-world theater height grid from AWS Terrain Tiles (Terrarium PNG, public dataset; sources: SRTM, GMTED,
 // ETOPO1, EU-DEM … — see https://github.com/tilezen/joerd/blob/master/docs/attribution.md).
 // Pure JS: tiles are decoded with pngjs and resampled into the game's Lambert Conformal Conic frame.
-// Output: assets/theaters/europe/height.bin.gz (Int16 LE metres, row-major z then x) + meta.json.
+// Output: assets/theaters/<id>/height.bin.gz (Int16 LE metres, row-major z then x) + meta.json.
 //
-// Usage: npm run build && node scripts/terrain/bake-europe.mjs
+// Usage: npm run build && node scripts/terrain/bake-theater.mjs <europe|gulf>
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import pngjs from 'pngjs';
 import { Lcc } from '../../build/src/world/lcc.js';
 
-const PROJ = { lat0: 52, lon0: 10, lat1: 47, lat2: 57 };
-const HALF = 1150000;          // m — square theater, ±1150 km
-const RES = 1000;              // m per sample
-const Z = 7;                   // Terrarium zoom (~0.75 km/px at 52°N)
-const OUT = 'assets/theaters/europe';
+// per theater: Lambert Conformal Conic frame, half extent (square), grid spacing, Terrarium zoom, lon/lat window for
+// the Natural Earth land mask
+export const THEATERS = {
+  europe: { proj: { lat0: 52, lon0: 10, lat1: 47, lat2: 57 }, half: 1150000, res: 1000, z: 7, window: [-20, 35, 40, 70] },
+  gulf: { proj: { lat0: 29.5, lon0: 47.5, lat1: 26, lat2: 33 }, half: 600000, res: 1000, z: 8, window: [38, 20, 57, 38] },
+};
+const ID = process.argv[2];
+if (!THEATERS[ID]) { console.error(`usage: bake-theater.mjs <${Object.keys(THEATERS).join('|')}>`); process.exit(1); }
+const { proj: PROJ, half: HALF, res: RES, z: Z, window: WIN } = THEATERS[ID];
+const OUT = `assets/theaters/${ID}`;
 const CACHE = '.cache/terrarium';
 
 const lcc = new Lcc(PROJ);
@@ -111,7 +116,7 @@ function rasterize(gj, mask, value) {
     const polys = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
     for (const poly of polys) for (const ring of poly) {
       // quick reject: rings entirely outside the theater's lon/lat window
-      if (ring.every(([lon, lat]) => lon < -20 || lon > 40 || lat < 35 || lat > 70)) continue;
+      if (ring.every(([lon, lat]) => lon < WIN[0] || lon > WIN[2] || lat < WIN[1] || lat > WIN[3])) continue;
       rings.push(ring.map(([lon, lat]) => { const p = lcc.forward(lat, lon); return [(p.x + HALF) / RES, (p.z + HALF) / RES]; }));
     }
   }

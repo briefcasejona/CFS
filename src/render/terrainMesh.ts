@@ -17,6 +17,13 @@ function terrainColor(h: number, slope: number, x: number, z: number, pal: Terra
   if (h <= 0.5) return out.setRGB(0.12, 0.2, 0.28);
   if (h < pal.beach) return out.setRGB(0.55, 0.52, 0.42);
   const snowLine = pal.snowLine(x, z);
+  if (pal.style === 'desert' && slope <= 0.55 && h <= snowLine - pal.rockBelowSnow) {
+    // sand, gravel plains and darker stony patches; a hint of green on the lowest river plains
+    const g = fbm(x * 0.0025, z * 0.0025, 2);
+    if (h < 25 && n > 0.62) return out.setRGB(0.38 + g * 0.05, 0.42 + g * 0.05, 0.26);
+    const stony = n > 0.6 ? 0.82 : 1;
+    return out.setRGB((0.70 + g * 0.06 + h * 0.00003) * stony, (0.60 + g * 0.05) * stony, (0.43 + g * 0.04) * stony);
+  }
   if (slope > 0.55 || h > snowLine - pal.rockBelowSnow) {
     // ragged snow edge: the noise moves the line up and down by ~150 m
     const sl = snowLine + (n - 0.5) * 300;
@@ -191,7 +198,7 @@ export class TerrainRenderer {
       this.group.add(this.trees);
     }
     // invisible (and not worth rebuilding) above ~3000 m AGL
-    this.trees.visible = agl < 3000;
+    this.trees.visible = agl < 3000 && terrainPalette().trees;
     if (!this.trees.visible || Math.hypot(camPos.x - this.treeAt.x, camPos.z - this.treeAt.y) < 1000) return;
     this.treeAt.set(camPos.x, camPos.z);
     const pal = terrainPalette();

@@ -2,6 +2,7 @@ import { clamp, smoothstep } from '../core/math.js';
 import type { Side } from '../aircraft/types.js';
 import { VARNIA } from './theaters/varnia.js';
 import { EUROPE } from './theaters/europe.js';
+import { GULF } from './theaters/gulf.js';
 import type { CarrierSpec } from '../sim/carrier.js';
 
 export { fbm } from './noise.js';
@@ -72,8 +73,12 @@ export interface TerrainPalette {
   snowLine: (x: number, z: number) => number;
   /** bare rock starts this far (m) below the snowline */
   rockBelowSnow: number;
+  /** ground cover: green fields and forests, or sand and gravel */
+  style: 'temperate' | 'desert';
+  /** instanced forest trees near the camera */
+  trees: boolean;
 }
-const DEFAULT_PALETTE: TerrainPalette = { beach: 8, snowLine: () => 1900, rockBelowSnow: 200 };
+const DEFAULT_PALETTE: TerrainPalette = { beach: 8, snowLine: () => 1900, rockBelowSnow: 200, style: 'temperate', trees: true };
 export function terrainPalette(): TerrainPalette { return { ...DEFAULT_PALETTE, ...current.palette }; }
 
 const REGISTRY = new Map<string, Theater>();
@@ -114,6 +119,7 @@ export function setTheater(id: string | undefined): Theater {
 
 registerTheater(VARNIA);
 registerTheater(EUROPE);
+registerTheater(GULF);
 
 /** Load a theater's data if needed (DEM download) — resolves when it can be flown. */
 export async function ensureTheater(id: string | undefined): Promise<Theater> {

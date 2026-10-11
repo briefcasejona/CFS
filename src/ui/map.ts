@@ -1,4 +1,4 @@
-import { THEATER_HALF, currentTheater, terrainHeight, AIRBASES, OBJECTIVES, frontZAt, theaterVersion, type ObjectiveDef } from '../world/theater.js';
+import { THEATER_HALF, currentTheater, terrainPalette, terrainHeight, AIRBASES, OBJECTIVES, frontZAt, theaterVersion, type ObjectiveDef } from '../world/theater.js';
 import { SAM_PARAMS } from '../sim/entities.js';
 import { WEAPONS } from '../weapons/stores.js';
 
@@ -17,6 +17,7 @@ export function theaterBackground(): HTMLCanvasElement {
   const img = x.createImageData(N, N);
   const step = (2 * THEATER_HALF) / N;
   const H = new Float32Array(N * N);
+  const desert = terrainPalette().style === 'desert';
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) H[j * N + i] = terrainHeight(-THEATER_HALF + i * step, -THEATER_HALF + j * step);
   for (let j = 0; j < N; j++) {
     for (let i = 0; i < N; i++) {
@@ -28,7 +29,8 @@ export function theaterBackground(): HTMLCanvasElement {
       const hz = H[Math.min(N - 1, j + 1) * N + i] - h;
       const shade = Math.max(0.55, Math.min(1.3, 1 - (hx + hz) / 180));
       let r: number, g: number, b: number;
-      if (h < 200) { r = 88; g = 104; b = 66; }
+      if (desert && h < 1800) { r = 170 - Math.min(40, h / 30); g = 150 - Math.min(40, h / 30); b = 108 - Math.min(30, h / 40); }
+      else if (h < 200) { r = 88; g = 104; b = 66; }
       else if (h < 600) { r = 112; g = 116; b = 76; }
       else if (h < 1200) { r = 128; g = 112; b = 86; }
       else if (h < 1800) { r = 140; g = 130; b = 118; }

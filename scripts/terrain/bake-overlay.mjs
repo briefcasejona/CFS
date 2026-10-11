@@ -1,16 +1,23 @@
 #!/usr/bin/env node
-// Bake the Europe map overlay: national borders (Natural Earth 10 m admin-0 boundary lines, public domain) and major
-// cities (Natural Earth populated places) in the game's Lambert frame. Output: assets/theaters/europe/overlay.json
+// Bake a real-world theater's map overlay: national borders (Natural Earth 10 m admin-0 boundary lines, public domain) and major
+// cities (Natural Earth populated places) in the game's Lambert frame. Output: assets/theaters/<id>/overlay.json
 //   { borders: [[x0,z0,x1,z1,…] …] (100 m units), cities: [[name, x, z, isCapital] …] (metres) }
 //
-// Usage: npm run build && node scripts/terrain/bake-europe-overlay.mjs
+// Usage: npm run build && node scripts/terrain/bake-overlay.mjs <europe|gulf>
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Lcc } from '../../build/src/world/lcc.js';
 
-const lcc = new Lcc({ lat0: 52, lon0: 10, lat1: 47, lat2: 57 });
-const HALF = 1150000;
-const OUT = 'assets/theaters/europe';
+// same frames as scripts/terrain/bake-theater.mjs; minPop = smallest non-capital city labelled
+const THEATERS = {
+  europe: { proj: { lat0: 52, lon0: 10, lat1: 47, lat2: 57 }, half: 1150000, minPop: 600000 },
+  gulf: { proj: { lat0: 29.5, lon0: 47.5, lat1: 26, lat2: 33 }, half: 600000, minPop: 150000 },
+};
+const ID = process.argv[2];
+if (!THEATERS[ID]) { console.error(`usage: bake-overlay.mjs <${Object.keys(THEATERS).join('|')}>`); process.exit(1); }
+const lcc = new Lcc(THEATERS[ID].proj);
+const HALF = THEATERS[ID].half;
+const OUT = `assets/theaters/${ID}`;
 
 async function geojson(name) {
   const file = join('.cache', `${name}.geojson`);
@@ -44,12 +51,12 @@ for (const f of (await geojson('ne_10m_admin_0_boundary_lines_land')).features) 
   }
 }
 
-// cities: national capitals plus places over ~600 k inhabitants
+// cities: national capitals plus the larger places
 const cities = [];
 for (const f of (await geojson('ne_10m_populated_places_simple')).features) {
   const pr = f.properties;
   const capital = pr.featurecla === 'Admin-0 capital';
-  if (!capital && (pr.pop_max ?? 0) < 600000) continue;
+  if (!capital && (pr.pop_max ?? 0) < THEATERS[ID].minPop) continue;
   const [lon, lat] = f.geometry.coordinates;
   const p = lcc.forward(lat, lon);
   if (!inside(p)) continue;

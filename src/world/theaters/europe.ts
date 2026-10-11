@@ -1,42 +1,13 @@
 // Real-world Europe theater: heights from the baked DEM (assets/theaters/europe, AWS Terrain Tiles), Lambert Conformal
 // Conic frame centred 52°N 10°E. Hypothetical scenario: NATO (BLUE) vs an eastern OPFOR (RED) based in Kaliningrad and
 // western Belarus. Airfields are real military fields (positions/runways approximate).
-import { smoothstep } from '../../core/math.js';
-import { fbm } from '../noise.js';
-import { Lcc } from '../lcc.js';
-import type { Airbase, ObjectiveDef, Theater } from '../theater.js';
+import { DemGrid, type AbRow, type ObjRow } from '../demTheater.js';
+import type { Theater } from '../theater.js';
 
 export const EUROPE_PROJ = { lat0: 52, lon0: 10, lat1: 47, lat2: 57 };
-export const europeLcc = new Lcc(EUROPE_PROJ);
-const HALF = 1150000, RES = 1000, N = 2301;
+const DEM = new DemGrid({ proj: EUROPE_PROJ, half: 1150000, res: 1000, asset: 'europe' });
+export const europeLcc = DEM.lcc;
 
-let grid: Int16Array | null = null;
-
-function sample(i: number, j: number) {
-  i = i < 0 ? 0 : i >= N ? N - 1 : i;
-  j = j < 0 ? 0 : j >= N ? N - 1 : j;
-  return grid![j * N + i];
-}
-
-function rawHeight(x: number, z: number): number {
-  if (!grid) return -50;
-  const fx = (x + HALF) / RES, fz = (z + HALF) / RES;
-  const i = Math.floor(fx), j = Math.floor(fz), tx = fx - i, tz = fz - j;
-  const h = (sample(i, j) * (1 - tx) + sample(i + 1, j) * tx) * (1 - tz) + (sample(i, j + 1) * (1 - tx) + sample(i + 1, j + 1) * tx) * tz;
-  if (h <= 0) return h;
-  // sub-kilometre relief the 1 km grid can't hold: more in rough terrain, fading out towards sea level so polders and
-  // low coasts (baked at +1 m) never dip under the sea plane
-  const rough = smoothstep(80, 900, h), low = smoothstep(1, 40, h);
-  return Math.max(0.6, h + low * (fbm(x / 1400, z / 1400, 4) * (12 + 160 * rough) + fbm(x / 350, z / 350, 2) * (3 + 25 * rough)));
-}
-
-/** grid bearing (deg) of true north at a point — runway headings are given true and converted to grid. */
-function northBearing(lat: number, lon: number) {
-  const a = europeLcc.forward(lat, lon), b = europeLcc.forward(lat + 0.01, lon);
-  return Math.atan2(b.x - a.x, -(b.z - a.z)) * 180 / Math.PI;
-}
-
-type AbRow = [id: string, name: string, side: 'blue' | 'red', lat: number, lon: number, trueHdg: number, length: number];
 const AB: AbRow[] = [
   // NATO (blue)
   ['volkel', 'Volkel AB (NL)', 'blue', 51.656, 5.709, 60, 3020],
@@ -68,7 +39,7 @@ const AB: AbRow[] = [
   ['lida', 'Lida AB (BY)', 'red', 53.877, 25.270, 110, 2500],
 ];
 
-const OBJ: Array<[string, string, ObjectiveDef['kind'], 'blue' | 'red', number, number, number, ObjectiveDef['samType']?]> = [
+const OBJ: ObjRow[] = [
   ['r_klgport', 'Kaliningrad port & depots', 'depot', 'red', 54.70, 20.45, 7],
   ['r_baltiysk', 'Baltiysk naval base', 'command', 'red', 54.64, 19.90, 8],
   ['r_s400', 'Long-range SAM Kaliningrad (as SA-10)', 'sam', 'red', 54.80, 20.60, 8, 'SA-10'],
@@ -81,25 +52,16 @@ const OBJ: Array<[string, string, ObjectiveDef['kind'], 'blue' | 'red', number, 
   ['b_berlin', 'Berlin-Brandenburg airlift hub', 'depot', 'blue', 52.37, 13.50, 5],
 ];
 
-const airbases: Airbase[] = AB.map(([id, name, side, lat, lon, hdg, length]) => {
-  const p = europeLcc.forward(lat, lon);
-  return { id, name, side, x: p.x, z: p.z, hdg: (hdg + northBearing(lat, lon) + 360) % 360, length, elev: 0 };
-});
-const objectives: ObjectiveDef[] = OBJ.map(([id, name, kind, side, lat, lon, value, samType]) => {
-  const p = europeLcc.forward(lat, lon);
-  return { id, name, kind, side, x: p.x, z: p.z, value, ...(samType ? { samType } : {}) };
-});
-
 export const EUROPE: Theater = {
   id: 'europe',
   name: 'Northern Europe',
   description: 'Real terrain from Brittany to Belarus and the Alps to southern Norway (1 km DEM). Hypothetical NATO vs eastern OPFOR scenario.',
-  half: HALF,
+  half: DEM.cfg.half,
   factions: { blue: 'NATO', red: 'OPFOR' },
   nations: { blue: ['nl', 'de', 'be', 'fr', 'uk', 'dk', 'no', 'se', 'pl', 'us'], red: ['ru', 'by'] },
-  rawHeight,
-  airbases,
-  objectives,
+  rawHeight: DEM.rawHeight,
+  airbases: DEM.airbases(AB),
+  objectives: DEM.objectives(OBJ),
   // central North Sea, steaming north-east
   carriers: [{ id: 'cvn75', name: 'USS Harry S. Truman (CVN-75)', side: 'blue', ...europeLcc.forward(54.6, 3.6), hdg: 30, speedKt: 15 }],
   sectors: 8,
@@ -114,27 +76,9 @@ export const EUROPE: Theater = {
   },
   // Instant Action engagement area: over north-east Poland, enemy to the east-north-east
   iaAnchor: { ...europeLcc.forward(53.9, 21.4), enemyHdg: 75, blueBase: 'malbork', redBase: 'chkalovsk' },
-  load: async () => {
-    if (grid) return;
-    const res = await fetch('assets/theaters/europe/height.bin.gz');
-    if (!res.ok) throw new Error(`Europe terrain not available (${res.status})`);
-    let bytes = await res.arrayBuffer();
-    const head = new Uint8Array(bytes, 0, 2);
-    // gunzip unless a server already did (Content-Encoding: gzip)
-    if (head[0] === 0x1f && head[1] === 0x8b) bytes = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
-    setEuropeGrid(new Int16Array(bytes));
-    // borders and cities for the map — optional, the theater flies without them
-    try {
-      const o = await fetch('assets/theaters/europe/overlay.json');
-      if (o.ok) EUROPE.overlay = await o.json();
-    } catch { /* offline without the overlay cached */ }
-  },
+  load: () => DEM.load(EUROPE),
 };
 
 /** Install the height grid (browser: fetched + gunzipped by EUROPE.load; tests: read from disk). */
-export function setEuropeGrid(g: Int16Array) {
-  if (g.length !== N * N) throw new Error(`Europe grid has ${g.length} samples, expected ${N * N}`);
-  grid = g;
-  for (const ab of EUROPE.airbases) ab.elev = Math.max(5, rawHeight(ab.x, ab.z));
-}
-export function europeLoaded() { return !!grid; }
+export function setEuropeGrid(g: Int16Array) { DEM.setGrid(g, EUROPE); }
+export function europeLoaded() { return !!DEM.grid; }
