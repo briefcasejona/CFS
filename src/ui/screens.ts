@@ -372,7 +372,7 @@ export function settingsScreen(app: AppApi): HTMLElement {
           <h3>Graphics</h3>
           <label>Field of view (deg) <input data-n="fov" type="number" min="40" max="110" value="${s.fov}"></label>
           <label>Max visibility (km) <input data-n="visibilityKm" type="number" min="10" max="150" value="${s.visibilityKm}"></label>
-          ${chk('hdModels', 'HD aircraft models', 'detailed 3D models where available (F-14, Gripen); loaded on demand, ~4–7 MB each')}
+          ${chk('hdModels', 'HD aircraft models', 'detailed 3D models where available (F-14, F-16, F/A-18F, F-4, Gripen); loaded on demand, ~4–7 MB each')}
           <div class="muted small credits">3D models: ${hdCredits().map((c) => `"${esc(c.title)}" by ${esc(c.author)} (<a href="${c.source}" target="_blank" rel="noopener">Sketchfab</a>), ${c.license}, textures re-encoded`).join(' · ')}</div>
           <div class="muted small credits">Northern Europe and Persian Gulf maps: elevation from <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noopener">AWS Terrain Tiles</a> (Mapzen/Tilezen; SRTM, GMTED2010, ETOPO1, EU-DEM and others — <a href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md" target="_blank" rel="noopener">attribution</a>); coastlines, lakes, borders and cities from <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a> (public domain). Airfield positions approximate; the Europe scenario is fictional and the Gulf setting a simplified 1991 order of battle.</div>
           <h3>Audio & HUD</h3>

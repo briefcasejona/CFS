@@ -12,11 +12,17 @@ export interface HdSpec {
   gearDown: RegExp; gearUp: RegExp; cockpit: RegExp; hide?: RegExp;
   /** swing wing (F-14): outer-wing vertices beyond |x| > minAbsX (game metres) and forward of maxZ rotate around (±pivotX, *, pivotZ) */
   swing?: { pivotX: number; pivotZ: number; minAbsX: number; maxZ: number; refSweep: number };
-  /** pilot eye position in game metres (body frame); default derived from the cockpit node's bounds */
+  /** pilot eye position in game metres (body frame); default: ~0.65 m behind and just above the HUD combiner node,
+   *  else derived from the cockpit node's bounds */
   eye?: { y: number; z: number };
+  /** HUD combiner node (for the default eye point); default /hud/i */
+  hud?: RegExp;
 }
 
-/** HD models per aircraft family (every variant of the family uses it). */
+const BOHMERANG = { author: 'bohmerang', license: 'CC BY-NC-SA 4.0' };
+const BOH_PARTS = { gearDown: /landingOn/i, gearUp: /landingOff/i, cockpit: /cockpit|hud/i };
+
+/** HD models, keyed by aircraft id (one variant) or by family (every variant of the family). */
 export const HD_SPECS: Record<string, HdSpec> = {
   'F-14': {
     url: 'assets/models/cc-by-nc-sa/f14.glb', title: 'F-14 Tomcat - Fighter Jet - Free', author: 'bohmerang',
@@ -30,6 +36,19 @@ export const HD_SPECS: Record<string, HdSpec> = {
     source: 'https://sketchfab.com/3d-models/saab-jas-39-gripen-fighter-jet-free-03d4f4f0f7e94f469299ba7db4c707c4', license: 'CC BY-NC-SA 4.0',
     gearDown: /landingOn/i, gearUp: /landingOff/i, cockpit: /cockpit|hud/i,
   },
+  'F-16': {
+    url: 'assets/models/cc-by-nc-sa/f16.glb', title: 'F-16 Fighting Falcon - Fighter Jet - Free', ...BOHMERANG,
+    source: 'https://sketchfab.com/3d-models/f-16-fighting-falcon-fighter-jet-free-f0b00989e5634764848ef2c235c64db5', ...BOH_PARTS,
+  },
+  // the Super Hornet model only: the legacy F/A-18C has a different (smaller) airframe and keeps the procedural model
+  fa18e: {
+    url: 'assets/models/cc-by-nc-sa/fa18f.glb', title: 'Boeing F/A-18F Super Hornet - Free', ...BOHMERANG,
+    source: 'https://sketchfab.com/3d-models/boeing-fa-18f-super-hornet-free-447caa975f534554a83f70f0877b73fb', ...BOH_PARTS,
+  },
+  f4e: {
+    url: 'assets/models/cc-by-nc-sa/f4.glb', title: 'F-4 Phantom II - Fighter Jet - Free', ...BOHMERANG,
+    source: 'https://sketchfab.com/3d-models/f-4-phantom-ii-fighter-jet-free-f0b9ac8bdab149f3b75352a9f4f4e1c8', ...BOH_PARTS,
+  },
 };
 
 /** Distance (m) beyond which the cheaper procedural model is drawn instead. */
@@ -38,7 +57,7 @@ export const HD_RANGE = 3500;
 let enabled = true;
 export function setHdModelsEnabled(on: boolean) { enabled = on; }
 export function hdModelsEnabled() { return enabled; }
-export function hdSpecFor(def: AircraftDef): HdSpec | undefined { return HD_SPECS[def.family ?? def.name]; }
+export function hdSpecFor(def: AircraftDef): HdSpec | undefined { return HD_SPECS[def.id] ?? HD_SPECS[def.family ?? def.name]; }
 export function hasHdModel(def: AircraftDef) { return !!hdSpecFor(def); }
 
 interface Template { root: THREE.Group; spec: HdSpec }
@@ -90,6 +109,7 @@ export function bake(scene: THREE.Object3D, spec: HdSpec, def: AircraftDef): THR
     p.mesh.geometry.applyMatrix4(fix);
     p.mesh.geometry.computeBoundingSphere();
     p.mesh.name = p.name;
+    p.mesh.userData.hud = (spec.hud ?? /hud/i).test(p.name);
     p.mesh.userData.role = spec.gearDown.test(p.name) ? 'gearDown' : spec.gearUp.test(p.name) ? 'gearUp'
       : spec.cockpit.test(p.name) ? 'cockpit' : spec.hide?.test(p.name) ? 'hidden' : 'body';
     const mats = (Array.isArray(p.mesh.material) ? p.mesh.material : [p.mesh.material]) as THREE.MeshStandardMaterial[];
@@ -139,7 +159,9 @@ function instantiate(t: Template): HdInstance {
   const sw = t.spec.swing;
   const inst: HdInstance = { root, sweep: null, refSweep: sw?.refSweep ?? 0, gearDown: [], gearUp: [], cockpit: [], glass: [], eye: new THREE.Vector3() };
   const uSweep = { value: 0 };
+  const hudBox = new THREE.Box3();
   for (const src of t.root.children as THREE.Mesh[]) {
+    if (src.userData.hud) { src.geometry.computeBoundingBox(); hudBox.union(src.geometry.boundingBox!); }
     const role = src.userData.role as string;
     if (role === 'hidden') continue;
     let mat = src.material as THREE.Material;
@@ -168,11 +190,12 @@ function instantiate(t: Template): HdInstance {
     if (mm.transparent || /glass|canopy/i.test(mm.name)) inst.glass.push(m);
     root.add(m);
   }
-  // eye: explicit, else front part of the cockpit volume
+  // eye: explicit; else the design eye point ~0.65 m behind and just above the HUD combiner; else from the cockpit
   const cb = new THREE.Box3();
   for (const c of inst.cockpit) { const mesh = c as THREE.Mesh; mesh.geometry.computeBoundingBox(); cb.union(mesh.geometry.boundingBox!); }
   const e = t.spec.eye;
   if (e) inst.eye.set(0, e.y, e.z);
+  else if (!hudBox.isEmpty()) inst.eye.set(0, hudBox.max.y + 0.04, hudBox.max.z + 0.65);
   else if (!cb.isEmpty()) inst.eye.set(0, cb.max.y - 0.45, cb.min.z + (cb.max.z - cb.min.z) * 0.55);
   return inst;
 }

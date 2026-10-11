@@ -23,7 +23,7 @@ The toolchain is pure JavaScript (TypeScript `tsc` + Node). Nothing uses native 
 
 | USA | Russia | Europe |
 |---|---|---|
-| F-15C Eagle · F-16C Block 50 · F/A-18C Hornet · F/A-18E/F Super Hornet · F-14B(U) Tomcat · F-4E Phantom II · T-38C Talon · AV-8B Harrier II (Hawker lineage) | MiG-29A · Su-27S · Su-30SM · Su-57 | Mirage 2000-5 · Rafale C · JAS-39C Gripen · Eurofighter Typhoon |
+| F-15C Eagle · F-16C Block 50 · F/A-18C Hornet · F/A-18F Super Hornet · F-14B(U) Tomcat · F-4E Phantom II · T-38C Talon · AV-8B Harrier II (Hawker lineage) | MiG-29A · Su-27S · Su-30SM · Su-57 | Mirage 2000-5 · Rafale C · JAS-39C Gripen · Eurofighter Typhoon |
 
 All 16 fly on the same **6-DOF rigid-body flight model**, and each jet supplies its own data: mass, inertia, wing geometry, Mach-dependent lift and drag (including wave drag), stability and control derivatives, engine thrust lapse with altitude and Mach, afterburner, spool-up, fuel burn, G and AoA limits, and gear geometry. On top of that:
 

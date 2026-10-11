@@ -163,9 +163,10 @@ const BASE: AircraftDef[] = [
     model: { wing: 'trapezoid', engines: 2, intake: 'side', tailplane: true, color: 0x2c3540, sweep: 32 },
   },
   {
-    id: 'fa18e', name: 'F/A-18E/F', fullName: 'Boeing F/A-18E/F Super Hornet (Block II)', role: 'Carrier multirole', country: 'USA', side: 'blue',
-    description: 'Bigger, heavier Hornet with AESA radar and more stations. Draggier but carries a lot; exceptional at high AoA.',
-    massEmpty: 14550, massMax: 29937, fuelInternal: 6780, pylonFuel: 1450,
+    id: 'fa18e', name: 'F/A-18F', fullName: 'Boeing F/A-18F Super Hornet (Block II)', role: 'Carrier multirole', country: 'USA', side: 'blue',
+    description: 'Two-seat Super Hornet with AESA radar and more stations: a WSO in the back runs the sensors. Draggier but carries a lot; exceptional at high AoA.',
+    // the F has the second cockpit in place of a fuselage tank: slightly heavier, ~120 kg less internal fuel
+    massEmpty: 14700, massMax: 29937, fuelInternal: 6660, pylonFuel: 1450,
     wingArea: 46.45, span: 13.62, chord: 3.95, length: 18.31, inertia: [45000, 240000, 270000],
     aero: aero({ CLa: 4.1, CLmax: 2.0, CD0: 0.024, k: 0.12, Cma: -0.18, Mcrit: 0.84, waveDrag: 2.7, flapCL: 0.4 }),
     engine: eng('2× F414-GE-400', 2, 62.3, 98, 1.65),
@@ -420,7 +421,7 @@ const META: Record<string, { family: string; variant?: string; seats?: 1 | 2; ca
   f15c: { family: 'F-15', variant: 'C' },
   f16c: { family: 'F-16', variant: 'C Block 50' },
   fa18c: { family: 'F/A-18', variant: 'C', capabilities: ['carrier', 'probe'] },
-  fa18e: { family: 'F/A-18', variant: 'E', capabilities: ['carrier', 'probe'] },
+  fa18e: { family: 'F/A-18', variant: 'F', seats: 2, capabilities: ['carrier', 'probe'] },
   jas39: { family: 'JAS 39', variant: 'C' },
 };
 

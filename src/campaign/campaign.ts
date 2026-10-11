@@ -56,7 +56,7 @@ const SQUADRONS: Array<Pick<Squadron, 'id' | 'name' | 'side' | 'aircraftId' | 'b
   { id: 'vf2', name: 'VF-2 "Bounty Hunters"', side: 'blue', aircraftId: 'f14d', baseId: 'aldren', aircraft: 10 },
   { id: '494fs', name: '494th FS "Panthers"', side: 'blue', aircraftId: 'f15e', baseId: 'halvorsen', aircraft: 16 },
   { id: 'vfa87', name: 'VFA-87 "Golden Warriors"', side: 'blue', aircraftId: 'fa18c', baseId: 'aldren', aircraft: 12 },
-  { id: 'vfa103', name: 'VFA-103 "Jolly Rogers"', side: 'blue', aircraftId: 'fa18e', baseId: 'aldren', aircraft: 12 },
+  { id: 'vfa103', name: 'VFA-103 "Jolly Rogers" (F/A-18F)', side: 'blue', aircraftId: 'fa18e', baseId: 'aldren', aircraft: 12 },
   { id: 'vma231', name: 'VMA-231 "Ace of Spades"', side: 'blue', aircraftId: 'av8b', baseId: 'kestrel', aircraft: 10 },
   { id: '141fs', name: '141st FS "Tigers" (ANG)', side: 'blue', aircraftId: 'f4e', baseId: 'kestrel', aircraft: 12 },
   { id: 'ec12', name: 'EC 1/2 "Cigognes"', side: 'blue', aircraftId: 'm2000', baseId: 'kestrel', aircraft: 12 },
