@@ -365,7 +365,8 @@ export class FlightModel {
     const advYaw = -0.15 * A.Clda * this.ail * Math.sin(2 * absA) * (def.fcs.type === 'manual' ? 1 : def.fcs.type === 'cas' ? 0.6 : 0.3);
     // yaw due to roll rate (Cnp ≈ −CL/8)
     const Cnp = -clamp(CL, -1.5, 1.5) / 8;
-    const wingRock = stallF * 0.015 * Math.sin(this.time * 2.3) * (1 + Math.sin(this.time * 0.7));
+    // (a fly-by-wire roll-rate loop sees the rock coming and holds most of it off)
+    const wingRock = stallF * 0.015 * Math.sin(this.time * 2.3) * (1 + Math.sin(this.time * 0.7)) * (def.fcs.type === 'fbw' ? 0.3 : 1);
     const Cl = Clb * beta + A.Clp * phat + A.Clr * rhat + A.Clda * this.ail * superCtrl * (1 - 0.5 * stallF) + wingRock;
     const Cn = Cnb * beta + A.Cnr * rhat + Cnp * phat + A.Cndr * this.rud * superCtrl * (1 - 0.4 * stallF) + advYaw;
     const CY = A.CYb * beta;
@@ -496,19 +497,34 @@ export class FlightModel {
       // hard G limit: take back the AoA worth of any (anticipated) load beyond the command
       const gOver = pitchIn >= 0 ? Math.max(0, nzLead - Math.min(nCmd, L.gMax)) : Math.min(0, nzLead - Math.max(nCmd, L.gMin));
       aCmd -= (0.6 * gOver * W) / Math.max(qbar * S, 1) / CLa;
-      this.alphaInt = clamp(this.alphaInt + (nCmd - this.nz) * 0.03 * dt, -0.08, 0.08);
+      // the integral only trims out the steady error: while the load is still building it would wind up and overshoot
+      const settle = 1 - smoothstep(0.4, 1.5, Math.abs(nCmd - this.nz));
+      this.alphaInt = clamp(this.alphaInt + (nCmd - this.nz) * 0.03 * settle * dt, -0.08, 0.08);
       aCmd += this.alphaInt;
       // the limit anticipates the AoA rate so a full-stick pull does not overshoot it
       const aLim = aoaMax - 0.12 * Math.max(0, this.alphaDot);
       if (aCmd > aLim) { aCmd = aLim; this.alphaInt = Math.min(this.alphaInt, 0.0); }
       if (aCmd < -aoaNeg) { aCmd = -aoaNeg; this.alphaInt = Math.max(this.alphaInt, 0); }
       const gamma = Math.asin(clamp(this.vel.y / Vs, -1, 1));
-      const qRef = (G0 / Vs) * (Math.min(nCmd, this.nz + 1) - Math.cos(gamma) * Math.cos(att.roll));
+      // the flight path's own turn rate at the present load: q − qRef is then the AoA rate
+      const qRef = (G0 / Vs) * (this.nz - Math.cos(gamma) * Math.cos(att.roll));
       const Cma = A.Cma - 0.35 * smoothstep(0.9, 1.3, this.mach);
-      const aLead = this.alpha + 0.3 * this.alphaDot;
-      const cmNeeded = -Cma * aCmd + 1.6 * (aCmd - aLead) - 22 * (this.q - qRef) * cbar / (2 * Vs)
+      // model following by inversion: the law asks for a pitch acceleration (a well-damped second-order AoA response,
+      // the same on every jet and at every speed) and converts it into the moment that airframe needs — so a light,
+      // short-coupled, relaxed-stability jet like the F-16 isn't over-driven into the stabilator's rate limit
+      const Iyy0 = def.inertia[1];
+      const IyyP = Iyy0 * clamp(this.mass / (def.massEmpty + def.fuelInternal * 0.5), 0.7, 1.6);
+      const kM = Math.max(qbar * S * cbar, 1) / IyyP;      // pitch acceleration per unit Cm
+      const WN = 5, ZETA = 1.0;                 // rad/s, damping ratio              // rad/s, damping ratio
+      // (cascaded: AoA error → pitch-rate demand, capped so that a big AoA change — letting go at the limiter — can be
+      // arrested with the stabilator available instead of overshooting)
+      const QMAX = 0.45;
+      const qDem = clamp((WN / (2 * ZETA)) * (aCmd - this.alpha), -QMAX, QMAX);
+      const qdotDes = 2 * ZETA * WN * (qDem - (this.q - qRef));
+      const superCtrl = 1 - 0.35 * smoothstep(0.9, 1.5, this.mach);
+      const cmNeeded = qdotDes / kM - Cma * this.alpha - A.Cmq * this.q * cbar / (2 * Vs)
         + 0.08 * smoothstep(aStall * 0.92, aStall * 1.25, Math.abs(this.alpha));
-      de = cmNeeded / A.Cmde;
+      de = cmNeeded / (A.Cmde * superCtrl);
       if (def.fcs.tvc) {
         const sat = de - clamp(de, -eMax, eMax);
         this.tvc = clamp(sat * 1.5 + (de / eMax) * def.fcs.tvc * DEG * 0.3, -def.fcs.tvc * DEG, def.fcs.tvc * DEG);
@@ -532,7 +548,7 @@ export class FlightModel {
       const [Ixx, Iyy] = def.inertia;
       const mS = clamp(this.mass / (def.massEmpty + def.fuelInternal * 0.5), 0.7, 1.6);
       const cnCoupling = ((Ixx - Iyy) * mS * this.p * this.q) / Math.max(qbar * S * b, 1);
-      const cnNeeded = -A.Cnb * betaCmd + 0.15 * (this.beta - betaCmd) - 6 * (this.r - rRef) * b / (2 * Vs) - cnCoupling;
+      const cnNeeded = -A.Cnb * betaCmd + 0.1 * (this.beta - betaCmd) - 6 * (this.r - rRef) * b / (2 * Vs) - cnCoupling;
       dr = cnNeeded / A.Cndr;
     } else {
       // ---- Digital CAS (F-15, F-14B/D…) or analog stability augmentation (F-14A, F-4): no hard limiter
