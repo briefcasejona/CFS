@@ -11,14 +11,19 @@ export interface HdSpec {
   title: string; author: string; source: string; license: string;
   /** node-path patterns (matched against "ancestor/…/node" names) */
   gearDown: RegExp; gearUp: RegExp; cockpit: RegExp; hide?: RegExp;
-  /** source axes: 'xfwd' = nose +X, right +Z (bohmerang exports, default); 'zfwd' = nose +Z, left +X (FBX exports) */
-  axes?: 'xfwd' | 'zfwd';
+  /** source axes: 'xfwd' = nose +X, right +Z (bohmerang exports, default); 'zfwd' = nose +Z, left +X (FBX exports);
+   *  'game' = already nose −Z, right +X */
+  axes?: 'xfwd' | 'zfwd' | 'game';
   /** articulated swing wing: node paths of every moving wing part (panel, slats, flaps, spoilers, lights…), the pivot of
    *  the wing on the source's +X side in source metres, and the sweep (deg) the model is built at.
    *  `split`: the wings are fused into the airframe mesh of the `parts` nodes — every triangle that reaches beyond
    *  |x| > reach (game metres) with its centre forward of z < maxZ (clear of the tailplanes) is cut out and swept with
    *  its side's wing; the pivot is then given in game metres (x outboard, z aft of the model's centre) */
   wings?: { parts: RegExp; pivot: { x: number; z: number }; refSweep: number; split?: { reach: number; maxZ: number } };
+  /** gear doors modelled into an airframe mesh: triangles of the `parts` nodes whose centre hangs below `below`
+   *  between z[0] and z[1] and with |x| within `x` (source metres, after `axes`) are cut out and
+   *  shown/hidden with the gear */
+  gearDoors?: { parts: RegExp; boxes: Array<{ below: number; z: [number, number]; x?: [number, number] }> };
   /** pilot eye position in game metres (body frame); default: ~0.65 m behind and just above the HUD combiner node,
    *  else derived from the cockpit node's bounds */
   eye?: { y: number; z: number };
@@ -87,6 +92,17 @@ export const HD_SPECS: Record<string, HdSpec> = {
   // model until they have their own
   f16c: BOH_F16,
   f16c70: BOH_F16,
+  // two-seat F-16D Block 70 (the model is a Block 60, with the conformal tanks the Block 70 carries)
+  f16d70: {
+    url: 'assets/models/cc-by/f16d70.glb', title: 'General Dynamics F-16D Block 60', author: 'MirzaArrafiERV_45',
+    source: 'https://sketchfab.com/3d-models/general-dynamics-f-16d-block-60-ea8edb08d79e4eafa9c794c581f88cf3', license: 'CC BY 4.0',
+    // (part paths end in node/mesh, and the mesh names reuse the node numbers: match the node segment only)
+    axes: 'game', gearDown: /\/Object_(9|11)\/Object_/, gearUp: NEVER, hide: /\/Object_21\/Object_/,
+    cockpit: /\/Object_(1[023456]|2|3|20|22|9\.001|11\.001)\/Object_/,
+    // nose and main gear doors are part of the lower fuselage mesh
+    eye: { y: 0.82, z: -3.2 },
+    gearDoors: { parts: /\/Object_5\/Object_/, boxes: [{ below: 0.9, z: [-3.2, -0.6] }, { below: 1.25, z: [-1.5, 2.5], x: [0.8, 1.35] }] },
+  },
   // the Super Hornet model only: the legacy F/A-18C has a different (smaller) airframe and keeps the procedural model
   fa18e: {
     url: 'assets/models/cc-by-nc-sa/fa18f.glb', title: 'Boeing F/A-18F Super Hornet - Free', ...BOHMERANG,
@@ -119,6 +135,7 @@ let loader: GLTFLoader | null = null;
 const SRC_TO_GAME = {
   xfwd: new THREE.Matrix4().set(0, 0, 1, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 0, 1),   // x fwd, z right
   zfwd: new THREE.Matrix4().makeRotationY(Math.PI),                                   // z fwd, x left
+  game: new THREE.Matrix4(),
 };
 
 function loadTemplate(def: AircraftDef): Promise<Template | null> {
@@ -175,12 +192,22 @@ export function bake(scene: THREE.Object3D, spec: HdSpec, def: AircraftDef): THR
     if (spec.wings?.parts.test(name) && !spec.wings.split) { g.computeBoundingBox(); wing = Math.sign(g.boundingBox!.min.x + g.boundingBox!.max.x) || 1; }
     parts.push({ name, geo: g, mat: m.material as THREE.Material, wing });
   });
+  const doors = spec.gearDoors;
+  if (doors) {
+    for (const p of [...parts]) {
+      if (!doors.parts.test(p.name)) continue;
+      const [rest, cut] = cutTriangles(p.geo, (c) => doors.boxes.some((b) => c.y < b.below && c.z > b.z[0] && c.z < b.z[1] && (!b.x || (Math.abs(c.x) >= b.x[0] && Math.abs(c.x) <= b.x[1]))));
+      p.geo = rest;
+      if (cut) parts.push({ ...p, name: p.name + GEAR_DOORS, geo: cut });
+    }
+  }
+  const isGearDown = (name: string) => name.endsWith(GEAR_DOORS) || spec.gearDown.test(name);
   // scale + centre on the airframe bounding box (gear excluded)
   const box = new THREE.Box3();
-  for (const p of parts) if (!spec.gearDown.test(p.name) && !spec.gearUp.test(p.name)) { p.geo.computeBoundingBox(); box.union(p.geo.boundingBox!); }
+  for (const p of parts) if (!isGearDown(p.name) && !spec.gearUp.test(p.name)) { p.geo.computeBoundingBox(); box.union(p.geo.boundingBox!); }
   const s = def.length / (box.max.z - box.min.z);
   let gearMin = Infinity;
-  for (const p of parts) if (spec.gearDown.test(p.name)) { p.geo.computeBoundingBox(); gearMin = Math.min(gearMin, p.geo.boundingBox!.min.y); }
+  for (const p of parts) if (isGearDown(p.name)) { p.geo.computeBoundingBox(); gearMin = Math.min(gearMin, p.geo.boundingBox!.min.y); }
   const cz = (box.min.z + box.max.z) / 2;
   const yShift = Number.isFinite(gearMin) ? -def.gear.height - gearMin * s : -((box.min.y + box.max.y) / 2) * s;
   const fix = new THREE.Matrix4().makeTranslation(0, yShift, -cz * s).multiply(new THREE.Matrix4().makeScale(s, s, s));
@@ -204,7 +231,7 @@ export function bake(scene: THREE.Object3D, spec: HdSpec, def: AircraftDef): THR
   // merge parts that share role, wing side, material and attribute layout
   const groups = new Map<string, { role: string; wing: number; mat: THREE.Material; geos: THREE.BufferGeometry[]; name: string; hud: boolean }>();
   for (const p of parts) {
-    const role = spec.gearDown.test(p.name) ? 'gearDown' : spec.gearUp.test(p.name) ? 'gearUp'
+    const role = isGearDown(p.name) ? 'gearDown' : spec.gearUp.test(p.name) ? 'gearUp'
       : spec.cockpit.test(p.name) ? 'cockpit' : spec.hide?.test(p.name) ? 'hidden' : 'body';
     const hud = (spec.hud ?? /hud/i).test(p.name);
     const mats = (Array.isArray(p.mat) ? p.mat : [p.mat]) as THREE.MeshStandardMaterial[];
@@ -232,37 +259,50 @@ export function bake(scene: THREE.Object3D, spec: HdSpec, def: AircraftDef): THR
   return root;
 }
 
-/** Cut the wing triangles out of a fused airframe geometry (game frame): [rest, left wing, right wing]. */
-export function splitWings(g: THREE.BufferGeometry, reach: number, maxZ: number): [THREE.BufferGeometry, THREE.BufferGeometry | null, THREE.BufferGeometry | null] {
+const GEAR_DOORS = '#gearDoors';
+
+/** Split a geometry's triangles by their centroid: [rest, picked] (picked is null when no triangle matches). */
+export function cutTriangles(g: THREE.BufferGeometry, pick: (c: THREE.Vector3, far: number) => boolean):
+  [THREE.BufferGeometry, THREE.BufferGeometry | null] {
   const src = g.index ? g.toNonIndexed() : g;
   const pos = src.getAttribute('position');
-  const side = new Int8Array(pos.count / 3);
-  for (let t = 0; t < side.length; t++) {
-    let far = 0, cz = 0;
+  const sel = new Uint8Array(pos.count / 3);
+  const c = new THREE.Vector3();
+  for (let t = 0; t < sel.length; t++) {
+    let far = 0;
+    c.set(0, 0, 0);
     for (let k = 0; k < 3; k++) {
       const x = pos.getX(3 * t + k);
       if (Math.abs(x) > Math.abs(far)) far = x;
-      cz += pos.getZ(3 * t + k) / 3;
+      c.x += x / 3; c.y += pos.getY(3 * t + k) / 3; c.z += pos.getZ(3 * t + k) / 3;
     }
-    side[t] = Math.abs(far) > reach && cz < maxZ ? Math.sign(far) : 0;
+    sel[t] = pick(c, far) ? 1 : 0;
   }
-  const pick = (want: number) => {
-    const n = side.reduce((a, s) => a + (s === want ? 1 : 0), 0);
+  const take = (want: number) => {
+    const n = sel.reduce((a, s) => a + (s === want ? 1 : 0), 0);
     if (!n) return null;
     const out = new THREE.BufferGeometry();
     for (const name of Object.keys(src.attributes)) {
       const a = src.getAttribute(name) as THREE.BufferAttribute;
       const arr = new Float32Array(n * 3 * a.itemSize);
       let o = 0;
-      for (let t = 0; t < side.length; t++) {
-        if (side[t] !== want) continue;
+      for (let t = 0; t < sel.length; t++) {
+        if (sel[t] !== want) continue;
         for (let i = 3 * t * a.itemSize; i < (3 * t + 3) * a.itemSize; i++) arr[o++] = (a.array as ArrayLike<number>)[i];
       }
       out.setAttribute(name, new THREE.BufferAttribute(arr, a.itemSize));
     }
     return out;
   };
-  return [pick(0) ?? new THREE.BufferGeometry(), pick(-1), pick(1)];
+  return [take(0) ?? new THREE.BufferGeometry(), take(1)];
+}
+
+/** Cut the wing triangles out of a fused airframe geometry (game frame): [rest, left wing, right wing]. */
+export function splitWings(g: THREE.BufferGeometry, reach: number, maxZ: number): [THREE.BufferGeometry, THREE.BufferGeometry | null, THREE.BufferGeometry | null] {
+  const inWing = (side: number) => (c: THREE.Vector3, far: number) => Math.abs(far) > reach && c.z < maxZ && Math.sign(far) === side;
+  const [rest, left] = cutTriangles(g, inWing(-1));
+  const [body, right] = cutTriangles(rest, inWing(1));
+  return [body, left, right];
 }
 
 /** HUD combiner: a faint green-tinted reflector you see the world through (the symbology itself is drawn by the HUD

@@ -95,6 +95,30 @@ describe('HD models', () => {
     expect(body.max.x < 5, `fixed parts reach ${body.max.x.toFixed(2)} m out`).toBe(true);
   });
 
+  it('F-16D Block 70 model: only on the D Block 70, real size, gear and its doors retract', async () => {
+    const def = getAircraft('f16d70');
+    const spec = HD_SPECS.f16d70;
+    for (const id of ['f16a', 'f16b', 'f16c40', 'f16d', 'f16d40']) expect(HD_SPECS[id]).toBe(undefined);
+    const root = bake(await loadGlbScene('assets/models/cc-by/f16d70.glb'), spec, def);
+    const box = (role: string) => {
+      const b = new THREE.Box3();
+      root.children.filter((c) => c.userData.role === role).forEach((c) => b.expandByObject(c));
+      return b;
+    };
+    const body = box('body'), gear = box('gearDown');
+    expect(body.max.z - body.min.z).toBeCloseTo(def.length, 1);
+    // published span 9.96 m over the wingtip rails
+    expect(Math.abs(body.max.x - body.min.x - 9.96) < 0.3, `span ${(body.max.x - body.min.x).toFixed(2)} m`).toBe(true);
+    expect(gear.min.y).toBeCloseTo(-def.gear.height, 2);
+    // the nose and main gear doors hang below the belly and ventral fins: they go with the gear
+    const doors = new THREE.Box3();
+    root.children.filter((c) => c.name.endsWith('#gearDoors')).forEach((c) => doors.expandByObject(c));
+    expect(doors.isEmpty()).toBe(false);
+    expect(root.children.find((c) => c.name.endsWith('#gearDoors'))!.userData.role).toBe('gearDown');
+    expect(body.min.y > doors.min.y + 0.1, `airframe reaches y=${body.min.y.toFixed(2)} with the gear up`).toBe(true);
+    expect(root.children.filter((c) => c.userData.role === 'cockpit').length > 0).toBe(true);
+  });
+
   it('bake converts a source-frame model to game frame, scaled to the aircraft length with gear on the ground', () => {
     const def = getAircraft('jas39');
     // source frame: nose +X, up +Y, right +Z, decimetres
