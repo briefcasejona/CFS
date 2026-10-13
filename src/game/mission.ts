@@ -4,7 +4,7 @@ import { AIRCRAFT_BY_ID, getAircraft } from '../aircraft/defs.js';
 import { Aircraft, GroundUnit, SamSite, type GroundType } from '../sim/entities.js';
 import { World, type WorldOptions } from '../sim/world.js';
 import { AIPilot, type AITask, type Skill } from '../ai/pilot.js';
-import { airbaseById, requireAirbase, defaultNation, runwayEnds, setTheater, terrainHeight, theaterById, type SamType } from '../world/theater.js';
+import { airbaseById, apronSide, requireAirbase, defaultNation, runwayEnds, setTheater, terrainHeight, theaterById, type SamType } from '../world/theater.js';
 import { adaptSpecToTheater } from './theaterAdapt.js';
 import { Carrier, DECK_H, GLIDE_DEG, AIM_S, type CarrierSpec } from '../sim/carrier.js';
 import type { Weather } from '../render/scene.js';
@@ -225,7 +225,7 @@ function spawnGroup(world: World, g: GroupSpec, seed: number): GroundUnit[] {
         const side = new THREE.Vector3(Math.cos(hr), 0, Math.sin(hr));
         const fwd = new THREE.Vector3(Math.sin(hr), 0, -Math.cos(hr));
         for (let k = -3; k <= 3; k++) {
-          const p = new THREE.Vector3(ab.x, 0, ab.z).addScaledVector(side, 470).addScaledVector(fwd, k * 90);
+          const p = new THREE.Vector3(ab.x, 0, ab.z).addScaledVector(side, 470 * apronSide(ab)).addScaledVector(fwd, k * 90);
           const u = new GroundUnit('hangar', g.side, p.x, ab.elev, p.z, -hr);
           u.objectiveId = g.objectiveId ?? '';
           units.push(world.addGround(u));

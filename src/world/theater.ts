@@ -20,6 +20,34 @@ export interface Airbase {
   hdg: number;        // runway heading deg (true)
   length: number;     // m
   elev: number;       // m (computed)
+  /** further runways of the field (real layout), besides the main one above */
+  extra?: Runway[];
+}
+
+/** one runway: centre, heading (deg, grid) and length (m) */
+export interface Runway { x: number; z: number; hdg: number; length: number }
+
+/** every runway of a field, the main one first */
+export function runwaysOf(ab: Airbase): Runway[] { return ab.extra ? [ab, ...ab.extra] : [ab]; }
+
+/** Which side of the main runway (+1 right, −1 left, seen along its heading) carries the taxiway, apron and hangars:
+ *  the side that keeps them clear of the field's other runways. */
+export function apronSide(ab: Airbase): 1 | -1 {
+  if (!ab.extra) return 1;
+  const hr = ab.hdg * Math.PI / 180, fx = Math.sin(hr), fz = -Math.cos(hr), sx = Math.cos(hr), sz = Math.sin(hr);
+  const clearance = (s: number) => {
+    let worst = Infinity;
+    for (let k = -4; k <= 4; k++) for (const across of [180, 330, 470, 560]) {
+      const x = ab.x + fx * k * ab.length * 0.1 + sx * s * across, z = ab.z + fz * k * ab.length * 0.1 + sz * s * across;
+      for (const rw of ab.extra!) {
+        const r = rw.hdg * Math.PI / 180, dx = x - rw.x, dz = z - rw.z;
+        const along = Math.abs(dx * Math.sin(r) - dz * Math.cos(r)) - rw.length / 2, off = Math.abs(dx * Math.cos(r) + dz * Math.sin(r));
+        worst = Math.min(worst, Math.hypot(Math.max(0, along), off));
+      }
+    }
+    return worst;
+  };
+  return clearance(-1) > clearance(1) ? -1 : 1;
 }
 
 export type ObjectiveKind = 'factory' | 'depot' | 'bridge' | 'radar' | 'sam' | 'city' | 'command' | 'airbase';
@@ -135,14 +163,18 @@ export function terrainHeight(x: number, z: number): number {
   let h = current.rawHeight(x, z);
   for (let i = 0; i < AIRBASES.length; i++) {
     const ab = AIRBASES[i];
-    const dx = x - ab.x, dz = z - ab.z;
-    if (Math.abs(dx) > 6000 || Math.abs(dz) > 6000) continue;
-    const hr = ab.hdg * Math.PI / 180;
-    const along = dx * Math.sin(hr) - dz * Math.cos(hr);
-    const across = dx * Math.cos(hr) + dz * Math.sin(hr);
-    const ex = Math.max(0, Math.abs(along) - ab.length / 2 - 400);
-    const ey = Math.max(0, Math.abs(across) - 700);
-    const d = Math.hypot(ex, ey);
+    if (Math.abs(x - ab.x) > 7000 || Math.abs(z - ab.z) > 7000) continue;
+    // flatten around every runway of the field (the main one carries the taxiway, apron and buildings)
+    let d = Infinity;
+    for (const rw of runwaysOf(ab)) {
+      const dx = x - rw.x, dz = z - rw.z;
+      const hr = rw.hdg * Math.PI / 180;
+      const along = dx * Math.sin(hr) - dz * Math.cos(hr);
+      const across = dx * Math.cos(hr) + dz * Math.sin(hr);
+      const ex = Math.max(0, Math.abs(along) - rw.length / 2 - 400);
+      const ey = Math.max(0, Math.abs(across) - (rw === ab ? 700 : 250));
+      d = Math.min(d, Math.hypot(ex, ey));
+    }
     const w = 1 - smoothstep(0, 2500, d);
     h = h * (1 - w) + ab.elev * w;
   }
@@ -168,7 +200,7 @@ export function lineOfSight(ax: number, ay: number, az: number, bx: number, by: 
   return true;
 }
 
-export function runwayEnds(ab: Airbase) {
+export function runwayEnds(ab: Runway) {
   const hr = ab.hdg * Math.PI / 180;
   const dx = Math.sin(hr), dz = -Math.cos(hr);
   const h = ab.length / 2;

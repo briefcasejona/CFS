@@ -7,3 +7,5 @@
 - `overlay.json`: national borders and major cities from **Natural Earth** (public domain), baked by
   `scripts/terrain/bake-overlay.mjs europe`.
 - Airfield coordinates and runway headings in `src/world/theaters/europe.ts` are approximate public information.
+- Runway layouts (`src/world/theaters/runways.ts`): thresholds and widths from **OurAirports** (public domain,
+  https://github.com/davidmegginson/ourairports-data), baked by `scripts/terrain/bake-runways.mjs`.

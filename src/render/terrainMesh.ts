@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { terrainHeight, AIRBASES, OBJECTIVES, THEATER_HALF, fbm, terrainPalette, type TerrainPalette } from '../world/theater.js';
+import { terrainHeight, runwaysOf, AIRBASES, OBJECTIVES, THEATER_HALF, fbm, terrainPalette, type TerrainPalette } from '../world/theater.js';
 import { buildAirfield } from './airfield.js';
 
 const CHUNK = 16000; // m
@@ -51,7 +51,7 @@ function hash2(i: number, j: number) {
 }
 /** keep airfields clear of trees */
 function nearRunway(x: number, z: number) {
-  for (const ab of AIRBASES) if (Math.abs(x - ab.x) < ab.length / 2 + 1500 && Math.abs(z - ab.z) < ab.length / 2 + 1500) return true;
+  for (const ab of AIRBASES) for (const rw of runwaysOf(ab)) if (Math.abs(x - rw.x) < rw.length / 2 + 1500 && Math.abs(z - rw.z) < rw.length / 2 + 1500) return true;
   return false;
 }
 

@@ -3,7 +3,8 @@
 import { smoothstep } from '../core/math.js';
 import { fbm } from './noise.js';
 import { Lcc } from './lcc.js';
-import type { Airbase, ObjectiveDef, Theater } from './theater.js';
+import type { Airbase, ObjectiveDef, Runway, Theater } from './theater.js';
+import { RUNWAYS } from './theaters/runways.js';
 
 export interface DemConfig {
   proj: { lat0: number; lon0: number; lat1: number; lat2: number };
@@ -49,10 +50,23 @@ export class DemGrid {
     return Math.atan2(b.x - a.x, -(b.z - a.z)) * 180 / Math.PI;
   }
 
+  /** a runway from its two thresholds (lat/lon), in the grid frame */
+  runway(la0: number, lo0: number, la1: number, lo1: number): Runway {
+    const a = this.lcc.forward(la0, lo0), b = this.lcc.forward(la1, lo1);
+    return { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2, hdg: (Math.atan2(b.x - a.x, -(b.z - a.z)) * 180 / Math.PI + 360) % 360, length: Math.hypot(b.x - a.x, b.z - a.z) };
+  }
+
   airbases(rows: AbRow[]): Airbase[] {
     return rows.map(([id, name, side, lat, lon, hdg, length]) => {
       const p = this.lcc.forward(lat, lon);
-      return { id, name, side, x: p.x, z: p.z, hdg: (hdg + this.northBearing(lat, lon) + 360) % 360, length, elev: 0 };
+      const grid = (hdg + this.northBearing(lat, lon) + 360) % 360;
+      const real = RUNWAYS[id];
+      if (!real) return { id, name, side, x: p.x, z: p.z, hdg: grid, length, elev: 0 };
+      // the real layout (OurAirports): the longest runway is the main one, flown in the direction the row gives
+      const [main, ...rest] = real.map(([a, b, c, d]) => this.runway(a, b, c, d));
+      const off = Math.abs(((main.hdg - grid + 540) % 360) - 180);
+      if (off > 90) main.hdg = (main.hdg + 180) % 360;
+      return { id, name, side, ...main, elev: 0, ...(rest.length ? { extra: rest } : {}) };
     });
   }
   objectives(rows: ObjRow[]): ObjectiveDef[] {

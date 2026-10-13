@@ -8,3 +8,5 @@
   `scripts/terrain/bake-overlay.mjs gulf`.
 - Airfield coordinates, runway headings and objectives in `src/world/theaters/gulf.ts` are approximate public information;
   the 1991 order of battle is simplified.
+- Runway layouts (`src/world/theaters/runways.ts`): thresholds and widths from **OurAirports** (public domain,
+  https://github.com/davidmegginson/ourairports-data), baked by `scripts/terrain/bake-runways.mjs`.
