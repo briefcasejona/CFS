@@ -30,7 +30,8 @@ export function controlsScreen(app: AppApi, input: InputManager): HTMLElement {
           <div class="tune muted"></div>
         </div>
       </div>
-      <div class="capture hidden"><div class="panel"><h3 class="cap-title"></h3><p class="cap-msg"></p><p class="muted small">Esc = cancel · times out after 10 s</p></div></div>
+      <div class="capture hidden"><div class="panel"><h3 class="cap-title"></h3><p class="cap-msg"></p><p class="cap-note muted small"></p>
+        <div class="cap-btns hidden"><button data-c="ok">OK</button> <button data-c="retry">Try again</button> <button data-c="cancel">Cancel</button></div></div></div>
     </div>`);
   const devbar = e.querySelector('.devbar')!;
   const table = e.querySelector('.binds')!;
@@ -82,26 +83,55 @@ export function controlsScreen(app: AppApi, input: InputManager): HTMLElement {
     renderTune();
   };
 
+  const capMsg = cap.querySelector('.cap-msg') as HTMLElement;
+  const capNote = cap.querySelector('.cap-note') as HTMLElement;
+  const capBtns = cap.querySelector('.cap-btns') as HTMLElement;
+  let onCapBtn: ((c: string) => void) | null = null;
+  let shownAt = 0;
+  capBtns.querySelectorAll<HTMLButtonElement>('[data-c]').forEach((b) => b.addEventListener('click', () => onCapBtn?.(b.dataset.c!)));
+  const closeCapture = () => { cap.classList.add('hidden'); onCapBtn = null; render(); };
+  // while the confirmation is up: Enter = OK, Esc = cancel
+  const onConfirmKey = (ev: KeyboardEvent) => {
+    if (!document.body.contains(e)) { window.removeEventListener('keydown', onConfirmKey); return; }
+    // (the key press that was just captured must not also answer the question)
+    if (!onCapBtn || input.capturing || ev.repeat || ev.timeStamp <= shownAt) return;
+    if (ev.code === 'Enter' || ev.code === 'NumpadEnter') { ev.preventDefault(); onCapBtn('ok'); }
+    else if (ev.code === 'Escape') { ev.preventDefault(); onCapBtn('cancel'); }
+  };
+  window.addEventListener('keydown', onConfirmKey);
+
   const startBind = (action: string) => {
     const def = ACTIONS.find((a) => a.id === action)!;
     if (column === 'keyboard' && def.type === 'axis') { app.toast('Axes need a joystick column.'); return; }
     if (column !== 'keyboard' && !input.devices().some((d) => d.id === column)) { app.toast('Device not connected'); return; }
     cap.classList.remove('hidden');
+    capBtns.classList.add('hidden');
     (cap.querySelector('.cap-title') as HTMLElement).textContent = `Bind: ${def.label}`;
-    (cap.querySelector('.cap-msg') as HTMLElement).textContent = def.type === 'axis'
+    capMsg.textContent = def.type === 'axis'
       ? 'Move the axis you want to use through its full range…'
       : column === 'keyboard' ? 'Press a key (Ctrl / Shift / Alt modifiers allowed)…' : 'Press a button, hat direction or flip a switch on the device… (switches that are already on are ignored — flip them to bind)';
+    capNote.textContent = 'Esc = cancel · times out after 10 s';
     input.startCapture(def.type, (b: Binding | null) => {
-      cap.classList.add('hidden');
-      if (!b) { render(); return; }
-      if (b.kind === 'key') column = 'keyboard';
-      else if (b.device !== column) { app.toast(`Input came from ${shortDev(b.device)} — bound there.`); column = b.device; }
-      if (b.kind === 'axis' && action === 'throttle') { b.slider = true; b.deadzone = 0; b.curve = 0; }
+      if (!b) { closeCapture(); return; }
+      // nothing is assigned until the player confirms the input that was picked up
+      const col = b.kind === 'key' ? 'keyboard' : b.device;
       const conflicts = input.conflicts(b).filter((x) => x !== action);
-      input.setBinding(action, column, b);
-      if (conflicts.length) app.toast(`Removed from: ${conflicts.map((c) => ACTIONS.find((a) => a.id === c)?.label ?? c).join(', ')}`);
-      if (b.kind === 'axis') tune = { action, b };
-      render();
+      capMsg.innerHTML = `Assign <b>${esc(bindingLabel(b))}</b>${col !== 'keyboard' ? ` on ${esc(shortDev(col))}` : ''} to <b>${esc(def.label)}</b>?`;
+      capNote.textContent = (conflicts.length
+        ? `It will be removed from: ${conflicts.map((c) => ACTIONS.find((a) => a.id === c)?.label ?? c).join(', ')}. `
+        : '') + 'Enter = OK · Esc = cancel';
+      capBtns.classList.remove('hidden');
+      shownAt = performance.now();
+      onCapBtn = (c) => {
+        if (c === 'retry') { onCapBtn = null; startBind(action); return; }
+        if (c === 'ok') {
+          if (col !== column) { if (col !== 'keyboard') app.toast(`Input came from ${shortDev(col)} — bound there.`); column = col; }
+          if (b.kind === 'axis' && action === 'throttle') { b.slider = true; b.deadzone = 0; b.curve = 0; }
+          input.setBinding(action, column, b);
+          if (b.kind === 'axis') tune = { action, b };
+        }
+        closeCapture();
+      };
     }, column !== 'keyboard' ? column : undefined);
   };
 
