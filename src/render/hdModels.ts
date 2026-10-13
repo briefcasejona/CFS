@@ -60,10 +60,20 @@ const BOH_F16: HdSpec = {
 
 /** HD models, keyed by aircraft id (one variant) or by family (every variant of the family). */
 export const HD_SPECS: Record<string, HdSpec> = {
-  // F-14A and F-14B: bohmerang's Tomcat (the B(U) uses it too until its own model is added)
+  // F-14A and F-14B: bohmerang's Tomcat
   f14a: BOH_F14,
   f14b1: BOH_F14,
-  f14b: BOH_F14,
+  // F-14B(U): KOG_THORNS' F-14B, fitted with bohmerang's F-14A landing gear (so the file is CC BY-NC-SA as a whole)
+  f14b: {
+    url: 'assets/models/cc-by-nc-sa/f14b.glb', title: 'Grumman F-14B Tomcat', author: 'KOG_THORNS, gear by bohmerang',
+    source: 'https://sketchfab.com/3d-models/grumman-f-14b-tomcat-50285312fae748b3811b9cb7804cab29', license: 'CC BY 4.0 / CC BY-NC-SA 4.0',
+    axes: 'game',
+    gearDown: /f14a-gearOn/, gearUp: NEVER,
+    cockpit: /_(Cockpit\d+|VDI)_0|\/Meshpart(33|53|85|81)\//,
+    // wing panels, flaps, spoilers and tip lights are separate nodes; the gloves stay put
+    wings: { parts: /\/Meshes(5151|1361|1441|6141|951|1721|1051|4171|1151|7111|891|1541|1641)\//, pivot: { x: 12.0, z: 16.0 }, refSweep: 20 },
+    eye: { y: 1.12, z: -4.85 },
+  },
   // F-14D: one articulated model: wings, slats, flaps and spoilers are separate nodes that sweep
   // rigidly about the real pivot (2.72 m from the centreline) — the published 68° / 75° spans check out on it
   f14d: {

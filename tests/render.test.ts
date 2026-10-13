@@ -95,6 +95,30 @@ describe('HD models', () => {
     expect(body.max.x < 5, `fixed parts reach ${body.max.x.toFixed(2)} m out`).toBe(true);
   });
 
+  it("KOG_THORNS' F-14B (F-14B(U) only): swing wings sweep to the published spans, gear retracts", async () => {
+    const def = getAircraft('f14b');
+    const spec = HD_SPECS.f14b;
+    expect(spec.url).toContain('f14b.glb');
+    const root = bake(await loadGlbScene(spec.url), spec, def);
+    const inst = instantiateHd({ root, spec });
+    const span = (sweep: number) => {
+      updateHdInstance(inst, 0, sweep);
+      inst.root.updateMatrixWorld(true);
+      const r = new THREE.Box3().setFromObject(inst.wings!.right, true);
+      return { half: r.max.x, root: r.min.x };
+    };
+    // the model is drawn ~2% short of the published 19.54 m at 20°; the swept spans are the ones that matter in flight
+    for (const [sweep, full, tol] of [[20, 19.54, 0.6], [68, 11.65, 0.15], [75, 10.15, 0.15]]) {
+      const s = span(sweep);
+      expect(Math.abs(2 * s.half - full) < tol, `span at ${sweep}°: ${(2 * s.half).toFixed(2)} m, published ${full} m`).toBe(true);
+      expect(s.root > 0.05, `at ${sweep}° the wing reaches x=${s.root.toFixed(2)}, across the centreline`).toBe(true);
+    }
+    const gear = new THREE.Box3();
+    root.children.filter((c) => c.userData.role === 'gearDown').forEach((c) => gear.expandByObject(c));
+    expect(gear.min.y).toBeCloseTo(-def.gear.height, 2);
+    expect(root.children.filter((c) => c.userData.role === 'cockpit').length > 0).toBe(true);
+  });
+
   it('F-16D Block 70 model: only on the D Block 70, real size, gear and its doors retract', async () => {
     const def = getAircraft('f16d70');
     const spec = HD_SPECS.f16d70;

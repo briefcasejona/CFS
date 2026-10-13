@@ -19,7 +19,7 @@ Licence notes:
 
 | Aircraft (id) | Model | Author | Licence | Link |
 |---|---|---|---|---|
-| F-14B(U) (`f14b`) | grumman_f-14b_tomcat.glb (supplied by Jonathan) | ? | needs source + licence | — |
+| F-14B(U) (`f14b`) | Grumman F-14B Tomcat, with bohmerang's F-14A gear (supplied by Jonathan, **added**) | KOG_THORNS | CC BY + CC BY-NC-SA | https://sketchfab.com/3d-models/50285312fae748b3811b9cb7804cab29 |
 | F-16D Block 70 (`f16d70`) | General Dynamics F-16D Block 60 (supplied by Jonathan, **added**) | MirzaArrafiERV_45 | CC BY | https://sketchfab.com/3d-models/ea8edb08d79e4eafa9c794c581f88cf3 |
 | F-16D / D Blk 40 (`f16d`, `f16d40`) | could reuse the F-16D Block 70 model (it has the Block 70's conformal tanks) | | | |
 | F-16A/C Blk 40 (`f16a`, `f16c40`) | reuse the F-16C model (bohmerang) | bohmerang | CC BY-NC-SA | already shipped |
