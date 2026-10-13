@@ -87,4 +87,20 @@ describe('HD models', () => {
     const gb = new THREE.Box3().setFromObject(root.children.find((c) => c.userData.role === 'gearDown')!);
     expect(gb.min.y).toBeCloseTo(-def.gear.height, 2);                     // wheels at the gear height
   });
+
+  it('the opaque HUD plates of the bohmerang models (F-16, F/A-18F, F-4E, Gripen) become see-through combiner glass', () => {
+    for (const [key, id] of [['F-16', 'f16c'], ['fa18e', 'fa18e'], ['f4e', 'f4e'], ['JAS 39', 'jas39']] as const) {
+      const scene = new THREE.Group();
+      const airframe = new THREE.Group(); airframe.name = 'X-airframe_0';
+      airframe.add(new THREE.Mesh(new THREE.BoxGeometry(150, 20, 80), new THREE.MeshStandardMaterial()));
+      const hud = new THREE.Group(); hud.name = 'X-hud_3';
+      hud.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2).translate(60, 10, 0), new THREE.MeshStandardMaterial({ color: 0x00cc00 })));
+      scene.add(airframe, hud);
+      const inst = instantiateHd({ root: bake(scene, HD_SPECS[key], getAircraft(id)), spec: HD_SPECS[key] });
+      const plate = inst.root.children.find((c) => /hud/i.test(c.name)) as THREE.Mesh;
+      const m = plate.material as THREE.MeshStandardMaterial;
+      expect(m.transparent && m.opacity < 0.3, `${key}: HUD plate opacity ${m.opacity}`).toBe(true);
+      expect(inst.glass.includes(plate), `${key}: the combiner stays visible from the cockpit`).toBe(false);
+    }
+  });
 });

@@ -21,13 +21,15 @@ export interface HdSpec {
   eye?: { y: number; z: number };
   /** HUD combiner node (for the default eye point); default /hud/i */
   hud?: RegExp;
+  /** the source paints the HUD combiner as an opaque plate: draw it as faintly tinted, see-through glass instead */
+  hudGlass?: boolean;
   /** live MFD screens laid over the model's painted ones (game body frame, metres): centre, size, facing normal and
    *  which display (0 = left MFD canvas, 1 = right) — measured by raycasting the cockpit from the eye point */
   mfds?: Array<{ c: [number, number, number]; w: number; h: number; n: [number, number, number]; screen: 0 | 1 }>;
 }
 
 const BOHMERANG = { author: 'bohmerang', license: 'CC BY-NC-SA 4.0' };
-const BOH_PARTS = { gearDown: /landingOn/i, gearUp: /landingOff/i, cockpit: /cockpit|hud/i };
+const BOH_PARTS = { gearDown: /landingOn/i, gearUp: /landingOff/i, cockpit: /cockpit|hud/i, hudGlass: true };
 const NEVER = /(?!)/;
 
 /** HD models, keyed by aircraft id (one variant) or by family (every variant of the family). */
@@ -184,9 +186,10 @@ export function bake(scene: THREE.Object3D, spec: HdSpec, def: AircraftDef): THR
   for (const g of groups.values()) {
     // a merge that still fails must not drop parts: fall back to one mesh per part
     const merged = g.geos.length === 1 ? g.geos[0] : mergeGeometries(g.geos, false);
+    const mat = g.hud && spec.hudGlass ? hudGlassMaterial() : g.mat;
     for (const geo of merged ? [merged] : g.geos) {
       geo.computeBoundingSphere();
-      const mesh = new THREE.Mesh(geo, g.mat);
+      const mesh = new THREE.Mesh(geo, mat);
       mesh.name = g.name;
       mesh.userData.role = g.role;
       mesh.userData.wing = g.wing;
@@ -195,6 +198,15 @@ export function bake(scene: THREE.Object3D, spec: HdSpec, def: AircraftDef): THR
     }
   }
   return root;
+}
+
+/** HUD combiner: a faint green-tinted reflector you see the world through (the symbology itself is drawn by the HUD
+ *  overlay). It stays visible from the cockpit, unlike the canopy glass. */
+export function hudGlassMaterial() {
+  return new THREE.MeshStandardMaterial({
+    name: 'hud-combiner', color: 0x9fe8b8, metalness: 0, roughness: 0.05, transparent: true, opacity: 0.1,
+    depthWrite: false, side: THREE.DoubleSide,
+  });
 }
 
 /** Per-aircraft instance of an HD model. */
@@ -228,12 +240,13 @@ export function instantiateHd(t: { root: THREE.Group; spec: HdSpec }): HdInstanc
     if (role === 'hidden') continue;
     if (src.userData.hud) { src.geometry.computeBoundingBox(); hudBox.union(src.geometry.boundingBox!); }
     const m = new THREE.Mesh(src.geometry, src.material);
+    m.name = src.name;
     m.userData.role = role;
     if (role === 'gearDown') inst.gearDown.push(m);
     if (role === 'gearUp') inst.gearUp.push(m);
     if (role === 'cockpit') inst.cockpit.push(m);
     const mm = m.material as THREE.Material;
-    if (mm.transparent || /glass|canopy/i.test(mm.name)) inst.glass.push(m);
+    if (!src.userData.hud && (mm.transparent || /glass|canopy/i.test(mm.name))) inst.glass.push(m);
     const w = src.userData.wing as number;
     if (inst.wings && w) {
       // the wing group sits at the pivot, so the mesh is offset back by it
