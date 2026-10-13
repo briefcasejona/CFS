@@ -84,3 +84,5 @@ export function setEuropeGrid(g: Int16Array) { DEM.setGrid(g, EUROPE); }
 export function europeLoaded() { return !!DEM.grid; }
 /** Install the landcover grid (tests: read from disk). */
 export function setEuropeCover(c: Uint8Array) { DEM.setCover(c, EUROPE); }
+/** Install the airfield elevation patches (tests: read from disk). */
+export function setEuropePatches(index: Array<{ x0: number; z0: number; n: number; res: number }>, h: Int16Array) { DEM.setPatches(index, h, EUROPE); }

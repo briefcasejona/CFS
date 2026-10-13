@@ -13,3 +13,6 @@
   derived from **ESA WorldCover 10 m 2021 v200** (© ESA WorldCover project 2021 / contains modified Copernicus Sentinel
   data (2021) processed by the ESA WorldCover consortium), **CC BY 4.0** — https://esa-worldcover.org. Changes: classes
   regrouped and resampled to fractions. Baked by `scripts/terrain/bake-landcover.mjs europe`.
+- `patches.json` + `patches.bin.gz`: 50 × 50 km elevation patches at 75 m spacing around each airfield (Int16, same
+  projection), from the same **AWS Terrain Tiles** at zoom 11; blended into the 1 km grid over their outer 6 km.
+  Baked by `scripts/terrain/bake-patches.mjs europe`.

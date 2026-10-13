@@ -15,6 +15,11 @@ export interface DemConfig {
   cover?: number;
 }
 
+/** a square of finer heights: n×n samples from (x0, z0), res m apart */
+export interface DemPatch { x0: number; z0: number; n: number; res: number; data: Int16Array }
+/** width (m) of the band along a patch's edge over which it fades into the 1 km grid */
+const PATCH_FADE = 6000;
+
 export type AbRow = [id: string, name: string, side: 'blue' | 'red', lat: number, lon: number, trueHdg: number, length: number];
 export type ObjRow = [id: string, name: string, kind: ObjectiveDef['kind'], side: 'blue' | 'red', lat: number, lon: number, value: number, samType?: ObjectiveDef['samType']];
 
@@ -22,6 +27,8 @@ export class DemGrid {
   readonly lcc: Lcc;
   readonly n: number;
   grid: Int16Array | null = null;
+  /** high-resolution elevation around the airfields (scripts/terrain/bake-patches.mjs), blended over the grid */
+  patches: DemPatch[] = [];
   constructor(readonly cfg: DemConfig) {
     this.lcc = new Lcc(cfg.proj);
     this.n = Math.round((2 * cfg.half) / cfg.res) + 1;
@@ -41,10 +48,25 @@ export class DemGrid {
     const fx = (x + half) / res, fz = (z + half) / res;
     const i = Math.floor(fx), j = Math.floor(fz), tx = fx - i, tz = fz - j;
     const h = (this.sample(i, j) * (1 - tx) + this.sample(i + 1, j) * tx) * (1 - tz) + (this.sample(i, j + 1) * (1 - tx) + this.sample(i + 1, j + 1) * tx) * tz;
-    if (h <= 0) return h;
-    const rough = smoothstep(80, 900, h), low = smoothstep(1, 40, h);
-    return Math.max(0.6, h + low * (fbm(x / 1400, z / 1400, 4) * (12 + 160 * rough) + fbm(x / 350, z / 350, 2) * (3 + 25 * rough)));
+    // near an airfield: the real fine relief, fading into the grid towards the patch edge
+    let best: DemPatch | null = null, w = 0;
+    for (const p of this.patches) {
+      const span = (p.n - 1) * p.res, d = Math.min(x - p.x0, p.x0 + span - x, z - p.z0, p.z0 + span - z);
+      if (d > 0 && d > w * PATCH_FADE) { best = p; w = Math.min(1, d / PATCH_FADE); }
+    }
+    const coarse = h <= 0 ? h : Math.max(0.6, h + this.relief(x, z, h));
+    if (!best) return coarse;
+    w = smoothstep(0, 1, w);
+    const fine = patchHeight(best, x, z);
+    const out = coarse * (1 - w) + fine * w;
+    return fine > 0 ? Math.max(0.6, out) : out;
   };
+
+  /** sub-kilometre noise relief for the 1 km grid (none near sea level, so low coasts never flood) */
+  private relief(x: number, z: number, h: number) {
+    const rough = smoothstep(80, 900, h), low = smoothstep(1, 40, h);
+    return low * (fbm(x / 1400, z / 1400, 4) * (12 + 160 * rough) + fbm(x / 350, z / 350, 2) * (3 + 25 * rough));
+  }
 
   /** grid bearing (deg) of true north at a point — runway headings are given true and converted to grid */
   northBearing(lat: number, lon: number) {
@@ -85,6 +107,19 @@ export class DemGrid {
     for (const ab of theater.airbases) ab.elev = Math.max(5, this.rawHeight(ab.x, ab.z));
   }
 
+  /** install the airfield patches (index from patches.json, heights concatenated in that order) */
+  setPatches(index: Array<{ x0: number; z0: number; n: number; res: number }>, heights: Int16Array, theater: Theater) {
+    let off = 0;
+    const patches: DemPatch[] = [];
+    for (const p of index) {
+      patches.push({ ...p, data: heights.subarray(off, off + p.n * p.n) });
+      off += p.n * p.n;
+    }
+    if (off !== heights.length) throw new Error(`${this.cfg.asset} patches have ${heights.length} samples, expected ${off}`);
+    this.patches = patches;
+    for (const ab of theater.airbases) ab.elev = Math.max(5, this.rawHeight(ab.x, ab.z));
+  }
+
   /** install the landcover grid (RGBA fractions on the cfg.cover spacing) */
   setCover(data: Uint8Array, theater: Theater) {
     const res = this.cfg.cover!, n = Math.round((2 * this.cfg.half) / res) + 1;
@@ -99,6 +134,11 @@ export class DemGrid {
     const res = await fetch(`${base}/height.bin.gz`);
     if (!res.ok) throw new Error(`${theater.name} terrain not available (${res.status})`);
     this.setGrid(new Int16Array(await gunzip(res)), theater);
+    // finer elevation around the airfields — optional: without it the 1 km grid (plus noise) is used everywhere
+    try {
+      const [ix, hb] = await Promise.all([fetch(`${base}/patches.json`), fetch(`${base}/patches.bin.gz`)]);
+      if (ix.ok && hb.ok) this.setPatches((await ix.json()).patches, new Int16Array(await gunzip(hb)), theater);
+    } catch { /* offline without the patches cached */ }
     // satellite landcover (forests, towns, fields) — optional: without it the ground is coloured procedurally
     if (this.cfg.cover) {
       try {
@@ -120,4 +160,12 @@ async function gunzip(res: Response): Promise<ArrayBuffer> {
   const head = new Uint8Array(bytes, 0, 2);
   if (head[0] !== 0x1f || head[1] !== 0x8b) return bytes;
   return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+}
+
+/** bilinear height inside a patch */
+function patchHeight(p: DemPatch, x: number, z: number) {
+  const fx = (x - p.x0) / p.res, fz = (z - p.z0) / p.res, N = p.n;
+  const i = Math.min(N - 2, Math.max(0, Math.floor(fx))), j = Math.min(N - 2, Math.max(0, Math.floor(fz))), tx = fx - i, tz = fz - j;
+  const d = p.data, k = j * N + i;
+  return (d[k] * (1 - tx) + d[k + 1] * tx) * (1 - tz) + (d[k + N] * (1 - tx) + d[k + N + 1] * tx) * tz;
 }
