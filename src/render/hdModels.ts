@@ -262,7 +262,7 @@ export function splitWings(g: THREE.BufferGeometry, reach: number, maxZ: number)
     }
     return out;
   };
-  return [pick(0)!, pick(-1), pick(1)];
+  return [pick(0) ?? new THREE.BufferGeometry(), pick(-1), pick(1)];
 }
 
 /** HUD combiner: a faint green-tinted reflector you see the world through (the symbology itself is drawn by the HUD

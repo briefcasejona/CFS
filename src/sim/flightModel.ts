@@ -515,7 +515,7 @@ export class FlightModel {
       const Iyy0 = def.inertia[1];
       const IyyP = Iyy0 * clamp(this.mass / (def.massEmpty + def.fuelInternal * 0.5), 0.7, 1.6);
       const kM = Math.max(qbar * S * cbar, 1) / IyyP;      // pitch acceleration per unit Cm
-      const WN = 5, ZETA = 1.0;                 // rad/s, damping ratio              // rad/s, damping ratio
+      const WN = 5, ZETA = 1.0;                 // rad/s, damping ratio
       // (cascaded: AoA error → pitch-rate demand, capped so that a big AoA change — letting go at the limiter — can be
       // arrested with the stabilator available instead of overshooting)
       const QMAX = 0.45;
