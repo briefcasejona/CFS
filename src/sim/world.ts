@@ -9,7 +9,7 @@ import { WEAPONS, type WeaponDef } from '../weapons/stores.js';
 import { Radar, paintRwr } from '../avionics/radar.js';
 import { Carrier, CarrierOps } from './carrier.js';
 import { stationLayout } from '../aircraft/stations.js';
-import { isWater, lineOfSight, surfaceHeight, terrainHeight, AIRBASES } from '../world/theater.js';
+import { isWater, lineOfSight, runwaysOf, surfaceHeight, terrainHeight, AIRBASES } from '../world/theater.js';
 import { clamp, DEG } from '../core/math.js';
 import { G0 } from './atmosphere.js';
 
@@ -204,8 +204,8 @@ export class World {
   }
 
   onRunway(ac: Aircraft) {
-    for (const ab of AIRBASES) {
-      if (Math.hypot(ac.pos.x - ab.x, ac.pos.z - ab.z) < ab.length / 2 + 800) return true;
+    for (const ab of AIRBASES) for (const rw of runwaysOf(ab)) {
+      if (Math.hypot(ac.pos.x - rw.x, ac.pos.z - rw.z) < rw.length / 2 + 800) return true;
     }
     return false;
   }

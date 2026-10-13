@@ -53,6 +53,23 @@ describe('handling: limiters and lateral-directional stability', () => {
     expect(mn > -3.4, `F-16 min G ${mn.toFixed(2)}`).toBe(true);
   });
 
+  it('FBW pitch: a pull and a let-go settle without bobbing (F-16 family and the other FBW jets)', () => {
+    for (const d of AIRCRAFT.filter((x) => x.playable !== false && x.fcs.type === 'fbw')) {
+      for (const [alt, spd, stick] of [[3000, 250, 0.5], [9000, 300, 1], [6000, 180, 0.5], [1000, 320, 1]]) {
+        const ac = jet(d.id, alt, spd);
+        const nz: number[] = [];
+        ac.ctrl.pitch = stick; run(ac, 2.5, () => nz.push(ac.fm.nz));
+        const aEnd = ac.fm.alpha * R;
+        ac.ctrl.pitch = 0;
+        const a: number[] = []; run(ac, 3.5, () => a.push(ac.fm.alpha * R));
+        const settled = a[a.length - 1], dip = settled - Math.min(...a);
+        // let go from a hard pull: AoA comes straight back down to its 1 g value, no undershoot and rebound
+        expect(dip < 4, `${d.id} ${alt} m ${spd} m/s: AoA dips ${dip.toFixed(1)}° below its 1 g value after letting go of a ${aEnd.toFixed(0)}° pull`).toBe(true);
+        expect(Math.max(...nz) < d.limits.gMax * 1.05, `${d.id}: ${Math.max(...nz).toFixed(2)} g over the ${d.limits.gMax} g limit`).toBe(true);
+      }
+    }
+  });
+
   it('analog/CAS jets have a soft G limit: the stick fades near the limit (F-15C stays close to 9 g)', () => {
     const ac = jet('f15c', 3000, 250);
     let m = 0; ac.ctrl.pitch = 1; run(ac, 3, () => { m = Math.max(m, ac.fm.nz); });

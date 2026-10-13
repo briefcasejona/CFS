@@ -1,4 +1,4 @@
-import { THEATER_HALF, currentTheater, terrainPalette, terrainHeight, AIRBASES, OBJECTIVES, frontZAt, theaterVersion, type ObjectiveDef } from '../world/theater.js';
+import { THEATER_HALF, runwaysOf, currentTheater, terrainPalette, terrainHeight, AIRBASES, OBJECTIVES, frontZAt, theaterVersion, type ObjectiveDef } from '../world/theater.js';
 import { SAM_PARAMS } from '../sim/entities.js';
 import { WEAPONS } from '../weapons/stores.js';
 
@@ -156,12 +156,15 @@ export function drawTheater(ctx: CanvasRenderingContext2D, v: MapView, opts: The
     const p = w2s(v, ab.x, ab.z);
     ctx.strokeStyle = SIDE_COL[owner];
     ctx.lineWidth = 3;
-    const hr = ab.hdg * Math.PI / 180;
-    const L = Math.max(6, ab.length / v.mpp);
-    ctx.beginPath();
-    ctx.moveTo(p.x - Math.sin(hr) * L / 2, p.y + Math.cos(hr) * L / 2);
-    ctx.lineTo(p.x + Math.sin(hr) * L / 2, p.y - Math.cos(hr) * L / 2);
-    ctx.stroke();
+    for (const rw of runwaysOf(ab)) {
+      const q = w2s(v, rw.x, rw.z);
+      const hr = rw.hdg * Math.PI / 180;
+      const L = Math.max(6, rw.length / v.mpp);
+      ctx.beginPath();
+      ctx.moveTo(q.x - Math.sin(hr) * L / 2, q.y + Math.cos(hr) * L / 2);
+      ctx.lineTo(q.x + Math.sin(hr) * L / 2, q.y - Math.cos(hr) * L / 2);
+      ctx.stroke();
+    }
     ctx.beginPath(); ctx.arc(p.x, p.y, 7, 0, Math.PI * 2); ctx.lineWidth = 1.5; ctx.stroke();
     label(ctx, ab.name, p.x + 10, p.y + 12, SIDE_COL[owner]);
   }

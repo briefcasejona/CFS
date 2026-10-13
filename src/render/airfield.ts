@@ -4,7 +4,7 @@
 // PAPI whose lights turn red/white with the viewer's glidepath. Textures are shared (runway numbers cached per
 // designator) and repeated elements instanced, so dozens of fields stay cheap.
 import * as THREE from 'three';
-import { runwayEnds, terrainHeight, type Airbase } from '../world/theater.js';
+import { apronSide, runwayEnds, terrainHeight, type Airbase, type Runway } from '../world/theater.js';
 
 const RWY_W = 45, TWY_W = 23, TWY_OFF = 180, APRON_OFF = 330;
 
@@ -97,71 +97,26 @@ const decal = (map: THREE.Texture, order: number, repeat?: [number, number]) => 
 
 export interface Airfield { group: THREE.Group; papi: THREE.InstancedMesh; papiPos: THREE.Vector3; papiDir: THREE.Vector3 }
 
-/** Build one airfield in world coordinates. */
-export function buildAirfield(ab: Airbase): Airfield {
+/** Runway surface, end markings, designators, edge lights and approach lights for one runway. */
+function addRunway(g: THREE.Group, rw: Runway, y0: number) {
   const T = textures();
-  const g = new THREE.Group();
-  const len = ab.length, hr = ab.hdg * Math.PI / 180, y0 = ab.elev;
+  const len = rw.length, hr = rw.hdg * Math.PI / 180;
   const side = new THREE.Vector3(Math.cos(hr), 0, Math.sin(hr));
   const fwd = new THREE.Vector3(Math.sin(hr), 0, -Math.cos(hr));
-  const at = (along: number, across: number, y = y0) => new THREE.Vector3(ab.x, y, ab.z).addScaledVector(fwd, along).addScaledVector(side, across);
-
+  const at = (along: number, across: number, y = y0) => new THREE.Vector3(rw.x, y, rw.z).addScaledVector(fwd, along).addScaledVector(side, across);
   // runway: surface (repeating), end markings + designators at both ends
-  g.add(flat(RWY_W, len, decal(T.surface, 4, [1, len / 90]), ab.x, y0 + 0.15, ab.z, hr));
+  g.add(flat(RWY_W, len, decal(T.surface, 4, [1, len / 90]), rw.x, y0 + 0.15, rw.z, hr));
   const endsMat = decal(T.ends, 6);
   for (const dir of [1, -1]) {
     // the end decal starts at the threshold and runs 600 m into the runway; at the far end it is turned around
     const c = at(dir * (len / 2 - 300), 0, y0 + 0.17);
     g.add(flat(RWY_W, 600, endsMat, c.x, c.y, c.z, hr + (dir > 0 ? Math.PI : 0)));
-    const num = designator(ab.hdg + (dir > 0 ? 180 : 0));
+    const num = designator(rw.hdg + (dir > 0 ? 180 : 0));
     const p = at(dir * (len / 2 - 70), 0, y0 + 0.19);
     g.add(flat(18, 30, decal(numberTexture(num), 8), p.x, p.y, p.z, hr + (dir > 0 ? Math.PI : 0)));
   }
 
-  // parallel taxiway + three connectors, apron beyond it
-  const tw = at(0, TWY_OFF, y0 + 0.12);
-  g.add(flat(TWY_W, len * 0.9, decal(T.taxi, 3, [1, len * 0.9 / 45]), tw.x, tw.y, tw.z, hr));
-  const connMat = decal(T.taxi, 3, [1, (TWY_OFF - RWY_W / 2) / 45]);
-  for (const a of [-len * 0.44, 0, len * 0.44]) {
-    const c = at(a, (TWY_OFF + RWY_W / 2) / 2, y0 + 0.13);
-    g.add(flat(TWY_W, TWY_OFF - RWY_W / 2, connMat, c.x, c.y, c.z, hr + Math.PI / 2));
-  }
-  const apronL = len * 0.45;
-  const ap = at(0, APRON_OFF, y0 + 0.1);
-  g.add(flat(220, apronL, decal(T.apron, 2, [220 / 80, apronL / 80]), ap.x, ap.y, ap.z, hr));
-
-  // buildings: hangars where the gameplay hangars are, shelters, tower, fuel farm
-  const wall = new THREE.MeshLambertMaterial({ color: ab.side === 'blue' ? 0x7d8278 : 0x7a7466 });
-  const roof = new THREE.MeshLambertMaterial({ color: 0x5c605f });
-  const roofQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -hr, 0)).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2)).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2));
-  for (let k = -3; k <= 3; k++) {
-    const h = new THREE.Mesh(new THREE.BoxGeometry(40, 12, 36), wall);
-    h.position.copy(at(k * 90, 470, y0 + 6)); h.rotation.y = -hr; g.add(h);
-    const r = new THREE.Mesh(new THREE.CylinderGeometry(20, 20, 36, 12, 1, false, 0, Math.PI), roof);   // barrel roof
-    r.quaternion.copy(roofQ); r.scale.set(0.35, 1, 1); r.position.copy(at(k * 90, 470, y0 + 12)); g.add(r);
-  }
-  // hardened aircraft shelters: concrete half-cylinders, doors facing the taxiway
-  const has = new THREE.InstancedMesh(new THREE.CylinderGeometry(12, 13, 34, 14, 1, false, 0, Math.PI), new THREE.MeshLambertMaterial({ color: 0x8c8a80 }), 8);
   const mtx = new THREE.Matrix4();
-  const hasQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -hr + Math.PI / 2, 0)).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2)).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2));
-  for (let k = 0; k < 8; k++) {
-    const p = at((k < 4 ? -1 : 1) * len * 0.22 + ((k % 4) - 1.5) * 70, -TWY_OFF - 110, 0);
-    p.y = Math.max(0, terrainHeight(p.x, p.z));
-    mtx.compose(p, hasQ, new THREE.Vector3(1, 1, 1));
-    has.setMatrixAt(k, mtx);
-  }
-  g.add(has);
-  const tw2 = at(-len * 0.35, 380, y0);
-  const shaft = new THREE.Mesh(new THREE.BoxGeometry(7, 26, 7), new THREE.MeshLambertMaterial({ color: 0xc8c6b8 }));
-  shaft.position.copy(tw2).setY(y0 + 13); g.add(shaft);
-  const cab = new THREE.Mesh(new THREE.CylinderGeometry(6.5, 5.5, 4.5, 8), new THREE.MeshLambertMaterial({ color: 0x23344a, emissive: 0x0b1220 }));
-  cab.position.copy(tw2).setY(y0 + 28.2); g.add(cab);
-  const cap = new THREE.Mesh(new THREE.CylinderGeometry(7.2, 7.2, 0.8, 8), roof);
-  cap.position.copy(tw2).setY(y0 + 30.8); g.add(cap);
-  const tank = new THREE.InstancedMesh(new THREE.CylinderGeometry(9, 9, 10, 16), new THREE.MeshLambertMaterial({ color: 0xd8d6cc }), 4);
-  for (let k = 0; k < 4; k++) { const p = at(len * 0.38 + (k % 2) * 26, 560 + Math.floor(k / 2) * 26, y0 + 5); mtx.makeTranslation(p.x, p.y, p.z); tank.setMatrixAt(k, mtx); }
-  g.add(tank);
-
   // lights: edge lights every 60 m, approach bars, PAPI
   const edgeN = Math.floor(len / 60) + 1;
   const edge = new THREE.InstancedMesh(new THREE.BoxGeometry(0.6, 0.5, 0.6), new THREE.MeshBasicMaterial({ color: 0xfff2c8 }), edgeN * 2);
@@ -170,7 +125,7 @@ export function buildAirfield(ab: Airbase): Airfield {
     mtx.makeTranslation(p.x, p.y, p.z); edge.setMatrixAt(k * 2 + (s > 0 ? 1 : 0), mtx);
   }
   g.add(edge);
-  const ends = runwayEnds(ab);
+  const ends = runwayEnds(rw);
   const appr = new THREE.InstancedMesh(new THREE.BoxGeometry(18, 0.6, 1.5), new THREE.MeshBasicMaterial({ color: 0xffeeaa }), 20);
   const apprQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -hr);
   let n = 0;
@@ -182,6 +137,67 @@ export function buildAirfield(ab: Airbase): Airfield {
     }
   }
   g.add(appr);
+}
+
+/** Build one airfield in world coordinates. */
+export function buildAirfield(ab: Airbase): Airfield {
+  const T = textures();
+  const g = new THREE.Group();
+  const len = ab.length, hr = ab.hdg * Math.PI / 180, y0 = ab.elev;
+  const side = new THREE.Vector3(Math.cos(hr), 0, Math.sin(hr));
+  const fwd = new THREE.Vector3(Math.sin(hr), 0, -Math.cos(hr));
+  const at = (along: number, across: number, y = y0) => new THREE.Vector3(ab.x, y, ab.z).addScaledVector(fwd, along).addScaledVector(side, across);
+  // taxiway, apron and buildings go on the side clear of the field's other runways
+  const S = apronSide(ab);
+  const atS = (along: number, across: number, y = y0) => at(along, S * across, y);
+
+  addRunway(g, ab, y0);
+  for (const rw of ab.extra ?? []) addRunway(g, rw, y0);
+
+  // parallel taxiway + three connectors, apron beyond it
+  const tw = atS(0, TWY_OFF, y0 + 0.12);
+  g.add(flat(TWY_W, len * 0.9, decal(T.taxi, 3, [1, len * 0.9 / 45]), tw.x, tw.y, tw.z, hr));
+  const connMat = decal(T.taxi, 3, [1, (TWY_OFF - RWY_W / 2) / 45]);
+  for (const a of [-len * 0.44, 0, len * 0.44]) {
+    const c = atS(a, (TWY_OFF + RWY_W / 2) / 2, y0 + 0.13);
+    g.add(flat(TWY_W, TWY_OFF - RWY_W / 2, connMat, c.x, c.y, c.z, hr + Math.PI / 2));
+  }
+  const apronL = len * 0.45;
+  const ap = atS(0, APRON_OFF, y0 + 0.1);
+  g.add(flat(220, apronL, decal(T.apron, 2, [220 / 80, apronL / 80]), ap.x, ap.y, ap.z, hr));
+
+  // buildings: hangars where the gameplay hangars are, shelters, tower, fuel farm
+  const wall = new THREE.MeshLambertMaterial({ color: ab.side === 'blue' ? 0x7d8278 : 0x7a7466 });
+  const roof = new THREE.MeshLambertMaterial({ color: 0x5c605f });
+  const roofQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -hr, 0)).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2)).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2));
+  for (let k = -3; k <= 3; k++) {
+    const h = new THREE.Mesh(new THREE.BoxGeometry(40, 12, 36), wall);
+    h.position.copy(atS(k * 90, 470, y0 + 6)); h.rotation.y = -hr; g.add(h);
+    const r = new THREE.Mesh(new THREE.CylinderGeometry(20, 20, 36, 12, 1, false, 0, Math.PI), roof);   // barrel roof
+    r.quaternion.copy(roofQ); r.scale.set(0.35, 1, 1); r.position.copy(atS(k * 90, 470, y0 + 12)); g.add(r);
+  }
+  // hardened aircraft shelters: concrete half-cylinders, doors facing the taxiway
+  const has = new THREE.InstancedMesh(new THREE.CylinderGeometry(12, 13, 34, 14, 1, false, 0, Math.PI), new THREE.MeshLambertMaterial({ color: 0x8c8a80 }), 8);
+  const mtx = new THREE.Matrix4();
+  const hasQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -hr + Math.PI / 2, 0)).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2)).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2));
+  for (let k = 0; k < 8; k++) {
+    const p = atS((k < 4 ? -1 : 1) * len * 0.22 + ((k % 4) - 1.5) * 70, -TWY_OFF - 110, 0);
+    p.y = Math.max(0, terrainHeight(p.x, p.z));
+    mtx.compose(p, hasQ, new THREE.Vector3(1, 1, 1));
+    has.setMatrixAt(k, mtx);
+  }
+  g.add(has);
+  const tw2 = atS(-len * 0.35, 380, y0);
+  const shaft = new THREE.Mesh(new THREE.BoxGeometry(7, 26, 7), new THREE.MeshLambertMaterial({ color: 0xc8c6b8 }));
+  shaft.position.copy(tw2).setY(y0 + 13); g.add(shaft);
+  const cab = new THREE.Mesh(new THREE.CylinderGeometry(6.5, 5.5, 4.5, 8), new THREE.MeshLambertMaterial({ color: 0x23344a, emissive: 0x0b1220 }));
+  cab.position.copy(tw2).setY(y0 + 28.2); g.add(cab);
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(7.2, 7.2, 0.8, 8), roof);
+  cap.position.copy(tw2).setY(y0 + 30.8); g.add(cap);
+  const tank = new THREE.InstancedMesh(new THREE.CylinderGeometry(9, 9, 10, 16), new THREE.MeshLambertMaterial({ color: 0xd8d6cc }), 4);
+  for (let k = 0; k < 4; k++) { const p = atS(len * 0.38 + (k % 2) * 26, 560 + Math.floor(k / 2) * 26, y0 + 5); mtx.makeTranslation(p.x, p.y, p.z); tank.setMatrixAt(k, mtx); }
+  g.add(tank);
+
   // PAPI: 4 boxes left of the runway, 300 m in from the start threshold (landing towards the "end")
   const papi = new THREE.InstancedMesh(new THREE.BoxGeometry(1.4, 1, 0.8), new THREE.MeshBasicMaterial({ color: 0xffffff }), 4);
   const papiPos = at(-len / 2 + 300, -(RWY_W / 2 + 15), y0 + 0.8);

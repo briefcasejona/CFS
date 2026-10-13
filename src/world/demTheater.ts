@@ -3,13 +3,16 @@
 import { smoothstep } from '../core/math.js';
 import { fbm } from './noise.js';
 import { Lcc } from './lcc.js';
-import type { Airbase, ObjectiveDef, Theater } from './theater.js';
+import type { Airbase, ObjectiveDef, Runway, Theater } from './theater.js';
+import { RUNWAYS } from './theaters/runways.js';
 
 export interface DemConfig {
   proj: { lat0: number; lon0: number; lat1: number; lat2: number };
   half: number;   // m
   res: number;    // m per sample
   asset: string;  // folder under assets/theaters/
+  /** grid spacing (m) of the baked landcover.bin.gz (scripts/terrain/bake-landcover.mjs), when there is one */
+  cover?: number;
 }
 
 export type AbRow = [id: string, name: string, side: 'blue' | 'red', lat: number, lon: number, trueHdg: number, length: number];
@@ -49,10 +52,23 @@ export class DemGrid {
     return Math.atan2(b.x - a.x, -(b.z - a.z)) * 180 / Math.PI;
   }
 
+  /** a runway from its two thresholds (lat/lon), in the grid frame */
+  runway(la0: number, lo0: number, la1: number, lo1: number): Runway {
+    const a = this.lcc.forward(la0, lo0), b = this.lcc.forward(la1, lo1);
+    return { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2, hdg: (Math.atan2(b.x - a.x, -(b.z - a.z)) * 180 / Math.PI + 360) % 360, length: Math.hypot(b.x - a.x, b.z - a.z) };
+  }
+
   airbases(rows: AbRow[]): Airbase[] {
     return rows.map(([id, name, side, lat, lon, hdg, length]) => {
       const p = this.lcc.forward(lat, lon);
-      return { id, name, side, x: p.x, z: p.z, hdg: (hdg + this.northBearing(lat, lon) + 360) % 360, length, elev: 0 };
+      const grid = (hdg + this.northBearing(lat, lon) + 360) % 360;
+      const real = RUNWAYS[id];
+      if (!real) return { id, name, side, x: p.x, z: p.z, hdg: grid, length, elev: 0 };
+      // the real layout (OurAirports): the longest runway is the main one, flown in the direction the row gives
+      const [main, ...rest] = real.map(([a, b, c, d]) => this.runway(a, b, c, d));
+      const off = Math.abs(((main.hdg - grid + 540) % 360) - 180);
+      if (off > 90) main.hdg = (main.hdg + 180) % 360;
+      return { id, name, side, ...main, elev: 0, ...(rest.length ? { extra: rest } : {}) };
     });
   }
   objectives(rows: ObjRow[]): ObjectiveDef[] {
@@ -69,21 +85,39 @@ export class DemGrid {
     for (const ab of theater.airbases) ab.elev = Math.max(5, this.rawHeight(ab.x, ab.z));
   }
 
+  /** install the landcover grid (RGBA fractions on the cfg.cover spacing) */
+  setCover(data: Uint8Array, theater: Theater) {
+    const res = this.cfg.cover!, n = Math.round((2 * this.cfg.half) / res) + 1;
+    if (data.length !== n * n * 4) throw new Error(`${this.cfg.asset} landcover has ${data.length} bytes, expected ${n * n * 4}`);
+    theater.cover = { data, n, half: this.cfg.half, res };
+  }
+
   /** Theater.load: fetch the DEM (+ optional map overlay) once */
   async load(theater: Theater) {
     if (this.grid) return;
     const base = `assets/theaters/${this.cfg.asset}`;
     const res = await fetch(`${base}/height.bin.gz`);
     if (!res.ok) throw new Error(`${theater.name} terrain not available (${res.status})`);
-    let bytes = await res.arrayBuffer();
-    const head = new Uint8Array(bytes, 0, 2);
-    // gunzip unless a server already did (Content-Encoding: gzip)
-    if (head[0] === 0x1f && head[1] === 0x8b) bytes = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
-    this.setGrid(new Int16Array(bytes), theater);
+    this.setGrid(new Int16Array(await gunzip(res)), theater);
+    // satellite landcover (forests, towns, fields) — optional: without it the ground is coloured procedurally
+    if (this.cfg.cover) {
+      try {
+        const c = await fetch(`${base}/landcover.bin.gz`);
+        if (c.ok) this.setCover(new Uint8Array(await gunzip(c)), theater);
+      } catch { /* offline without the landcover cached */ }
+    }
     // borders and cities for the map — optional, the theater flies without them
     try {
       const o = await fetch(`${base}/overlay.json`);
       if (o.ok) theater.overlay = await o.json();
     } catch { /* offline without the overlay cached */ }
   }
+}
+
+/** a fetched body, gunzipped unless a server already did (Content-Encoding: gzip) */
+async function gunzip(res: Response): Promise<ArrayBuffer> {
+  const bytes = await res.arrayBuffer();
+  const head = new Uint8Array(bytes, 0, 2);
+  if (head[0] !== 0x1f || head[1] !== 0x8b) return bytes;
+  return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
 }

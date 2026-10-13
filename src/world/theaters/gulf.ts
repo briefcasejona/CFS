@@ -5,7 +5,7 @@
 import { DemGrid, type AbRow, type ObjRow } from '../demTheater.js';
 import type { Theater } from '../theater.js';
 
-const DEM = new DemGrid({ proj: { lat0: 29.5, lon0: 47.5, lat1: 26, lat2: 33 }, half: 600000, res: 1000, asset: 'gulf' });
+const DEM = new DemGrid({ proj: { lat0: 29.5, lon0: 47.5, lat1: 26, lat2: 33 }, half: 600000, res: 1000, asset: 'gulf', cover: 500 });
 export const gulfLcc = DEM.lcc;
 
 const AB: AbRow[] = [
