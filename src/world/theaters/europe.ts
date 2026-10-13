@@ -5,7 +5,7 @@ import { DemGrid, type AbRow, type ObjRow } from '../demTheater.js';
 import type { Theater } from '../theater.js';
 
 export const EUROPE_PROJ = { lat0: 52, lon0: 10, lat1: 47, lat2: 57 };
-const DEM = new DemGrid({ proj: EUROPE_PROJ, half: 1150000, res: 1000, asset: 'europe' });
+const DEM = new DemGrid({ proj: EUROPE_PROJ, half: 1150000, res: 1000, asset: 'europe', cover: 1000 });
 export const europeLcc = DEM.lcc;
 
 const AB: AbRow[] = [
@@ -82,3 +82,5 @@ export const EUROPE: Theater = {
 /** Install the height grid (browser: fetched + gunzipped by EUROPE.load; tests: read from disk). */
 export function setEuropeGrid(g: Int16Array) { DEM.setGrid(g, EUROPE); }
 export function europeLoaded() { return !!DEM.grid; }
+/** Install the landcover grid (tests: read from disk). */
+export function setEuropeCover(c: Uint8Array) { DEM.setCover(c, EUROPE); }

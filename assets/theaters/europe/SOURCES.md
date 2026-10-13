@@ -9,3 +9,7 @@
 - Airfield coordinates and runway headings in `src/world/theaters/europe.ts` are approximate public information.
 - Runway layouts (`src/world/theaters/runways.ts`): thresholds and widths from **OurAirports** (public domain,
   https://github.com/davidmegginson/ourairports-data), baked by `scripts/terrain/bake-runways.mjs`.
+- `landcover.bin.gz`: 1 km grid of forest, built-up, cropland and open-water fractions (Uint8 RGBA, same projection),
+  derived from **ESA WorldCover 10 m 2021 v200** (© ESA WorldCover project 2021 / contains modified Copernicus Sentinel
+  data (2021) processed by the ESA WorldCover consortium), **CC BY 4.0** — https://esa-worldcover.org. Changes: classes
+  regrouped and resampled to fractions. Baked by `scripts/terrain/bake-landcover.mjs europe`.

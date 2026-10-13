@@ -4,6 +4,7 @@ import { VARNIA } from './theaters/varnia.js';
 import { EUROPE } from './theaters/europe.js';
 import { GULF } from './theaters/gulf.js';
 import type { CarrierSpec } from '../sim/carrier.js';
+import type { CoverGrid } from './landcover.js';
 
 export { fbm } from './noise.js';
 
@@ -92,6 +93,8 @@ export interface Theater {
   carriers?: CarrierSpec[];
   /** map overlay (real-world theaters): border polylines as flat x,z pairs in 100 m units; cities [name, x, z, capital] */
   overlay?: { borders: number[][]; cities: Array<[string, number, number, number]> };
+  /** ground cover (forest, towns, fields, water): baked from satellite landcover, or procedural (landcover.ts) */
+  cover?: CoverGrid;
 }
 
 export interface TerrainPalette {

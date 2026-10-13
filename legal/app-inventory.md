@@ -31,8 +31,8 @@ RESEARCH NOTES — NOT LEGAL ADVICE — REVIEW WITH A LICENSED LAWYER BEFORE REL
 | stun.l.google.com / stun1-2.l.google.com:19302, stun.cloudflare.com:3478 | NAT traversal (multiplayer only) | IP | `node_modules/@trystero-p2p/core/dist/peer.mjs:378` |
 | other players (peer-to-peer) | game state, chat, name, optional voice | IP, name, chat, audio | `src/net/coop.ts`, `src/ui/multiplayer.ts` |
 | Browser speech service (Google in Chrome, Microsoft in Edge) — chosen by the browser, not by CFS | voice commands, only when enabled and the push-to-talk key is pressed | microphone audio of the command, IP | `src/input/voice.ts` |
-| Outbound links only (user clicks): sketchfab.com, registry.opendata.aws, github.com/tilezen, naturalearthdata.com | credits | — | `src/ui/screens.ts` credits |
-- Build-time only (not runtime): AWS Terrain Tiles and Natural Earth GitHub raw files fetched by `scripts/terrain/*.mjs`.
+| Outbound links only (user clicks): sketchfab.com, registry.opendata.aws, github.com/tilezen, naturalearthdata.com, esa-worldcover.org | credits | — | `src/ui/screens.ts` credits |
+- Build-time only (not runtime): AWS Terrain Tiles, ESA WorldCover (S3), OurAirports and Natural Earth GitHub raw files fetched by `scripts/terrain/*.mjs`.
 
 ## 5. Login & scopes — none.
 ## 6. Cookies & storage — no cookies. localStorage (see §3) and service-worker Cache Storage (the app's own files). All strictly necessary for features the user uses (own settings/saves). Set by the app itself.
@@ -50,9 +50,10 @@ RESEARCH NOTES — NOT LEGAL ADVICE — REVIEW WITH A LICENSED LAWYER BEFORE REL
 - HD model `assets/models/cc-by-nc-sa/f14b.glb` (F-14B(U) only): "Grumman F-14B Tomcat" by KOG_THORNS on Sketchfab (**CC BY 4.0**, checked on the Sketchfab API 2026-10-13) fitted with bohmerang's F-14A landing gear (CC BY-NC-SA 4.0), so the file is kept under CC BY-NC-SA; both authors credited in Settings and `assets/models/cc-by-nc-sa/LICENSE.md`. Supplied by Jonathan.
 - HD model `assets/models/cc-by/f14d.glb` (F-14D only): "Grumman F-14D Super Tomcat" by KOG_THORNS on Sketchfab, **CC BY 4.0** (per the file's metadata); credited with link + licence + list of changes in Settings and `assets/models/cc-by/LICENSE.md`. The source file contains a part name ("gears_Aerosoft") suggesting part of it may come from a commercial product — flagged to Jonathan, who chose to use it with credit (2026-10-11).
 - HD model `assets/models/cc-by/f16d70.glb` (F-16D Block 70 only): "General Dynamics F-16D Block 60" by MirzaArrafiERV_45 on Sketchfab, **CC BY 4.0** (licence read from the Sketchfab API, 2026-10-13); credited in Settings and `assets/models/cc-by/LICENSE.md`. Supplied by Jonathan; the Sketchfab page tags it "createdwithai".
-- Excluded: user-supplied F/A-18E OBJ (no provenance), KOG_THORNS F-14B (looks derived from the bohmerang CC BY-NC-SA model but labelled CC-BY), F-16D Block 70 (no author/licence) — never committed.
+- Excluded: user-supplied F/A-18E OBJ (no provenance) — never committed. (The F-14B and F-16D files once excluded here were later traced to their Sketchfab pages and licences, above.)
 - Build-only tooling (not shipped): @gltf-transform/core/functions/extensions, meshoptimizer (MIT).
-- Terrain: AWS Terrain Tiles (Mapzen/Tilezen; SRTM/GMTED/ETOPO1/EU-DEM… attribution required per joerd docs) + Natural Earth (public domain); credited in Settings and `assets/theaters/europe/SOURCES.md`.
+- Terrain: AWS Terrain Tiles (Mapzen/Tilezen; SRTM/GMTED/ETOPO1/EU-DEM… attribution required per joerd docs) + Natural Earth (public domain); credited in Settings and `assets/theaters/europe/SOURCES.md`
+- Landcover `assets/theaters/{europe,gulf}/landcover.bin.gz` (forests, towns, fields, water): derived from **ESA WorldCover 10 m 2021 v200**, **CC BY 4.0** (© ESA WorldCover project / contains modified Copernicus Sentinel data (2021) processed by the ESA WorldCover consortium); credited in Settings and the theaters' `SOURCES.md`. Runway layouts: OurAirports (public domain).
 - All other art (procedural aircraft, cockpit, HUD, icons, sounds) generated in code by the project.
 - Real military aircraft type names (F-16, F-14, Gripen, …), real air-force/nation names and roundel colours (`src/world/nations.ts`) — descriptive use.
 

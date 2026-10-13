@@ -11,6 +11,8 @@ export interface DemConfig {
   half: number;   // m
   res: number;    // m per sample
   asset: string;  // folder under assets/theaters/
+  /** grid spacing (m) of the baked landcover.bin.gz (scripts/terrain/bake-landcover.mjs), when there is one */
+  cover?: number;
 }
 
 export type AbRow = [id: string, name: string, side: 'blue' | 'red', lat: number, lon: number, trueHdg: number, length: number];
@@ -83,21 +85,39 @@ export class DemGrid {
     for (const ab of theater.airbases) ab.elev = Math.max(5, this.rawHeight(ab.x, ab.z));
   }
 
+  /** install the landcover grid (RGBA fractions on the cfg.cover spacing) */
+  setCover(data: Uint8Array, theater: Theater) {
+    const res = this.cfg.cover!, n = Math.round((2 * this.cfg.half) / res) + 1;
+    if (data.length !== n * n * 4) throw new Error(`${this.cfg.asset} landcover has ${data.length} bytes, expected ${n * n * 4}`);
+    theater.cover = { data, n, half: this.cfg.half, res };
+  }
+
   /** Theater.load: fetch the DEM (+ optional map overlay) once */
   async load(theater: Theater) {
     if (this.grid) return;
     const base = `assets/theaters/${this.cfg.asset}`;
     const res = await fetch(`${base}/height.bin.gz`);
     if (!res.ok) throw new Error(`${theater.name} terrain not available (${res.status})`);
-    let bytes = await res.arrayBuffer();
-    const head = new Uint8Array(bytes, 0, 2);
-    // gunzip unless a server already did (Content-Encoding: gzip)
-    if (head[0] === 0x1f && head[1] === 0x8b) bytes = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
-    this.setGrid(new Int16Array(bytes), theater);
+    this.setGrid(new Int16Array(await gunzip(res)), theater);
+    // satellite landcover (forests, towns, fields) — optional: without it the ground is coloured procedurally
+    if (this.cfg.cover) {
+      try {
+        const c = await fetch(`${base}/landcover.bin.gz`);
+        if (c.ok) this.setCover(new Uint8Array(await gunzip(c)), theater);
+      } catch { /* offline without the landcover cached */ }
+    }
     // borders and cities for the map — optional, the theater flies without them
     try {
       const o = await fetch(`${base}/overlay.json`);
       if (o.ok) theater.overlay = await o.json();
     } catch { /* offline without the overlay cached */ }
   }
+}
+
+/** a fetched body, gunzipped unless a server already did (Content-Encoding: gzip) */
+async function gunzip(res: Response): Promise<ArrayBuffer> {
+  const bytes = await res.arrayBuffer();
+  const head = new Uint8Array(bytes, 0, 2);
+  if (head[0] !== 0x1f || head[1] !== 0x8b) return bytes;
+  return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
 }
