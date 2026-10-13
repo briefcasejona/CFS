@@ -121,18 +121,26 @@ export class TerrainRenderer {
     const vcount = n * n + 4 * n;
     const pos = new Float32Array(vcount * 3);
     const col = new Float32Array(vcount * 3);
-    const hs = new Float32Array(n * n);
-    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) hs[j * n + i] = terrainHeight(x0 + i * step, z0 + j * step);
+    const nrm = new Float32Array(vcount * 3);
+    // heights with a one-sample border from the neighbouring chunks: slopes, colours and normals at the chunk edges
+    // then match the neighbour's exactly, so no seam line shows where two chunks meet
+    const m = n + 2;
+    const hs = new Float32Array(m * m);
+    for (let j = 0; j < m; j++) for (let i = 0; i < m; i++) hs[j * m + i] = terrainHeight(x0 + (i - 1) * step, z0 + (j - 1) * step);
+    const H = (i: number, j: number) => hs[(j + 1) * m + i + 1];
     const c = new THREE.Color();
     const pal = terrainPalette();
     let v = 0;
     for (let j = 0; j < n; j++) {
       for (let i = 0; i < n; i++) {
-        const h = hs[j * n + i];
-        const hx = hs[j * n + Math.min(n - 1, i + 1)] - hs[j * n + Math.max(0, i - 1)];
-        const hz = hs[Math.min(n - 1, j + 1) * n + i] - hs[Math.max(0, j - 1) * n + i];
+        const h = H(i, j);
+        // (the sea floor is drawn flat at -2 m, so its normal is up)
+        const hx = Math.max(H(i + 1, j), -2) - Math.max(H(i - 1, j), -2);
+        const hz = Math.max(H(i, j + 1), -2) - Math.max(H(i, j - 1), -2);
         const slope = Math.hypot(hx, hz) / (2 * step);
         pos[v * 3] = i * step; pos[v * 3 + 1] = Math.max(h, -2); pos[v * 3 + 2] = j * step;
+        const nl = Math.hypot(hx, 2 * step, hz);
+        nrm[v * 3] = -hx / nl; nrm[v * 3 + 1] = 2 * step / nl; nrm[v * 3 + 2] = -hz / nl;
         terrainColor(h, slope, x0 + i * step, z0 + j * step, pal, c);
         // steeper ground a little darker: cheap ambient occlusion that gives the relief depth
         if (h > 0.5) c.multiplyScalar(1 - 0.22 * Math.min(1, slope * 1.6));
@@ -156,8 +164,9 @@ export class TerrainRenderer {
     for (let e = 0; e < 4; e++) {
       const base = v;
       for (const k of edges[e]) {
-        pos[v * 3] = pos[k * 3]; pos[v * 3 + 1] = pos[k * 3 + 1] - drop; pos[v * 3 + 2] = pos[k * 3 + 2];
-        col[v * 3] = col[k * 3]; col[v * 3 + 1] = col[k * 3 + 1]; col[v * 3 + 2] = col[k * 3 + 2];
+        // the skirt is shaded like the edge it hangs from: where it shows through a crack it reads as ground
+        for (let a = 0; a < 3; a++) { pos[v * 3 + a] = pos[k * 3 + a]; col[v * 3 + a] = col[k * 3 + a]; nrm[v * 3 + a] = nrm[k * 3 + a]; }
+        pos[v * 3 + 1] -= drop;
         v++;
       }
       for (let t = 0; t < n - 1; t++) {
@@ -168,8 +177,8 @@ export class TerrainRenderer {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
     geo.setIndex(idx);
-    geo.computeVertexNormals();
     geo.computeBoundingSphere();
     const mesh = new THREE.Mesh(geo, this.material);
     mesh.position.set(x0, 0, z0);
@@ -280,6 +289,9 @@ export function buildScenery(): THREE.Group {
     new THREE.MeshLambertMaterial({ color: 0x1d3446 }),
   );
   sea.rotation.x = -Math.PI / 2;
+  // below the terrain's own sea surface (-2 m): low coasts sit within a metre of sea level and would z-fight with it
+  // at a distance (the flicker along the horizon); the plane only fills in beyond the built terrain
+  sea.position.y = -8;
   g.add(sea);
 
   const fields = AIRBASES.map((ab) => buildAirfield(ab));
