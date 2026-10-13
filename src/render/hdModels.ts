@@ -14,8 +14,11 @@ export interface HdSpec {
   /** source axes: 'xfwd' = nose +X, right +Z (bohmerang exports, default); 'zfwd' = nose +Z, left +X (FBX exports) */
   axes?: 'xfwd' | 'zfwd';
   /** articulated swing wing: node paths of every moving wing part (panel, slats, flaps, spoilers, lights…), the pivot of
-   *  the wing on the source's +X side in source metres, and the sweep (deg) the model is built at */
-  wings?: { parts: RegExp; pivot: { x: number; z: number }; refSweep: number };
+   *  the wing on the source's +X side in source metres, and the sweep (deg) the model is built at.
+   *  `split`: the wings are fused into the airframe mesh of the `parts` nodes — every triangle that reaches beyond
+   *  |x| > reach (game metres) with its centre forward of z < maxZ (clear of the tailplanes) is cut out and swept with
+   *  its side's wing; the pivot is then given in game metres (x outboard, z aft of the model's centre) */
+  wings?: { parts: RegExp; pivot: { x: number; z: number }; refSweep: number; split?: { reach: number; maxZ: number } };
   /** pilot eye position in game metres (body frame); default: ~0.65 m behind and just above the HUD combiner node,
    *  else derived from the cockpit node's bounds */
   eye?: { y: number; z: number };
@@ -32,11 +35,33 @@ const BOHMERANG = { author: 'bohmerang', license: 'CC BY-NC-SA 4.0' };
 const BOH_PARTS = { gearDown: /landingOn/i, gearUp: /landingOff/i, cockpit: /cockpit|hud/i, hudGlass: true };
 const NEVER = /(?!)/;
 
+// bohmerang's F-14A: the wings are part of the one airframe mesh, so they are cut out of it at bake time
+const BOH_F14: HdSpec = {
+  url: 'assets/models/cc-by-nc-sa/f14.glb', title: 'F-14 Tomcat - Fighter Jet - Free', ...BOHMERANG,
+  source: 'https://sketchfab.com/3d-models/f-14-tomcat-fighter-jet-free-497f77c311b5411d9b567d8707a81c33',
+  gearDown: /gearOn/i, gearUp: /gearOff/i, cockpit: /cockpit|instrGlass/i,
+  wings: { parts: /airframe_0/, pivot: { x: 2.72, z: 1.55 }, refSweep: 20, split: { reach: 3.6, maxZ: 5.0 } },
+  eye: { y: 1.6, z: -5.0 },
+};
+
+const BOH_F16: HdSpec = {
+  url: 'assets/models/cc-by-nc-sa/f16.glb', title: 'F-16 Fighting Falcon - Fighter Jet - Free', ...BOHMERANG,
+  source: 'https://sketchfab.com/3d-models/f-16-fighting-falcon-fighter-jet-free-f0b00989e5634764848ef2c235c64db5', ...BOH_PARTS,
+  mfds: [
+    { c: [-0.168, 0.835, -3.923], w: 0.08, h: 0.088, n: [0, 0.23, 0.97], screen: 0 },
+    { c: [0.172, 0.835, -3.923], w: 0.08, h: 0.088, n: [0, 0.23, 0.97], screen: 1 },
+  ],
+};
+
 /** HD models, keyed by aircraft id (one variant) or by family (every variant of the family). */
 export const HD_SPECS: Record<string, HdSpec> = {
-  // one articulated model for the whole family: wings, slats, flaps and spoilers are separate nodes that sweep
+  // F-14A and F-14B: bohmerang's Tomcat (the B(U) uses it too until its own model is added)
+  f14a: BOH_F14,
+  f14b1: BOH_F14,
+  f14b: BOH_F14,
+  // F-14D: one articulated model: wings, slats, flaps and spoilers are separate nodes that sweep
   // rigidly about the real pivot (2.72 m from the centreline) — the published 68° / 75° spans check out on it
-  'F-14': {
+  f14d: {
     url: 'assets/models/cc-by/f14d.glb', title: 'Grumman F-14D "Super Tomcat"', author: 'KOG_THORNS',
     source: 'https://sketchfab.com/3d-models/grumman-f-14d-super-tomcat-74be89a104a34caabacb25a705708097', license: 'CC BY 4.0',
     axes: 'zfwd',
@@ -58,14 +83,10 @@ export const HD_SPECS: Record<string, HdSpec> = {
       { c: [0.168, 0.518, -3.463], w: 0.108, h: 0.145, n: [0, 0.1, 1], screen: 1 },
     ],
   },
-  'F-16': {
-    url: 'assets/models/cc-by-nc-sa/f16.glb', title: 'F-16 Fighting Falcon - Fighter Jet - Free', ...BOHMERANG,
-    source: 'https://sketchfab.com/3d-models/f-16-fighting-falcon-fighter-jet-free-f0b00989e5634764848ef2c235c64db5', ...BOH_PARTS,
-    mfds: [
-      { c: [-0.168, 0.835, -3.923], w: 0.08, h: 0.088, n: [0, 0.23, 0.97], screen: 0 },
-      { c: [0.172, 0.835, -3.923], w: 0.08, h: 0.088, n: [0, 0.23, 0.97], screen: 1 },
-    ],
-  },
+  // single-seat F-16C Block 50 and Block 70 only: the other F-16s (two-seaters, A/B, Block 40) keep the procedural
+  // model until they have their own
+  f16c: BOH_F16,
+  f16c70: BOH_F16,
   // the Super Hornet model only: the legacy F/A-18C has a different (smaller) airframe and keeps the procedural model
   fa18e: {
     url: 'assets/models/cc-by-nc-sa/fa18f.glb', title: 'Boeing F/A-18F Super Hornet - Free', ...BOHMERANG,
@@ -151,7 +172,7 @@ export function bake(scene: THREE.Object3D, spec: HdSpec, def: AircraftDef): THR
     for (const a of ['tangent', 'uv1', 'uv2', 'uv3']) if (g.getAttribute(a)) g.deleteAttribute(a);
     if (!g.getAttribute('normal')) g.computeVertexNormals();   // parts simplified without normals
     let wing = 0;
-    if (spec.wings?.parts.test(name)) { g.computeBoundingBox(); wing = Math.sign(g.boundingBox!.min.x + g.boundingBox!.max.x) || 1; }
+    if (spec.wings?.parts.test(name) && !spec.wings.split) { g.computeBoundingBox(); wing = Math.sign(g.boundingBox!.min.x + g.boundingBox!.max.x) || 1; }
     parts.push({ name, geo: g, mat: m.material as THREE.Material, wing });
   });
   // scale + centre on the airframe bounding box (gear excluded)
@@ -164,14 +185,25 @@ export function bake(scene: THREE.Object3D, spec: HdSpec, def: AircraftDef): THR
   const yShift = Number.isFinite(gearMin) ? -def.gear.height - gearMin * s : -((box.min.y + box.max.y) / 2) * s;
   const fix = new THREE.Matrix4().makeTranslation(0, yShift, -cz * s).multiply(new THREE.Matrix4().makeScale(s, s, s));
   const root = new THREE.Group();
-  if (spec.wings) {
+  if (spec.wings?.split) root.userData.pivot = { ...spec.wings.pivot };
+  else if (spec.wings) {
     const pv = new THREE.Vector3(spec.wings.pivot.x, 0, spec.wings.pivot.z).applyMatrix4(toGame).applyMatrix4(fix);
     root.userData.pivot = { x: Math.abs(pv.x), z: pv.z };
+  }
+  for (const p of parts) p.geo.applyMatrix4(fix);
+  const split = spec.wings?.split;
+  if (split) {
+    for (const p of [...parts]) {
+      if (!spec.wings!.parts.test(p.name)) continue;
+      const [body, left, right] = splitWings(p.geo, split.reach, split.maxZ);
+      p.geo = body;
+      if (left) parts.push({ ...p, geo: left, wing: -1 });
+      if (right) parts.push({ ...p, geo: right, wing: 1 });
+    }
   }
   // merge parts that share role, wing side, material and attribute layout
   const groups = new Map<string, { role: string; wing: number; mat: THREE.Material; geos: THREE.BufferGeometry[]; name: string; hud: boolean }>();
   for (const p of parts) {
-    p.geo.applyMatrix4(fix);
     const role = spec.gearDown.test(p.name) ? 'gearDown' : spec.gearUp.test(p.name) ? 'gearUp'
       : spec.cockpit.test(p.name) ? 'cockpit' : spec.hide?.test(p.name) ? 'hidden' : 'body';
     const hud = (spec.hud ?? /hud/i).test(p.name);
@@ -198,6 +230,39 @@ export function bake(scene: THREE.Object3D, spec: HdSpec, def: AircraftDef): THR
     }
   }
   return root;
+}
+
+/** Cut the wing triangles out of a fused airframe geometry (game frame): [rest, left wing, right wing]. */
+export function splitWings(g: THREE.BufferGeometry, reach: number, maxZ: number): [THREE.BufferGeometry, THREE.BufferGeometry | null, THREE.BufferGeometry | null] {
+  const src = g.index ? g.toNonIndexed() : g;
+  const pos = src.getAttribute('position');
+  const side = new Int8Array(pos.count / 3);
+  for (let t = 0; t < side.length; t++) {
+    let far = 0, cz = 0;
+    for (let k = 0; k < 3; k++) {
+      const x = pos.getX(3 * t + k);
+      if (Math.abs(x) > Math.abs(far)) far = x;
+      cz += pos.getZ(3 * t + k) / 3;
+    }
+    side[t] = Math.abs(far) > reach && cz < maxZ ? Math.sign(far) : 0;
+  }
+  const pick = (want: number) => {
+    const n = side.reduce((a, s) => a + (s === want ? 1 : 0), 0);
+    if (!n) return null;
+    const out = new THREE.BufferGeometry();
+    for (const name of Object.keys(src.attributes)) {
+      const a = src.getAttribute(name) as THREE.BufferAttribute;
+      const arr = new Float32Array(n * 3 * a.itemSize);
+      let o = 0;
+      for (let t = 0; t < side.length; t++) {
+        if (side[t] !== want) continue;
+        for (let i = 3 * t * a.itemSize; i < (3 * t + 3) * a.itemSize; i++) arr[o++] = (a.array as ArrayLike<number>)[i];
+      }
+      out.setAttribute(name, new THREE.BufferAttribute(arr, a.itemSize));
+    }
+    return out;
+  };
+  return [pick(0)!, pick(-1), pick(1)];
 }
 
 /** HUD combiner: a faint green-tinted reflector you see the world through (the symbology itself is drawn by the HUD
@@ -273,7 +338,10 @@ export function requestHdModel(def: AircraftDef, cb: (inst: HdInstance) => void)
 
 /** Credits for the credits screen. */
 export function hdCredits() {
-  return Object.entries(HD_SPECS).map(([id, s]) => ({ id, title: s.title, author: s.author, source: s.source, license: s.license }));
+  // one line per model file, however many variants share it
+  const seen = new Set<string>();
+  return Object.entries(HD_SPECS).filter(([, s]) => !seen.has(s.url) && !!seen.add(s.url))
+    .map(([id, s]) => ({ id, title: s.title, author: s.author, source: s.source, license: s.license }));
 }
 
 /** sweep (deg) → wing group rotation (rad) relative to the sweep the model was built at */

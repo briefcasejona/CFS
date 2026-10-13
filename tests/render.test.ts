@@ -2,6 +2,7 @@ import { describe, expect, it } from './expect.js';
 import * as THREE from 'three';
 import { bake, instantiateHd, updateHdInstance, HD_SPECS } from '../src/render/hdModels.js';
 import { getAircraft } from '../src/aircraft/defs.js';
+import { loadGlbScene } from './glbScene.js';
 import { buildCockpit } from '../src/render/cockpit.js';
 
 describe('procedural cockpit', () => {
@@ -45,7 +46,7 @@ describe('HD models', () => {
       scene.add(box(`vehicle#slat_${side}_167`, ...lo(3.34, 9.1), 0.5, 0.86));
       scene.add(box(`vehicle#wing3_${side}_88`, ...lo(1.72, 2.67), 2.2, 4.7));   // glove vane: fixed
     }
-    const inst = instantiateHd({ root: bake(scene, HD_SPECS['F-14'], def), spec: HD_SPECS['F-14'] });
+    const inst = instantiateHd({ root: bake(scene, HD_SPECS.f14d, def), spec: HD_SPECS.f14d });
     // per side the panel, flap and slat move with the wing (the glove vane does not)
     expect(inst.wings!.left.children.length).toBe(3);
     expect(inst.wings!.right.children.length).toBe(3);
@@ -69,6 +70,31 @@ describe('HD models', () => {
     expect(at68.root > 0.05, `swept wing reaches x=${at68.root.toFixed(2)} — across the centreline`).toBe(true);
   });
 
+  it("bohmerang's F-14A (F-14A/B): the wings are cut out of the airframe mesh and sweep to the published spans", async () => {
+    const def = getAircraft('f14a');
+    const spec = HD_SPECS.f14a;
+    expect(HD_SPECS.f14b1).toBe(spec);
+    expect(HD_SPECS.f14d.url).toContain('f14d.glb');                      // the D keeps the KOG_THORNS model
+    const inst = instantiateHd({ root: bake(await loadGlbScene('assets/models/cc-by-nc-sa/f14.glb'), spec, def), spec });
+    const span = (sweep: number) => {
+      updateHdInstance(inst, 0, sweep);
+      inst.root.updateMatrixWorld(true);
+      const r = new THREE.Box3().setFromObject(inst.wings!.right, true), l = new THREE.Box3().setFromObject(inst.wings!.left, true);
+      return { half: r.max.x, halfL: -l.min.x, root: Math.min(r.min.x, -l.max.x) };
+    };
+    // published spans: 19.54 m at 20°, 11.65 m at 68°, 10.15 m oversweep (75°)
+    for (const [sweep, full] of [[20, 19.54], [68, 11.65], [75, 10.15]]) {
+      const s = span(sweep);
+      expect(Math.abs(2 * s.half - full) < 0.15, `span at ${sweep}°: ${(2 * s.half).toFixed(2)} m, published ${full} m`).toBe(true);
+      expect(s.halfL).toBeCloseTo(s.half, 3);
+      expect(s.root > 0.05, `at ${sweep}° the wing reaches x=${s.root.toFixed(2)}, across the centreline`).toBe(true);
+    }
+    // the stabilators and the glove stay on the fuselage
+    const body = new THREE.Box3();
+    inst.root.children.filter((c) => (c as THREE.Mesh).isMesh && c.userData.role === 'body').forEach((c) => body.expandByObject(c));
+    expect(body.max.x < 5, `fixed parts reach ${body.max.x.toFixed(2)} m out`).toBe(true);
+  });
+
   it('bake converts a source-frame model to game frame, scaled to the aircraft length with gear on the ground', () => {
     const def = getAircraft('jas39');
     // source frame: nose +X, up +Y, right +Z, decimetres
@@ -89,7 +115,7 @@ describe('HD models', () => {
   });
 
   it('the opaque HUD plates of the bohmerang models (F-16, F/A-18F, F-4E, Gripen) become see-through combiner glass', () => {
-    for (const [key, id] of [['F-16', 'f16c'], ['fa18e', 'fa18e'], ['f4e', 'f4e'], ['JAS 39', 'jas39']] as const) {
+    for (const [key, id] of [['f16c', 'f16c'], ['fa18e', 'fa18e'], ['f4e', 'f4e'], ['JAS 39', 'jas39']] as const) {
       const scene = new THREE.Group();
       const airframe = new THREE.Group(); airframe.name = 'X-airframe_0';
       airframe.add(new THREE.Mesh(new THREE.BoxGeometry(150, 20, 80), new THREE.MeshStandardMaterial()));

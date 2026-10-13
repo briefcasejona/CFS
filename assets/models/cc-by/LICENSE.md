@@ -8,4 +8,4 @@ This file is **not** covered by the CFS code licence. It is an adaptation of:
 
 Changes made for CFS: textures downscaled and re-encoded as JPEG (scripts/models/optimize-glb.mjs); geometry welded,
 landing gear / small external detail simplified and vertex attributes quantized (scripts/models/reduce-glb.mjs). The
-wing parts are swept in the game about a pivot fitted to the published F-14 spans. Used for every F-14 variant.
+wing parts are swept in the game about a pivot fitted to the published F-14 spans. Used for the F-14D only (the F-14A and F-14B use bohmerang's F-14A model, see ../cc-by-nc-sa/LICENSE.md).
