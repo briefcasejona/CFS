@@ -63,7 +63,7 @@ const BASE: AircraftDef[] = [
     aero: aero({ CLa: 3.9, CLmax: 1.55, CD0: 0.0175, k: 0.12, Cma: -0.12, Mcrit: 0.88, waveDrag: 2.4 }),
     engine: eng('F110-GE-129', 1, 76.3, 131, 2.0),
     limits: { gMax: 9, gMin: -3, aoaMax: 35, aoaNeg: 10, rollRate: 300, maxMach: 2.05, vmaxKcas: 800 },
-    fcs: { type: 'fbw' }, controls: { elev: 25, ail: 21, rud: 30 },
+    fcs: { type: 'fbw', law: 'f16' }, controls: { elev: 25, ail: 21, rud: 30 },
     gear: gear(15.06, 2.36, 1.65), radar: { name: 'AN/APG-68(V)9', range: 80000, azLimit: 60, tws: true },
     rcs: 1.2, gun: { name: 'M61A1 20mm', rounds: 511, rpm: 6000, muzzleVel: 1030, damage: 9 },
     stations: 9,

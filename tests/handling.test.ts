@@ -77,3 +77,45 @@ describe('handling: limiters and lateral-directional stability', () => {
     expect(ac.fm.crashed).toBe(false);
   });
 });
+
+describe('handling: F-16 FLCS', () => {
+  const f16s = AIRCRAFT.filter((d) => d.fcs.law === 'f16').map((d) => d.id);
+
+  it('rolls under G stay coordinated: no yaw swing while rolling and pulling, none after letting go', () => {
+    for (const id of f16s) for (const spd of [140, 180, 250]) {
+      const ac = jet(id, 3000, spd);
+      let peak = 0;
+      ac.ctrl.pitch = 0.5; ac.ctrl.roll = 1;
+      run(ac, 1, () => { peak = Math.max(peak, Math.abs(ac.fm.beta * R)); });
+      ac.ctrl.roll = 0;
+      let swings = 0, prev = ac.fm.r;
+      run(ac, 3, () => {
+        peak = Math.max(peak, Math.abs(ac.fm.beta * R));
+        if (Math.sign(ac.fm.r) !== Math.sign(prev) && Math.abs(ac.fm.r * R) > 2) swings++;
+        prev = ac.fm.r;
+      });
+      expect(peak < 6, `${id} ${spd} m/s: sideslip ${peak.toFixed(1)}° in a rolling pull`).toBe(true);
+      expect(swings <= 1, `${id} ${spd} m/s: yaw rate swings ${swings} times after the roll`).toBe(true);
+    }
+  });
+
+  it('the stick commands G: the same deflection gives the same load at every speed', () => {
+    for (const id of f16s) {
+      const g = [200, 260, 330].map((spd) => { const ac = jet(id, 3000, spd); ac.ctrl.pitch = 0.6; run(ac, 3); return ac.fm.nz; });
+      expect(Math.max(...g) - Math.min(...g) < 0.4, `${id}: 0.6 stick gives ${g.map((x) => x.toFixed(2)).join(' / ')} g`).toBe(true);
+    }
+  });
+
+  it('abusive stick and rudder at 740 kt stay inside the G limits (no over-G break-up)', () => {
+    for (const id of f16s) {
+      const ac = jet(id, 1000, 380);
+      let mx = 0, mn = 9;
+      for (const [pitch, roll, yaw, s] of [[1, 1, 0, 3], [1, -1, 0, 2], [1, 0, 1, 2], [-1, 0, 0, 1.5], [0.4, 1, -1, 2], [0, 0, 0, 2]]) {
+        Object.assign(ac.ctrl, { pitch, roll, yaw });
+        run(ac, s, () => { mx = Math.max(mx, ac.fm.nz); mn = Math.min(mn, ac.fm.nz); });
+      }
+      expect(ac.fm.crashed, `${id}: ${ac.fm.crashReason}`).toBe(false);
+      expect(mx < 9.5 && mn > -3.3, `${id}: ${mn.toFixed(2)} … ${mx.toFixed(2)} g`).toBe(true);
+    }
+  });
+});
