@@ -92,3 +92,20 @@ describe('satellite imagery georeferencing', () => {
     expect([Math.floor(m.x * 2048), Math.floor(m.y * 2048)].join('/')).toBe('1056/664');
   });
 });
+
+describe('Leeuwarden layout', () => {
+  it('ties the aerial image to the runway thresholds within a few tens of metres, shelters clear of the runways', () => {
+    const lw = EUROPE.airbases.find((a) => a.id === 'leeuwarden')!;
+    const L = lw.layout!;
+    expect(L.fitRms < 60, `image fit RMS ${L.fitRms.toFixed(1)} m`).toBe(true);
+    expect(L.shelters.length > 30 && L.taxiways.length > 5).toBe(true);
+    for (const rw of [lw, ...(lw.extra ?? [])]) {
+      const r = rw.hdg * Math.PI / 180;
+      for (const s of L.shelters) {
+        const dx = s.x - rw.x, dz = s.z - rw.z;
+        const along = Math.abs(dx * Math.sin(r) - dz * Math.cos(r)), off = Math.abs(dx * Math.cos(r) + dz * Math.sin(r));
+        expect(along > rw.length / 2 + 50 || off > 80, `shelter ${s.x.toFixed(0)},${s.z.toFixed(0)} ${off.toFixed(0)} m off a runway`).toBe(true);
+      }
+    }
+  });
+});
