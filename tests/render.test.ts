@@ -177,4 +177,19 @@ describe('HD models', () => {
       expect(inst.glass.includes(plate), `${key}: the combiner stays visible from the cockpit`).toBe(false);
     }
   });
+
+  it('seat height: the eye sits high under the canopy, with the model\'s own cockpit, in the F-14A/B, F-16 and Gripen', async () => {
+    for (const [key, id] of [['f14a', 'f14a'], ['f14b', 'f14b'], ['f16c', 'f16c'], ['f16d70', 'f16d70'], ['JAS 39', 'jas39']] as const) {
+      const spec = HD_SPECS[key];
+      const inst = instantiateHd({ root: bake(await loadGlbScene(spec.url), spec, getAircraft(id)), spec });
+      // a model without cockpit parts falls back to the procedural cockpit, which then shows through the HD one
+      expect(inst.cockpit.length > 0, `${key}: no HD cockpit parts matched`).toBe(true);
+      const meshes: THREE.Object3D[] = [];
+      inst.root.traverse((o) => { if ((o as THREE.Mesh).isMesh) { ((o as THREE.Mesh).material as THREE.Material).side = THREE.DoubleSide; meshes.push(o); } });
+      inst.root.updateMatrixWorld(true);
+      const up = new THREE.Raycaster(inst.eye.clone(), new THREE.Vector3(0, 1, 0)).intersectObjects(meshes, false).find((h) => inst.glass.includes(h.object));
+      expect(!!up, `${key}: no canopy above the eye`).toBe(true);
+      expect(up!.distance > 0.04 && up!.distance < 0.25, `${key}: canopy ${up!.distance.toFixed(2)} m above the eye`).toBe(true);
+    }
+  });
 });
