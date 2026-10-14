@@ -64,7 +64,7 @@ export class Bullets {
         const r = a.def.span * 0.33 + 1;
         if (sweptHit(this.ox[i], this.oy[i], this.oz[i], this.px[i], this.py[i], this.pz[i], a.pos, r)) {
           world.damageAircraft(a, this.dmg[i], this.owner[i], this.owner[i] ? 'Gun' : 'AAA');
-          world.addEffect('hit', a.pos, 1);
+          world.addEffect('hit', new THREE.Vector3(this.px[i], this.py[i], this.pz[i]), 1);
           hit = true; break;
         }
       }
@@ -73,7 +73,7 @@ export class Bullets {
           if (g.side === side) continue;
           if (sweptHit(this.ox[i], this.oy[i], this.oz[i], this.px[i], this.py[i], this.pz[i], g.pos, g.radius)) {
             world.damageGround(g, this.dmg[i] * 0.5, this.owner[i]);
-            world.addEffect('hit', g.pos, 1);
+            world.addEffect('hit', new THREE.Vector3(this.px[i], this.py[i], this.pz[i]), 1);
             hit = true; break;
           }
         }

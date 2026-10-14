@@ -46,6 +46,8 @@ export interface FcsDef {
   swingWing?: boolean;   // F-14 auto sweep
   vtol?: boolean;        // Harrier vectored nozzles
   canard?: boolean;
+  /** control law: 'f16' = the F-16 FLCS (dynamic inversion on all three axes, see FlightModel.f16Flcs) */
+  law?: 'f16';
 }
 
 export interface GearDef {

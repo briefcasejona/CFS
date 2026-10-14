@@ -7,6 +7,7 @@ import { buildCarrierMesh } from './carrierMesh.js';
 import { buildAircraftModel, updateAircraftModel, syncStores, groundMesh, storeMesh, type AircraftModel } from './models.js';
 import { hdSpecFor } from './hdModels.js';
 import { updatePapi, type Airfield } from './airfield.js';
+import { Effects } from './particles.js';
 
 /** the VR HUD quad sits far out so it reads as collimated (at infinity) */
 export const VR_HUD_DIST = 30;
@@ -26,98 +27,6 @@ export interface Weather {
   clouds: 'clear' | 'scattered' | 'overcast';
   cloudBase: number;   // m
   timeOfDay: number;   // hours 0..24
-}
-
-// ------------------------------------------------------------------ particles
-const PARTICLE_VS = `
-attribute float size;
-attribute float alpha;
-attribute vec3 pcolor;
-varying float vAlpha;
-varying vec3 vColor;
-#include <common>
-#include <logdepthbuf_pars_vertex>
-void main() {
-  vec4 mv = modelViewMatrix * vec4(position, 1.0);
-  gl_PointSize = clamp(size * 900.0 / -mv.z, 1.0, 256.0);
-  gl_Position = projectionMatrix * mv;
-  vAlpha = alpha;
-  vColor = pcolor;
-  #include <logdepthbuf_vertex>
-}`;
-const PARTICLE_FS = `
-varying float vAlpha;
-varying vec3 vColor;
-#include <common>
-#include <logdepthbuf_pars_fragment>
-void main() {
-  #include <logdepthbuf_fragment>
-  vec2 c = gl_PointCoord - 0.5;
-  float d = length(c);
-  if (d > 0.5) discard;
-  float a = vAlpha * smoothstep(0.5, 0.15, d);
-  gl_FragColor = vec4(vColor, a);
-}`;
-
-class ParticleSystem {
-  max: number;
-  count = 0;
-  pos: Float32Array; vel: Float32Array; age: Float32Array; life: Float32Array;
-  size0: Float32Array; size1: Float32Array; a0: Float32Array; col: Float32Array;
-  geo = new THREE.BufferGeometry();
-  points: THREE.Points;
-  private sizeAttr: Float32Array; private alphaAttr: Float32Array;
-  constructor(max: number, additive: boolean) {
-    this.max = max;
-    this.pos = new Float32Array(max * 3); this.vel = new Float32Array(max * 3);
-    this.age = new Float32Array(max); this.life = new Float32Array(max);
-    this.size0 = new Float32Array(max); this.size1 = new Float32Array(max); this.a0 = new Float32Array(max);
-    this.col = new Float32Array(max * 3);
-    this.sizeAttr = new Float32Array(max); this.alphaAttr = new Float32Array(max);
-    this.geo.setAttribute('position', new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
-    this.geo.setAttribute('size', new THREE.BufferAttribute(this.sizeAttr, 1).setUsage(THREE.DynamicDrawUsage));
-    this.geo.setAttribute('alpha', new THREE.BufferAttribute(this.alphaAttr, 1).setUsage(THREE.DynamicDrawUsage));
-    this.geo.setAttribute('pcolor', new THREE.BufferAttribute(this.col, 3).setUsage(THREE.DynamicDrawUsage));
-    const mat = new THREE.ShaderMaterial({
-      vertexShader: PARTICLE_VS, fragmentShader: PARTICLE_FS, transparent: true, depthWrite: false,
-      blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
-    });
-    this.points = new THREE.Points(this.geo, mat);
-    this.points.frustumCulled = false;
-  }
-  emit(p: THREE.Vector3, v: THREE.Vector3 | null, life: number, s0: number, s1: number, alpha: number, r: number, g: number, b: number) {
-    let i = this.count;
-    if (i >= this.max) i = Math.floor(Math.random() * this.max);
-    else this.count++;
-    this.pos[i * 3] = p.x; this.pos[i * 3 + 1] = p.y; this.pos[i * 3 + 2] = p.z;
-    this.vel[i * 3] = v?.x ?? 0; this.vel[i * 3 + 1] = v?.y ?? 0; this.vel[i * 3 + 2] = v?.z ?? 0;
-    this.age[i] = 0; this.life[i] = life; this.size0[i] = s0; this.size1[i] = s1; this.a0[i] = alpha;
-    this.col[i * 3] = r; this.col[i * 3 + 1] = g; this.col[i * 3 + 2] = b;
-  }
-  update(dt: number) {
-    for (let i = 0; i < this.count; i++) {
-      this.age[i] += dt;
-      if (this.age[i] >= this.life[i]) {
-        const j = --this.count;
-        for (let k = 0; k < 3; k++) {
-          this.pos[i * 3 + k] = this.pos[j * 3 + k];
-          this.vel[i * 3 + k] = this.vel[j * 3 + k];
-          this.col[i * 3 + k] = this.col[j * 3 + k];
-        }
-        this.age[i] = this.age[j]; this.life[i] = this.life[j]; this.size0[i] = this.size0[j]; this.size1[i] = this.size1[j]; this.a0[i] = this.a0[j];
-        i--;
-        continue;
-      }
-      const k = 1 - 0.8 * dt;
-      this.vel[i * 3] *= k; this.vel[i * 3 + 1] *= k; this.vel[i * 3 + 2] *= k;
-      this.pos[i * 3] += this.vel[i * 3] * dt; this.pos[i * 3 + 1] += this.vel[i * 3 + 1] * dt; this.pos[i * 3 + 2] += this.vel[i * 3 + 2] * dt;
-      const t = this.age[i] / this.life[i];
-      this.sizeAttr[i] = this.size0[i] + (this.size1[i] - this.size0[i]) * t;
-      this.alphaAttr[i] = this.a0[i] * (1 - t) * (t < 0.05 ? t / 0.05 : 1);
-    }
-    this.geo.setDrawRange(0, this.count);
-    for (const n of ['position', 'size', 'alpha', 'pcolor']) (this.geo.getAttribute(n) as THREE.BufferAttribute).needsUpdate = true;
-  }
 }
 
 // ------------------------------------------------------------------ renderer
@@ -144,13 +53,9 @@ export class SceneRenderer {
   private acModels = new Map<number, AircraftModel>();
   private groundModels = new Map<number, THREE.Object3D>();
   private missileModels = new Map<number, THREE.Object3D>();
-  private smoke = new ParticleSystem(6000, false);
-  private glow = new ParticleSystem(2500, true);
-  private tracerGeo = new THREE.BufferGeometry();
-  private tracerPos = new Float32Array(4000 * 6);
+  private fx = new Effects();
   private flybyPos = new THREE.Vector3();
   private flybyTimer = 0;
-  private emitAccum = 0;
   private sunDir = new THREE.Vector3(0, 1, 0);
   private smoothQuat = new THREE.Quaternion();
   private deadMat = new THREE.MeshLambertMaterial({ color: 0x222018 });
@@ -197,11 +102,7 @@ export class SceneRenderer {
       new THREE.MeshLambertMaterial({ map: ctex, transparent: true, depthWrite: false, side: THREE.DoubleSide, opacity: 0.9 }));
     this.clouds.rotation.x = -Math.PI / 2;
     this.scene.add(this.clouds);
-    this.scene.add(this.smoke.points, this.glow.points);
-    this.tracerGeo.setAttribute('position', new THREE.BufferAttribute(this.tracerPos, 3).setUsage(THREE.DynamicDrawUsage));
-    const tracers = new THREE.LineSegments(this.tracerGeo, new THREE.LineBasicMaterial({ color: 0xffd060, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
-    tracers.frustumCulled = false;
-    this.scene.add(tracers);
+    this.scene.add(this.fx.group);
     this.scene.fog = new THREE.FogExp2(0xb8cde0, 0.00002);
     this.setWeather({ visibilityKm: 60, clouds: 'scattered', cloudBase: 3500, timeOfDay: 11 });
   }
@@ -254,7 +155,7 @@ export class SceneRenderer {
     for (const m of this.groundModels.values()) this.scene.remove(m);
     for (const m of this.missileModels.values()) this.scene.remove(m);
     this.acModels.clear(); this.groundModels.clear(); this.missileModels.clear();
-    this.smoke.count = 0; this.glow.count = 0;
+    this.fx.clear();
   }
 
   private syncEntities(world: World) {
@@ -292,72 +193,6 @@ export class SceneRenderer {
       if (v.lengthSq() > 1) m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), v.normalize());
     }
     for (const [id, m] of this.missileModels) if (!mseen.has(id)) { this.scene.remove(m); this.missileModels.delete(id); }
-  }
-
-  private updateParticles(world: World, dt: number) {
-    this.emitAccum += dt;
-    if (this.emitAccum >= 1 / 40) {
-      this.emitAccum = 0;
-      for (const ms of world.missiles) {
-        if (ms.motorOn) {
-          this.smoke.emit(ms.pos, null, 5 + Math.random() * 3, 2, 12, 0.55, 0.9, 0.9, 0.9);
-          this.glow.emit(ms.pos, null, 0.08, 3, 1, 1.0, 1.0, 0.7, 0.3);
-        }
-      }
-      for (const ac of world.aircraft) {
-        if (ac.removed) continue;
-        const tail = ac.pos.clone().addScaledVector(ac.fm.forward(), -ac.def.length * 0.55);
-        if (!ac.fm.crashed && (!ac.alive || ac.health < 45)) {
-          this.smoke.emit(tail, null, 6, 4, 25, 0.6, 0.15, 0.14, 0.13);
-          if (!ac.alive) this.glow.emit(tail, null, 0.3, 6, 3, 0.9, 1, 0.5, 0.1);
-        }
-        if (ac.alive && ac.pos.y > 8800 && ac.fm.tas > 100) this.smoke.emit(tail, null, 12, 1.5, 8, 0.35, 0.95, 0.95, 0.97);
-        if (ac.fm.crashed && Math.random() < 0.5) {
-          this.smoke.emit(ac.pos.clone().setY(surfaceHeight(ac.pos.x, ac.pos.z) + 2), new THREE.Vector3(0, 6, 0), 14, 8, 60, 0.5, 0.12, 0.12, 0.12);
-        }
-      }
-      for (const cm of world.countermeasures) {
-        if (cm.kind === 'flare') this.glow.emit(cm.pos, null, 0.15, 6, 3, 1, 1, 0.95, 0.7);
-        else this.smoke.emit(cm.pos, null, 1.2, 3, 8, 0.25, 0.8, 0.8, 0.8);
-      }
-    }
-    for (const e of world.effects) {
-      switch (e.type) {
-        case 'fireball': case 'explosion': {
-          const n = e.type === 'fireball' ? 14 : 10;
-          for (let i = 0; i < n; i++) {
-            const v = new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.8, Math.random() - 0.5).multiplyScalar(e.size * 2);
-            this.glow.emit(e.pos, v, 0.8 + Math.random() * 0.6, e.size * 1.2, e.size * 3, 0.9, 1, 0.55, 0.15);
-            this.smoke.emit(e.pos, v.clone().multiplyScalar(0.5).add(new THREE.Vector3(0, 4, 0)), 8 + Math.random() * 6, e.size, e.size * 6, 0.65, 0.1, 0.1, 0.1);
-          }
-          break;
-        }
-        case 'airburst':
-          for (let i = 0; i < 6; i++) {
-            const v = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(30);
-            this.glow.emit(e.pos, v, 0.4, e.size * 1.5, e.size * 3, 1, 1, 0.7, 0.3);
-            this.smoke.emit(e.pos, v.multiplyScalar(0.3), 6, e.size, e.size * 5, 0.5, 0.25, 0.25, 0.25);
-          }
-          break;
-        case 'hit': this.glow.emit(e.pos, null, 0.12, 3, 4, 1, 1, 0.8, 0.4); break;
-        case 'dust': this.smoke.emit(e.pos, new THREE.Vector3(0, 3, 0), 1.5, 2, 6, 0.4, 0.45, 0.4, 0.32); break;
-        case 'launch': this.smoke.emit(e.pos, null, 3, 3, 15, 0.5, 0.85, 0.85, 0.85); break;
-      }
-    }
-    world.effects.length = 0;
-    this.smoke.update(dt);
-    this.glow.update(dt);
-    const b = world.bullets;
-    let n = 0;
-    for (let i = 0; i < b.count && n < 4000; i++) {
-      if (!b.tracer[i]) continue;
-      const k = n * 6;
-      this.tracerPos[k] = b.px[i]; this.tracerPos[k + 1] = b.py[i]; this.tracerPos[k + 2] = b.pz[i];
-      this.tracerPos[k + 3] = b.px[i] - b.vx[i] * 0.025; this.tracerPos[k + 4] = b.py[i] - b.vy[i] * 0.025; this.tracerPos[k + 5] = b.pz[i] - b.vz[i] * 0.025;
-      n++;
-    }
-    this.tracerGeo.setDrawRange(0, n * 2);
-    (this.tracerGeo.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true;
   }
 
   /**
@@ -586,7 +421,7 @@ export class SceneRenderer {
   render(world: World, dt: number) {
     this.syncCarriers(world);
     this.syncEntities(world);
-    this.updateParticles(world, dt);
+    this.fx.update(world, dt);
     this.updateCamera(world, dt);
     // world eye point (in VR the camera is posed inside the rig)
     const cp = this.vrActive ? this.rig.position : this.camera.position;
@@ -604,6 +439,7 @@ export class SceneRenderer {
     tex.offset.set(cp.x / 10000, -cp.z / 10000);
     this.sun.target.position.copy(cp);
     this.sun.position.copy(cp).addScaledVector(this.sunDir, 10000);
+    this.fx.setView(this.camera, this.renderer.domElement.height, this.sunDir, this.sun, this.hemi);
     this.renderer.render(this.scene, this.camera);
   }
 

@@ -23,6 +23,22 @@ export interface Airbase {
   elev: number;       // m (computed)
   /** further runways of the field (real layout), besides the main one above */
   extra?: Runway[];
+  /** the field's real layout (taxiways, shelters, buildings) where it has been mapped; otherwise a generic one is drawn */
+  layout?: BaseLayout;
+}
+
+/** A mapped airbase, in game coordinates (x east, z south; sizes in metres, rot = grid rotation of the buildings). */
+export interface BaseLayout {
+  /** RMS misfit (m) of the source image against the runway thresholds */
+  fitRms: number;
+  taxiways: Array<{ width: number; pts: Array<{ x: number; z: number }> }>;
+  aprons: Array<Array<{ x: number; z: number }>>;
+  shelters: Array<{ x: number; z: number }>;
+  buildings: Array<{ x: number; z: number; w: number; d: number; h: number; rot: number; kind: 'hangar' | 'office' | 'shed' }>;
+  tower: { x: number; z: number };
+  fuel: { x: number; z: number };
+  /** where missions put the base's hangar targets */
+  hangars: Array<{ x: number; z: number }>;
 }
 
 /** one runway: centre, heading (deg, grid) and length (m) */
@@ -93,6 +109,8 @@ export interface Theater {
   carriers?: CarrierSpec[];
   /** map overlay (real-world theaters): border polylines as flat x,z pairs in 100 m units; cities [name, x, z, capital] */
   overlay?: { borders: number[][]; cities: Array<[string, number, number, number]> };
+  /** real-world theaters: game x/z → latitude/longitude (deg), for satellite imagery */
+  geo?: (x: number, z: number) => { lat: number; lon: number };
   /** ground cover (forest, towns, fields, water): baked from satellite landcover, or procedural (landcover.ts) */
   cover?: CoverGrid;
 }

@@ -46,7 +46,8 @@ const BOH_F14: HdSpec = {
   source: 'https://sketchfab.com/3d-models/f-14-tomcat-fighter-jet-free-497f77c311b5411d9b567d8707a81c33',
   gearDown: /gearOn/i, gearUp: /gearOff/i, cockpit: /cockpit|instrGlass/i,
   wings: { parts: /airframe_0/, pivot: { x: 2.72, z: 1.55 }, refSweep: 20, split: { reach: 3.6, maxZ: 5.0 } },
-  eye: { y: 1.6, z: -5.0 },
+  // raised so the canopy sill sits well below the eye and you look over the glareshield, as from the F-16C seat
+  eye: { y: 1.72, z: -5.05 },
 };
 
 const BOH_F16: HdSpec = {
@@ -72,7 +73,7 @@ export const HD_SPECS: Record<string, HdSpec> = {
     cockpit: /_(Cockpit\d+|VDI)_0|\/Meshpart(33|53|85|81)\//,
     // wing panels, flaps, spoilers and tip lights are separate nodes; the gloves stay put
     wings: { parts: /\/Meshes(5151|1361|1441|6141|951|1721|1051|4171|1151|7111|891|1541|1641)\//, pivot: { x: 12.0, z: 16.0 }, refSweep: 20 },
-    eye: { y: 1.12, z: -4.85 },
+    eye: { y: 1.21, z: -4.92 },
   },
   // F-14D: one articulated model: wings, slats, flaps and spoilers are separate nodes that sweep
   // rigidly about the real pivot (2.72 m from the centreline) — the published 68° / 75° spans check out on it
@@ -92,6 +93,8 @@ export const HD_SPECS: Record<string, HdSpec> = {
   'JAS 39': {
     url: 'assets/models/cc-by-nc-sa/gripen.glb', title: 'Saab JAS 39 Gripen - Fighter Jet - Free', ...BOHMERANG,
     source: 'https://sketchfab.com/3d-models/saab-jas-39-gripen-fighter-jet-free-03d4f4f0f7e94f469299ba7db4c707c4', ...BOH_PARTS,
+    // the model's canopy is small for the jet: sit high in it, just aft of the windscreen bow, to see over the HUD
+    eye: { y: 1.04, z: -2.82 },
     // tactical (centre) display carries the radar page, the right one the RWR/stores page
     mfds: [
       { c: [0, 0.518, -3.463], w: 0.165, h: 0.15, n: [0, 0.1, 1], screen: 0 },
@@ -106,12 +109,12 @@ export const HD_SPECS: Record<string, HdSpec> = {
   f16d70: {
     url: 'assets/models/cc-by/f16d70.glb', title: 'General Dynamics F-16D Block 60', author: 'MirzaArrafiERV_45',
     source: 'https://sketchfab.com/3d-models/general-dynamics-f-16d-block-60-ea8edb08d79e4eafa9c794c581f88cf3', license: 'CC BY 4.0',
-    // (part paths end in node/mesh, and the mesh names reuse the node numbers: match the node segment only)
-    axes: 'game', gearDown: /\/Object_(9|11)\/Object_/, gearUp: NEVER, hide: /\/Object_21\/Object_/,
-    cockpit: /\/Object_(1[023456]|2|3|20|22|9\.001|11\.001)\/Object_/,
+    // single-primitive nodes load as the mesh itself, named after the node with '.' dropped (Object_9.001 → Object_9001)
+    axes: 'game', gearDown: /\/Object_(9|11)\/$/, gearUp: NEVER, hide: /\/Object_21\/$/,
+    cockpit: /\/Object_(1[023456]|2|3|20|22|9001|11001)\/$/,
     // nose and main gear doors are part of the lower fuselage mesh
-    eye: { y: 0.82, z: -3.2 },
-    gearDoors: { parts: /\/Object_5\/Object_/, boxes: [{ below: 0.9, z: [-3.2, -0.6] }, { below: 1.25, z: [-1.5, 2.5], x: [0.8, 1.35] }] },
+    eye: { y: 1.27, z: -3.1 },
+    gearDoors: { parts: /\/Object_5\/$/, boxes: [{ below: 0.9, z: [-3.2, -0.6] }, { below: 1.25, z: [-1.5, 2.5], x: [0.8, 1.35] }] },
   },
   // the Super Hornet model only: the legacy F/A-18C has a different (smaller) airframe and keeps the procedural model
   fa18e: {

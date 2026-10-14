@@ -224,13 +224,17 @@ function spawnGroup(world: World, g: GroupSpec, seed: number): GroundUnit[] {
         const hr = ab.hdg * Math.PI / 180;
         const side = new THREE.Vector3(Math.cos(hr), 0, Math.sin(hr));
         const fwd = new THREE.Vector3(Math.sin(hr), 0, -Math.cos(hr));
-        for (let k = -3; k <= 3; k++) {
+        // a mapped field has its hangars where they really are; otherwise a row beside the main runway
+        const hangars = ab.layout?.hangars ?? [-3, -2, -1, 0, 1, 2, 3].map((k) => {
           const p = new THREE.Vector3(ab.x, 0, ab.z).addScaledVector(side, 470 * apronSide(ab)).addScaledVector(fwd, k * 90);
-          const u = new GroundUnit('hangar', g.side, p.x, ab.elev, p.z, -hr);
+          return { x: p.x, z: p.z };
+        });
+        for (const p of hangars) {
+          const u = new GroundUnit('hangar', g.side, p.x, ab.elev, p.z, -(ab.layout?.buildings[0].rot ?? hr));
           u.objectiveId = g.objectiveId ?? '';
           units.push(world.addGround(u));
         }
-        const fx = ab.x + side.x * 600, fz = ab.z + side.z * 600;
+        const fx = ab.layout?.fuel.x ?? ab.x + side.x * 600, fz = ab.layout?.fuel.z ?? ab.z + side.z * 600;
         const f = new GroundUnit('fuel', g.side, fx, ab.elev, fz, 0);
         f.objectiveId = g.objectiveId ?? '';
         units.push(world.addGround(f));

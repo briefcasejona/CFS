@@ -9,6 +9,8 @@ import type { MissionSpec } from './game/mission.js';
 import { installErrorOverlay } from './ui/errorOverlay.js';
 import { setHdModelsEnabled } from './render/hdModels.js';
 import { ensureTheater } from './world/theater.js';
+import { MenuBackground } from './ui/menuBackground.js';
+import { setImageryEnabled } from './render/imagery.js';
 
 class App implements AppApi {
   root: HTMLElement;
@@ -17,11 +19,15 @@ class App implements AppApi {
   audio = new AudioSystem();
   private session: FlightSession | null = null;
   private toastTimer = 0;
+  private menuBg: MenuBackground;
 
   constructor() {
     this.root = document.getElementById('ui')!;
     this.settings = loadSettings();
     setHdModelsEnabled(this.settings.hdModels);
+    setImageryEnabled(this.settings.satImagery);
+    this.menuBg = new MenuBackground(document.body);
+    this.menuBg.setTheme(this.settings.menuTheme, this.settings.menuPhotos);
     this.input.onDeviceConnected = (id, auto) => this.toast(`Controller connected: ${shortDev(id)}${auto ? ' — default HOTAS profile applied (check Controls)' : ''}`);
     const unlock = () => {
       this.audio.init(this.settings.volume);
@@ -52,7 +58,10 @@ class App implements AppApi {
     this.root.style.display = 'block';
     this.root.innerHTML = '';
     this.root.append(screen());
+    this.menuBg.setActive(true);
   }
+
+  setMenuTheme() { this.menuBg.setTheme(this.settings.menuTheme, this.settings.menuPhotos); }
 
   mainMenu() { this.show(() => mainMenu(this)); }
   controls() { this.show(() => controlsScreen(this, this.input)); }
@@ -72,6 +81,7 @@ class App implements AppApi {
     const loading = document.getElementById('loading')!;
     loading.style.display = 'flex';
     this.root.style.display = 'none';
+    this.menuBg.setActive(false);
     // let the loading screen paint before the terrain prewarm
     setTimeout(async () => {
       try {
@@ -91,11 +101,13 @@ class App implements AppApi {
         this.session.netHook = net ?? null;
         this.session.start(spec, (r, b) => {
           this.root.style.display = 'block';
+          this.menuBg.setActive(true);
           onEnd(r, b);
         });
       } catch (err) {
         console.error(err);
         this.root.style.display = 'block';
+        this.menuBg.setActive(true);
         this.toast(`Could not start mission: ${(err as Error).message}`);
       } finally {
         loading.style.display = 'none';

@@ -80,13 +80,13 @@ describe('flight model', () => {
     expect(getAircraft('f14d').radar!.irst ?? 0).toBeGreaterThan(0);
   });
 
-  it('F-16 AoA limiter holds ~35 deg at low speed', () => {
+  it('F-16 AoA limiter holds ~25 deg at low speed', () => {
     const fm = airstart('f16c', 15000, 220);
     const c = defaultControls(); c.gearDown = false; c.throttle = 0.5; c.pitch = 1;
     let maxA = 0;
     run(fm, 8, c, (f) => { maxA = Math.max(maxA, f.alpha); });
-    expect(maxA * 57.3).toBeLessThan(37.5);   // a full-stick pull overshoots the 35° limit by ~2° transiently
-    expect(maxA * 57.3).toBeGreaterThan(28);
+    expect(maxA * 57.3).toBeLessThan(27.5);   // a full-stick pull overshoots the 25° limit by ~2° at most
+    expect(maxA * 57.3).toBeGreaterThan(22);
   });
 
   it('F-16 rolls at > 180 deg/s', () => {
