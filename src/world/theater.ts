@@ -93,6 +93,8 @@ export interface Theater {
   carriers?: CarrierSpec[];
   /** map overlay (real-world theaters): border polylines as flat x,z pairs in 100 m units; cities [name, x, z, capital] */
   overlay?: { borders: number[][]; cities: Array<[string, number, number, number]> };
+  /** real-world theaters: game x/z → latitude/longitude (deg), for satellite imagery */
+  geo?: (x: number, z: number) => { lat: number; lon: number };
   /** ground cover (forest, towns, fields, water): baked from satellite landcover, or procedural (landcover.ts) */
   cover?: CoverGrid;
 }

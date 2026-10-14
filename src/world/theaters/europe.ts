@@ -76,6 +76,7 @@ export const EUROPE: Theater = {
   },
   // Instant Action engagement area: over north-east Poland, enemy to the east-north-east
   iaAnchor: { ...europeLcc.forward(53.9, 21.4), enemyHdg: 75, blueBase: 'malbork', redBase: 'chkalovsk' },
+  geo: (x, z) => europeLcc.inverse(x, z),
   load: () => DEM.load(EUROPE),
 };
 

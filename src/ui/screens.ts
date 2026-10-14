@@ -12,6 +12,7 @@ import { multiplayerScreen } from './multiplayer.js';
 import { editorScreen } from './editor.js';
 import { hdCredits, setHdModelsEnabled } from '../render/hdModels.js';
 import { MENU_THEMES } from './menuBackground.js';
+import { setImageryEnabled } from '../render/imagery.js';
 
 export interface AppApi {
   root: HTMLElement;
@@ -384,6 +385,8 @@ export function settingsScreen(app: AppApi): HTMLElement {
           <label>Max visibility (km) <input data-n="visibilityKm" type="number" min="10" max="150" value="${s.visibilityKm}"></label>
           ${chk('hdModels', 'HD aircraft models', 'detailed 3D models where available (F-14, F-16, F/A-18F, F-4, Gripen); loaded on demand, ~4–7 MB each')}
           <div class="muted small credits">3D models: ${hdCredits().map((c) => `"${esc(c.title)}" by ${esc(c.author)} (<a href="${c.source}" target="_blank" rel="noopener">Sketchfab</a>), ${c.license}, textures re-encoded`).join(' · ')}</div>
+          ${chk('satImagery', 'Satellite imagery', 'real Sentinel-2 imagery on the Northern Europe and Persian Gulf maps, streamed while you fly (your browser contacts tiles.maps.eox.at); off = painted ground, nothing downloaded')}
+          <div class="muted small credits">Satellite imagery: <a href="https://s2maps.eu" target="_blank" rel="noopener">Sentinel-2 cloudless - https://s2maps.eu</a> by <a href="https://eox.at" target="_blank" rel="noopener">EOX IT Services GmbH</a> (Contains modified Copernicus Sentinel data 2024), <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>; reprojected onto the terrain.</div>
           <div class="muted small credits">Northern Europe and Persian Gulf maps: elevation from <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noopener">AWS Terrain Tiles</a> (Mapzen/Tilezen; SRTM, GMTED2010, ETOPO1, EU-DEM and others — <a href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md" target="_blank" rel="noopener">attribution</a>); coastlines, lakes, borders and cities from <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a> (public domain). Forests, towns, fields and lakes from <a href="https://esa-worldcover.org/" target="_blank" rel="noopener">ESA WorldCover</a> 2021 (© ESA WorldCover project / contains modified Copernicus Sentinel data (2021) processed by the ESA WorldCover consortium, <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>; regrouped and resampled). Runway layouts from <a href="https://ourairports.com/" target="_blank" rel="noopener">OurAirports</a> (public domain). Airfield positions approximate; the Europe scenario is fictional and the Gulf setting a simplified 1991 order of battle.</div>
           ${chk('menuPhotos', 'Menu photos', 'public-domain photos of the F-14, F-16 and F-15 behind the menus, loaded from Wikimedia Commons (your browser contacts wikimedia.org); off = plain backdrop, nothing downloaded')}
           <div class="muted small credits">Menu photos: ${MENU_THEMES.flatMap((t) => t.photos).map((p) => `<a href="https://commons.wikimedia.org/wiki/File:${encodeURIComponent(p.file)}" target="_blank" rel="noopener">${esc(p.credit)}</a>`).join(' · ')} (public domain, via Wikimedia Commons)</div>
@@ -404,6 +407,7 @@ export function settingsScreen(app: AppApi): HTMLElement {
     e.querySelectorAll<HTMLInputElement>('input[data-c]').forEach((i) => { rec[i.dataset.c!] = i.value; });
     saveSettings(app.settings);
     setHdModelsEnabled(app.settings.hdModels);
+    setImageryEnabled(app.settings.satImagery);
     app.setMenuTheme();
     app.toast('Settings saved');
     app.mainMenu();

@@ -59,6 +59,7 @@ export const GULF: Theater = {
   palette: { beach: 4, snowLine: () => 3000, rockBelowSnow: 1200, style: 'desert', trees: false },
   // Instant Action engagement area: over the Saudi–Kuwaiti border, Iraq to the north
   iaAnchor: { ...gulfLcc.forward(28.7, 47.2), enemyHdg: 10, blueBase: 'qaysumah', redBase: 'ali_al_salem' },
+  geo: (x, z) => gulfLcc.inverse(x, z),
   load: () => DEM.load(GULF),
 };
 

@@ -4,6 +4,7 @@ import { terrainHeight, runwaysOf, AIRBASES, OBJECTIVES, THEATER_HALF, fbm, terr
 import { buildAirfield } from './airfield.js';
 import { coverAt, coverOf, detailNoise, DETAIL_N, PATCH, treeAt, builtAt, type CoverGrid } from '../world/landcover.js';
 import { FarScenery, hash2, NEAR_SCENERY, ringMaterial } from './scenery.js';
+import { Imagery, IMAGERY_GLSL, mercator } from './imagery.js';
 
 const CHUNK = 16000; // m
 const LODS = [
@@ -79,8 +80,8 @@ function coverTexture(g: CoverGrid) {
 function addGroundShader(mat: THREE.MeshLambertMaterial, uniforms: Record<string, THREE.IUniform>) {
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, uniforms);
-    sh.vertexShader = `attribute vec2 aCover;\nvarying vec2 vCover;\nvarying vec3 vWorldPos;\n` + sh.vertexShader.replace('#include <worldpos_vertex>',
-      `#include <worldpos_vertex>\n vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\n vCover = aCover;`);
+    sh.vertexShader = `attribute vec2 aCover;\nattribute vec2 aMerc;\nvarying vec2 vCover;\nvarying vec2 vMerc;\nvarying vec3 vWorldPos;\n` + sh.vertexShader.replace('#include <worldpos_vertex>',
+      `#include <worldpos_vertex>\n vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\n vCover = aCover;\n vMerc = aMerc;`);
     sh.fragmentShader = `uniform sampler2D uDetail;\nuniform sampler2D uCover;\nuniform vec3 uCoverGrid;\nvarying vec2 vCover;\nvarying vec3 vWorldPos;
 float patchN(vec2 p, float s, float o) {
   float a = texture2D(uDetail, p / s + o).r, b = texture2D(uDetail, p / (s * 0.37) + o * 1.7).r;
@@ -88,6 +89,7 @@ float patchN(vec2 p, float s, float o) {
 }
 float coverMask(float f, float n) { return smoothstep(-0.06, 0.06, f - (1.0 - n)) * smoothstep(0.0, 0.05, f); }
 float hash(vec2 c) { return fract(sin(dot(c, vec2(12.9898, 78.233))) * 43758.5453); }
+${IMAGERY_GLSL}
 ` + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
       float dist = length(vWorldPos - cameraPosition);
       vec2 p = vWorldPos.xz;
@@ -125,6 +127,8 @@ float hash(vec2 c) { return fract(sin(dot(c, vec2(12.9898, 78.233))) * 43758.545
         g = mix(g, vec3(0.12, 0.2, 0.28), mW);
         diffuseColor.rgb = mix(diffuseColor.rgb, g, vCover.x);
       }
+      // satellite imagery over land (real-world theaters); the sea keeps its own colour
+      if (vWorldPos.y > -1.0) { float icov; vec3 ic = imagery(diffuseColor.rgb, icov); diffuseColor.rgb = ic; }
       diffuseColor.rgb *= vCover.y;
       float fine = texture2D(uDetail, p / 45.0).r;
       float coarse = texture2D(uDetail, p / 420.0).r;
@@ -141,6 +145,7 @@ interface ChunkEntry { mesh: THREE.Mesh; lod: number; used: number }
 export class TerrainRenderer {
   group = new THREE.Group();
   private chunks = new Map<string, ChunkEntry>();
+  readonly imagery = new Imagery();
   private material: THREE.MeshLambertMaterial;
   private frame = 0;
   private buildBudget = 3;
@@ -148,6 +153,7 @@ export class TerrainRenderer {
     uDetail: { value: detailTexture() },
     uCover: { value: null },
     uCoverGrid: { value: new THREE.Vector3() },  // half, res, n
+    ...this.imagery.uniforms,
   };
   private cover: CoverGrid | null = null;
 
@@ -188,6 +194,8 @@ export class TerrainRenderer {
     const pos = new Float32Array(vcount * 3);
     const col = new Float32Array(vcount * 3);
     const cov = new Float32Array(vcount * 2);
+    const merc = new Float32Array(vcount * 2);
+    const geoOf = currentTheater().geo, mp = { x: 0, y: 0 };
     const nrm = new Float32Array(vcount * 3);
     // heights with a one-sample border from the neighbouring chunks: slopes, colours and normals at the chunk edges
     // then match the neighbour's exactly, so no seam line shows where two chunks meet
@@ -212,6 +220,11 @@ export class TerrainRenderer {
         // steeper ground a little darker: cheap ambient occlusion that gives the relief depth
         cov[v * 2 + 1] = h > 0.5 ? 1 - 0.22 * Math.min(1, slope * 1.6) : 1;
         col[v * 3] = c.r; col[v * 3 + 1] = c.g; col[v * 3 + 2] = c.b;
+        if (geoOf) {
+          const ll = geoOf(x0 + i * step, z0 + j * step);
+          mercator(ll.lat, ll.lon, mp);
+          merc[v * 2] = mp.x; merc[v * 2 + 1] = mp.y;
+        }
         v++;
       }
     }
@@ -234,6 +247,7 @@ export class TerrainRenderer {
         // the skirt is shaded like the edge it hangs from: where it shows through a crack it reads as ground
         for (let a = 0; a < 3; a++) { pos[v * 3 + a] = pos[k * 3 + a]; col[v * 3 + a] = col[k * 3 + a]; nrm[v * 3 + a] = nrm[k * 3 + a]; }
         cov[v * 2] = cov[k * 2]; cov[v * 2 + 1] = cov[k * 2 + 1];
+        merc[v * 2] = merc[k * 2]; merc[v * 2 + 1] = merc[k * 2 + 1];
         pos[v * 3 + 1] -= drop;
         v++;
       }
@@ -247,6 +261,7 @@ export class TerrainRenderer {
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
     geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
     geo.setAttribute('aCover', new THREE.BufferAttribute(cov, 2));
+    geo.setAttribute('aMerc', new THREE.BufferAttribute(merc, 2));
     geo.setIndex(idx);
     geo.computeBoundingSphere();
     const mesh = new THREE.Mesh(geo, this.material);
@@ -260,6 +275,7 @@ export class TerrainRenderer {
   update(camPos: THREE.Vector3, viewDist: number) {
     this.frame++;
     this.syncCover();
+    this.imagery.update(camPos, currentTheater().geo ?? null);
     const nC = Math.ceil((2 * THEATER_HALF) / CHUNK);
     const want = new Map<string, number>();
     const maxDist = Math.min(viewDist, LODS[LODS.length - 1].dist);

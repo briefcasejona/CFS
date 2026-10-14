@@ -79,3 +79,16 @@ describe('Europe theater', () => {
     } finally { T.setTheater('varnia'); }
   });
 });
+
+describe('satellite imagery georeferencing', () => {
+  it('maps Leeuwarden AB to its Web-Mercator tile and back through the theater projection', async () => {
+    const { mercator } = await import('../src/render/imagery.js');
+    const { EUROPE, europeLcc } = await import('../src/world/theaters/europe.js');
+    const p = europeLcc.forward(53.228, 5.76);
+    const ll = EUROPE.geo!(p.x, p.z);
+    expect(Math.abs(ll.lat - 53.228) < 1e-6 && Math.abs(ll.lon - 5.76) < 1e-6, `round trip ${ll.lat}, ${ll.lon}`).toBe(true);
+    const m = mercator(ll.lat, ll.lon, { x: 0, y: 0 });
+    // slippy-map tile z11 of the base (x 1056, y 664)
+    expect([Math.floor(m.x * 2048), Math.floor(m.y * 2048)].join('/')).toBe('1056/664');
+  });
+});

@@ -10,6 +10,7 @@ import { installErrorOverlay } from './ui/errorOverlay.js';
 import { setHdModelsEnabled } from './render/hdModels.js';
 import { ensureTheater } from './world/theater.js';
 import { MenuBackground } from './ui/menuBackground.js';
+import { setImageryEnabled } from './render/imagery.js';
 
 class App implements AppApi {
   root: HTMLElement;
@@ -24,6 +25,7 @@ class App implements AppApi {
     this.root = document.getElementById('ui')!;
     this.settings = loadSettings();
     setHdModelsEnabled(this.settings.hdModels);
+    setImageryEnabled(this.settings.satImagery);
     this.menuBg = new MenuBackground(document.body);
     this.menuBg.setTheme(this.settings.menuTheme, this.settings.menuPhotos);
     this.input.onDeviceConnected = (id, auto) => this.toast(`Controller connected: ${shortDev(id)}${auto ? ' — default HOTAS profile applied (check Controls)' : ''}`);
