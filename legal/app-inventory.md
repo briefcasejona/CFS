@@ -31,7 +31,8 @@ RESEARCH NOTES — NOT LEGAL ADVICE — REVIEW WITH A LICENSED LAWYER BEFORE REL
 | stun.l.google.com / stun1-2.l.google.com:19302, stun.cloudflare.com:3478 | NAT traversal (multiplayer only) | IP | `node_modules/@trystero-p2p/core/dist/peer.mjs:378` |
 | other players (peer-to-peer) | game state, chat, name, optional voice | IP, name, chat, audio | `src/net/coop.ts`, `src/ui/multiplayer.ts` |
 | Browser speech service (Google in Chrome, Microsoft in Edge) — chosen by the browser, not by CFS | voice commands, only when enabled and the push-to-talk key is pressed | microphone audio of the command, IP | `src/input/voice.ts` |
-| Outbound links only (user clicks): sketchfab.com, registry.opendata.aws, github.com/tilezen, naturalearthdata.com, esa-worldcover.org | credits | — | `src/ui/screens.ts` credits |
+| upload.wikimedia.org (fallback commons.wikimedia.org) — Wikimedia Foundation | menu background photos (public-domain F-14/F-16/F-15 photos), only while a menu is shown and Settings → Menu photos is on (default on) | IP, user agent; no referrer sent | `src/ui/menuBackground.ts` |
+| Outbound links only (user clicks): sketchfab.com, registry.opendata.aws, github.com/tilezen, naturalearthdata.com, esa-worldcover.org, commons.wikimedia.org | credits | — | `src/ui/screens.ts` credits |
 - Build-time only (not runtime): AWS Terrain Tiles, ESA WorldCover (S3), OurAirports and Natural Earth GitHub raw files fetched by `scripts/terrain/*.mjs`.
 
 ## 5. Login & scopes — none.

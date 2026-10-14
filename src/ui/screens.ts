@@ -11,6 +11,7 @@ import type { NetHook } from '../game/session.js';
 import { multiplayerScreen } from './multiplayer.js';
 import { editorScreen } from './editor.js';
 import { hdCredits, setHdModelsEnabled } from '../render/hdModels.js';
+import { MENU_THEMES } from './menuBackground.js';
 
 export interface AppApi {
   root: HTMLElement;
@@ -21,6 +22,8 @@ export interface AppApi {
   controls(): void;
   campaign(): void;
   toast(msg: string): void;
+  /** re-apply settings.menuTheme / menuPhotos to the menu background */
+  setMenuTheme(): void;
 }
 
 export function el(html: string): HTMLElement {
@@ -66,10 +69,17 @@ export function mainMenu(app: AppApi): HTMLElement {
         </table>
         <div class="muted small">Tip: Settings → realism lets you switch on easier radar, unlimited weapons or invulnerability.</div>
       </details>
+      <div class="themes" role="group" aria-label="Menu theme">${MENU_THEMES.map((t) => `<button class="chip${t.id === app.settings.menuTheme ? ' on' : ''}" data-theme="${t.id}">${t.name}</button>`).join('')}</div>
       <div class="install"></div>
       <div class="hint muted">HOTAS / joystick: press any button on the device once so the browser exposes it, then open <b>Controls / HOTAS</b>.</div>
     </div>`);
   renderInstallLinks(e.querySelector('.install') as HTMLElement);
+  e.querySelectorAll<HTMLElement>('.themes .chip').forEach((b) => b.addEventListener('click', () => {
+    app.settings.menuTheme = b.dataset.theme!;
+    saveSettings(app.settings);
+    app.setMenuTheme();
+    e.querySelectorAll('.themes .chip').forEach((x) => x.classList.toggle('on', x === b));
+  }));
   e.querySelectorAll('.menu-buttons button').forEach((b) => b.addEventListener('click', () => {
     switch ((b as HTMLElement).dataset.a) {
       case 'quick': {
@@ -375,6 +385,8 @@ export function settingsScreen(app: AppApi): HTMLElement {
           ${chk('hdModels', 'HD aircraft models', 'detailed 3D models where available (F-14, F-16, F/A-18F, F-4, Gripen); loaded on demand, ~4–7 MB each')}
           <div class="muted small credits">3D models: ${hdCredits().map((c) => `"${esc(c.title)}" by ${esc(c.author)} (<a href="${c.source}" target="_blank" rel="noopener">Sketchfab</a>), ${c.license}, textures re-encoded`).join(' · ')}</div>
           <div class="muted small credits">Northern Europe and Persian Gulf maps: elevation from <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noopener">AWS Terrain Tiles</a> (Mapzen/Tilezen; SRTM, GMTED2010, ETOPO1, EU-DEM and others — <a href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md" target="_blank" rel="noopener">attribution</a>); coastlines, lakes, borders and cities from <a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener">Natural Earth</a> (public domain). Forests, towns, fields and lakes from <a href="https://esa-worldcover.org/" target="_blank" rel="noopener">ESA WorldCover</a> 2021 (© ESA WorldCover project / contains modified Copernicus Sentinel data (2021) processed by the ESA WorldCover consortium, <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>; regrouped and resampled). Runway layouts from <a href="https://ourairports.com/" target="_blank" rel="noopener">OurAirports</a> (public domain). Airfield positions approximate; the Europe scenario is fictional and the Gulf setting a simplified 1991 order of battle.</div>
+          ${chk('menuPhotos', 'Menu photos', 'public-domain photos of the F-14, F-16 and F-15 behind the menus, loaded from Wikimedia Commons (your browser contacts wikimedia.org); off = plain backdrop, nothing downloaded')}
+          <div class="muted small credits">Menu photos: ${MENU_THEMES.flatMap((t) => t.photos).map((p) => `<a href="https://commons.wikimedia.org/wiki/File:${encodeURIComponent(p.file)}" target="_blank" rel="noopener">${esc(p.credit)}</a>`).join(' · ')} (public domain, via Wikimedia Commons)</div>
           <h3>Audio & HUD</h3>
           <label>Volume (0–1) <input data-n="volume" type="number" min="0" max="1" step="0.05" value="${s.volume}"></label>
           ${chk('voiceCommands', 'Voice commands', 'push-to-talk (&#96; key) radio calls such as &quot;request picture&quot; or &quot;flight rejoin&quot;. Uses your browser&#39;s speech recognition: in Chrome/Edge the audio of each command is sent to Google/Microsoft to be transcribed. Off by default; the comms menu (\\ key) works without it.')}
@@ -384,7 +396,7 @@ export function settingsScreen(app: AppApi): HTMLElement {
       </div>
     </div>`);
   e.querySelector('[data-a="back"]')!.addEventListener('click', () => app.mainMenu());
-  e.querySelector('[data-a="defaults"]')!.addEventListener('click', () => { Object.assign(app.settings, DEFAULT_SETTINGS); saveSettings(app.settings); app.show(() => settingsScreen(app)); });
+  e.querySelector('[data-a="defaults"]')!.addEventListener('click', () => { Object.assign(app.settings, DEFAULT_SETTINGS); saveSettings(app.settings); app.setMenuTheme(); app.show(() => settingsScreen(app)); });
   e.querySelector('[data-a="save"]')!.addEventListener('click', () => {
     const rec = app.settings as unknown as Record<string, unknown>;
     e.querySelectorAll<HTMLInputElement>('input[data-k]').forEach((i) => { rec[i.dataset.k!] = i.checked; });
@@ -392,6 +404,7 @@ export function settingsScreen(app: AppApi): HTMLElement {
     e.querySelectorAll<HTMLInputElement>('input[data-c]').forEach((i) => { rec[i.dataset.c!] = i.value; });
     saveSettings(app.settings);
     setHdModelsEnabled(app.settings.hdModels);
+    app.setMenuTheme();
     app.toast('Settings saved');
     app.mainMenu();
   });

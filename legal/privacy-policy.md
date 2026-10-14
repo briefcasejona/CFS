@@ -7,7 +7,7 @@
 CFS is made by Jonathan, a private individual in the Netherlands ("I", "me"). This policy explains what happens to your personal data when you use CFS in your browser (https://briefcasejona.github.io/CFS/) or as the Windows desktop app. Contact: {{contact_email — open question}}.
 
 ## The short version
-CFS has no accounts, no analytics, no ads and no server of mine. Your settings, saves and missions stay on your own device. The only data that leaves your device is what any website or download needs (your IP address reaches GitHub, which hosts the game), and — only if you open **Multiplayer** — what is needed to connect you directly to the other players: your IP address, the name you type, your chat messages and, if you switch it on, your voice.
+CFS has no accounts, no analytics, no ads and no server of mine. Your settings, saves and missions stay on your own device. The only data that leaves your device is what any website or download needs (your IP address reaches GitHub, which hosts the game, and Wikimedia Commons, which serves the menu photos unless you switch them off), and — only if you open **Multiplayer** — what is needed to connect you directly to the other players: your IP address, the name you type, your chat messages and, if you switch it on, your voice.
 
 ## What data, why, and on what basis
 
@@ -15,6 +15,7 @@ CFS has no accounts, no analytics, no ads and no server of mine. Your settings, 
 |---|---|---|---|
 | Settings, control bindings, campaign saves, saved missions | Only on your device (browser storage / desktop app storage) | So the game remembers them | Necessary to provide the game you asked for (Art. 6(1)(b)); never sent to me |
 | IP address, browser/OS info when loading the game or checking for updates | GitHub's servers (hosting logs) | Deliver the game files and updates | My legitimate interest in distributing the game (Art. 6(1)(f)) |
+| IP address, browser info when the menu loads its background photos (optional, Settings → Menu photos) | Wikimedia Foundation's servers (request logs) | Show public-domain photos behind the menus | My legitimate interest in a nicer menu, which you can switch off (Art. 6(1)(f)) |
 | Multiplayer: IP address, room code (hashed), connection data | Public WebTorrent trackers and STUN servers (see below), the other players | Find the other players and open a direct connection | Necessary for the multiplayer feature you start (Art. 6(1)(b)) |
 | Multiplayer: your chosen display name, chat messages, game state | Sent directly to the other players in your room; not stored by me | Play together | Art. 6(1)(b) |
 | Voice commands (optional, off by default) | Your browser sends the audio of each push-to-talk command to its speech service (Google in Chrome, Microsoft in Edge) to turn it into text; CFS only uses the text to pick a radio call and stores nothing | Voice control of radio calls | Your consent — you switch it on in Settings and your browser asks for microphone permission (Art. 6(1)(a)) |
@@ -22,6 +23,7 @@ CFS has no accounts, no analytics, no ads and no server of mine. Your settings, 
 
 ## Services the app connects to
 - **GitHub (GitHub Pages and GitHub Releases)** — hosts the game, the desktop installer and its updates. Receives your IP address and technical request data. [GitHub privacy statement](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement).
+- **Wikimedia Commons** (`upload.wikimedia.org`) — the menu background photos are loaded from there while a menu is open. Wikimedia receives your IP address and browser information (no referrer is sent). Switch off **Settings → Menu photos** to stop it. [Wikimedia Foundation privacy policy](https://foundation.wikimedia.org/wiki/Policy:Privacy_policy).
 - **Public WebTorrent trackers** `tracker.openwebtorrent.com` and `tracker.webtorrent.dev` — only when you open Multiplayer; used to find the other players in your room. They see your IP address and a hashed room identifier. These are community services not operated by me.
 - **Your browser's speech service** — only if you switch on Voice commands and press the push-to-talk key: Chrome sends the recording to Google, Edge to Microsoft, under their own privacy policies ([Google](https://policies.google.com/privacy), [Microsoft](https://privacy.microsoft.com/privacystatement)). Other browsers may not support it.
 - **STUN servers** of Google (`stun.l.google.com`) and Cloudflare (`stun.cloudflare.com`) — only during Multiplayer; they tell your device its public address so a direct connection can be made. They see your IP address. [Google privacy policy](https://policies.google.com/privacy), [Cloudflare privacy policy](https://www.cloudflare.com/privacypolicy/).

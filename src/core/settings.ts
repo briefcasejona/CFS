@@ -22,6 +22,11 @@ export interface Settings {
   voiceCommands: boolean;
   // HUD
   hudColor: string;
+  // menu
+  /** main-menu theme: 'f14' | 'f16' | 'f15' */
+  menuTheme: string;
+  /** photo background in the menus (loaded from Wikimedia Commons); off = plain backdrop, nothing downloaded */
+  menuPhotos: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -39,6 +44,8 @@ export const DEFAULT_SETTINGS: Settings = {
   volume: 0.6,
   voiceCommands: false,
   hudColor: '#3dff7a',
+  menuTheme: 'f16',
+  menuPhotos: true,
 };
 
 const KEY = 'cfs.settings.v1';
