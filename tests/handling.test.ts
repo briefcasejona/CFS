@@ -99,10 +99,39 @@ describe('handling: F-16 FLCS', () => {
     }
   });
 
-  it('the stick commands G: the same deflection gives the same load at every speed', () => {
+  it('the stick commands G above corner speed, and a steady pitch rate per inch below it', () => {
     for (const id of f16s) {
-      const g = [200, 260, 330].map((spd) => { const ac = jet(id, 3000, spd); ac.ctrl.pitch = 0.6; run(ac, 3); return ac.fm.nz; });
+      const g = [240, 290, 340].map((spd) => { const ac = jet(id, 3000, spd); ac.ctrl.pitch = 0.6; run(ac, 3); return ac.fm.nz; });
       expect(Math.max(...g) - Math.min(...g) < 0.4, `${id}: 0.6 stick gives ${g.map((x) => x.toFixed(2)).join(' / ')} g`).toBe(true);
+      // pitch rate for a small stick input, from 250 kt to 450 kt: a pure G command would double it as the speed halves
+      const q = [130, 180, 240].map((spd) => { const ac = jet(id, 3000, spd); ac.ctrl.pitch = 0.25; run(ac, 2); return ac.fm.q * R; });
+      expect(Math.max(...q) / Math.min(...q) < 1.5, `${id}: 0.25 stick gives ${q.map((x) => x.toFixed(1)).join(' / ')} °/s`).toBe(true);
+    }
+  });
+
+  it('pointing the nose: a pilot chasing a pitch angle (0.2 s reaction) settles instead of bobbing', () => {
+    for (const id of f16s) for (const [alt, spd] of [[500, 110], [3000, 160], [3000, 220]]) for (const K of [0.12, 0.18]) {
+      const ac = jet(id, alt, spd);
+      const th0 = ac.fm.attitude().pitch, delay: number[] = [], err: number[] = [];
+      run(ac, 8, () => {
+        const e = (th0 + 8 / R - ac.fm.attitude().pitch) * R;
+        delay.push(K * e);
+        ac.ctrl.pitch = Math.max(-1, Math.min(1, delay.length > 24 ? delay.shift()! : 0));
+        err.push(e);
+      });
+      const tail = err.slice(-360), swing = Math.max(...tail) - Math.min(...tail), over = -Math.min(...err);
+      expect(swing < 1.5, `${id} ${spd} m/s, pilot gain ${K}: the nose still swings ${swing.toFixed(1)}° after 5 s`).toBe(true);
+      expect(over < 8, `${id} ${spd} m/s, pilot gain ${K}: overshoots the 8° target by ${over.toFixed(1)}°`).toBe(true);
+    }
+  });
+
+  it('letting go after a pull at low speed: the nose stops instead of rising on and dropping back', () => {
+    for (const id of f16s) for (const spd of [110, 140, 170]) {
+      const ac = jet(id, 500, spd);
+      ac.ctrl.pitch = 0.6; run(ac, 1.2); ac.ctrl.pitch = 0;
+      const th0 = ac.fm.attitude().pitch; let up = 0;
+      run(ac, 3, () => { up = Math.max(up, (ac.fm.attitude().pitch - th0) * R); });
+      expect(up < 2.5, `${id} ${spd} m/s: the nose rises ${up.toFixed(1)}° more after letting go`).toBe(true);
     }
   });
 

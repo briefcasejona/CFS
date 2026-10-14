@@ -3,6 +3,10 @@ import type { AircraftDef } from '../aircraft/types.js';
 import { atmosphere, casFromTas, G0, type AtmoState } from './atmosphere.js';
 import { approach, clamp, DEG, smoothstep, table1 } from '../core/math.js';
 
+/** F-16 FLCS: AoA limit (deg) and the speed (m/s, ≈450 kt) below which the stick's G gearing falls off */
+const F16_AOA_LIMIT = 25;
+const F16_CORNER = 230;
+
 /**
  * 6-DOF rigid-body flight model.
  *
@@ -513,9 +517,13 @@ export class FlightModel {
     }
 
     // ================= pitch: G command, AoA limiter
-    // stick prefilter (≈0.12 s) and the measured load factor through a light filter, so the law never chases noise
-    const nTarget = pitchIn >= 0 ? 1 + shape(pitchIn) * (0.96 * L.gMax - 1) : 1 + shape(-pitchIn) * (0.96 * L.gMin - 1);
-    st.n += (nTarget - st.n) * Math.min(1, dt / 0.12);
+    // below corner speed the G per inch of stick is geared down with the speed, so an inch of stick gives about the
+    // same pitch rate at 250 kt as at 450 kt (a pure G command doubles the pitch rate per inch as the speed halves, and
+    // the pilot ends up chasing the nose); full stick still reaches the AoA limiter
+    const kV = Math.min(1, (Vs + 30) / (F16_CORNER + 30));
+    const nTarget = pitchIn >= 0 ? 1 + shape(pitchIn) * kV * (0.96 * L.gMax - 1) : 1 + shape(-pitchIn) * kV * (0.96 * L.gMin - 1);
+    // stick prefilter (≈0.08 s) and the measured load factor through a light filter, so the law never chases noise
+    st.n += (nTarget - st.n) * Math.min(1, dt / 0.08);
     st.nzF += (this.nz - st.nzF) * Math.min(1, dt / 0.03);
     this.nzDot += ((st.nzF - this.nzPrev) / dt - this.nzDot) * Math.min(1, dt * 15);
     this.nzPrev = st.nzF;
@@ -525,7 +533,8 @@ export class FlightModel {
     const W = this.mass * G0;
     // the G command becomes an AoA command through the lift curve, rounded top included (the flaps' share
     // subtracted); a load the wing cannot make sends the jet to the AoA limiter
-    const aoaMax = L.aoaMax * DEG, aoaNeg = (L.aoaNeg ?? 10) * DEG;
+    // the real FLCS limits AoA to ~25°: short of the stall and its pitch-up, where the stabilator can still stop the nose
+    const aoaMax = Math.min(L.aoaMax, F16_AOA_LIMIT) * DEG, aoaNeg = (L.aoaNeg ?? 10) * DEG;
     let aCmd = this.aoaForCl((nCmd * W) / qS - A.flapCL * this.flapPos, an.CLa, an.CLmax, aoaMax, aoaNeg);
     // hard G limit with look-ahead on the load-factor rate
     const nzLead = st.nzF + 0.12 * this.nzDot;
@@ -543,7 +552,11 @@ export class FlightModel {
     // (+ the kinematic coupling of rolling with sideslip, which turns β into AoA: α̇ = q − (p·cosα + r·sinα)·tanβ − …)
     const qRef = (G0 / Vs) * (st.nzF - Math.cos(gamma) * Math.cos(att.roll))
       + (p * Math.cos(alpha) + r * Math.sin(alpha)) * Math.tan(beta);
-    const WN = 5, ZETA = 1, QMAX = 0.45;
+    // response bandwidth scheduled on the stabilator's pitch authority (its full-deflection pitch acceleration): asking
+    // a slow, low-q jet for a 5 rad/s response drives the stabilator into its 60°/s rate limit, and the lag of a
+    // rate-limited surface turns into a nose that bobs, worst with a pilot chasing it
+    const authority = (qS * cbar * A.Cmde * an.superCtrl * eMax) / Iyy;
+    const WN = clamp(1.6 * Math.sqrt(authority), 2.8, 5), ZETA = 1.4, QMAX = 0.45;
     const qDem = clamp((WN / (2 * ZETA)) * (aCmd - alpha), -QMAX, QMAX);
     const qdotDes = 2 * ZETA * WN * (qDem - (q - qRef));
     // moment that acceleration needs, less the inertial pitch-up of rolling while yawing, (Izz − Ixx)·p·r
