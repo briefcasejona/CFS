@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { terrainHeight, runwaysOf, AIRBASES, OBJECTIVES, THEATER_HALF, fbm, terrainPalette, currentTheater, type TerrainPalette } from '../world/theater.js';
 import { buildAirfield } from './airfield.js';
 import { coverAt, coverOf, detailNoise, DETAIL_N, PATCH, treeAt, builtAt, type CoverGrid } from '../world/landcover.js';
+import { FarScenery, hash2, NEAR_SCENERY, ringMaterial } from './scenery.js';
 
 const CHUNK = 16000; // m
 const LODS = [
@@ -43,14 +44,9 @@ function terrainColor(h: number, slope: number, x: number, z: number, pal: Terra
   return 1;
 }
 
-const TREE_CELL = 38, TREE_RADIUS = 4500, TREE_MAX = 20000;
-const HOUSE_CELL = 42, HOUSE_RADIUS = 3500, HOUSE_MAX = 9000;
-/** deterministic 0..1 hash of an integer cell */
-function hash2(i: number, j: number) {
-  let h = Math.imul(i, 374761393) ^ Math.imul(j, 668265263);
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-}
+// the detailed ring is built 1 km wider than it is drawn (it is rebuilt every km); FarScenery takes over beyond
+const TREE_CELL = 38, TREE_RADIUS = NEAR_SCENERY + 1000, TREE_MAX = 48000;
+const HOUSE_CELL = 42, HOUSE_RADIUS = NEAR_SCENERY + 1000, HOUSE_MAX = 30000;
 /** keep airfields clear of trees and houses */
 function nearRunway(x: number, z: number) {
   for (const ab of AIRBASES) for (const rw of runwaysOf(ab)) if (Math.abs(x - rw.x) < rw.length / 2 + 1500 && Math.abs(z - rw.z) < rw.length / 2 + 1500) return true;
@@ -159,6 +155,7 @@ export class TerrainRenderer {
     this.material = new THREE.MeshLambertMaterial({ vertexColors: true });
     addGroundShader(this.material, this.uniforms);
     this.group.name = 'terrain';
+    this.group.add(this.far.group);
   }
 
   /** the active theater's cover grid, uploaded as a texture when it changes */
@@ -179,6 +176,7 @@ export class TerrainRenderer {
     this.chunks.clear();
     this.treeAt.set(Infinity, Infinity);
     this.houseAt.set(Infinity, Infinity);
+    this.far.clear();
   }
 
   private buildChunk(ci: number, cj: number, res: number): THREE.Mesh {
@@ -311,6 +309,7 @@ export class TerrainRenderer {
   private houses: THREE.InstancedMesh | null = null;
   private houseAt = new THREE.Vector2(Infinity, Infinity);
   private pitchedHouse: THREE.BufferGeometry | null = null;
+  private far = new FarScenery();
   private flatHouse: THREE.BufferGeometry | null = null;
   updateTrees(camPos: THREE.Vector3) {
     const agl = camPos.y - Math.max(0, terrainHeight(camPos.x, camPos.z));
@@ -327,7 +326,7 @@ export class TerrainRenderer {
         new THREE.IcosahedronGeometry(4.6, 0).scale(1, 0.85, 1).translate(0, 8.4, 0),
       ]);
       for (const geo of [conifer, broadleaf]) {
-        const m = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ color: 0xffffff }), TREE_MAX);
+        const m = new THREE.InstancedMesh(geo, ringMaterial(new THREE.MeshLambertMaterial({ color: 0xffffff }), 0, NEAR_SCENERY), TREE_MAX);
         m.frustumCulled = false;
         m.count = 0;
         this.trees.push(m);
@@ -346,16 +345,17 @@ export class TerrainRenderer {
       // desert towns: flat roofs
       this.flatHouse = paint(walls.clone().toNonIndexed(), 0.82, 0.78, 0.72);
       this.pitchedHouse = house;
-      this.houses = new THREE.InstancedMesh(house, new THREE.MeshLambertMaterial({ vertexColors: true }), HOUSE_MAX);
+      this.houses = new THREE.InstancedMesh(house, ringMaterial(new THREE.MeshLambertMaterial({ vertexColors: true }), 0, NEAR_SCENERY), HOUSE_MAX);
       this.houses.frustumCulled = false;
       this.houses.count = 0;
       this.group.add(this.houses);
     }
     const pal = terrainPalette();
-    // invisible (and not worth rebuilding) above ~3000 m AGL
-    const treesOn = agl < 3000 && pal.trees;
+    this.far.update(camPos, cover, pal, agl);
+    // invisible (and not worth rebuilding) higher up, where the far tiles alone carry the scene
+    const treesOn = agl < 3500 && pal.trees;
     for (const t of this.trees) t.visible = treesOn;
-    this.houses!.visible = agl < 3000;
+    this.houses!.visible = agl < 5000;
     if (treesOn && Math.hypot(camPos.x - this.treeAt.x, camPos.z - this.treeAt.y) > 1000) {
       this.treeAt.set(camPos.x, camPos.z);
       this.placeTrees(camPos, cover, pal);
