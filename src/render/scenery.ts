@@ -18,19 +18,23 @@ export const sceneryUniforms = {
   uCam: { value: new THREE.Vector3() },
 };
 
-/** A material whose instances only show between `inner` and `outer` metres (horizontal) from the camera. */
-export function ringMaterial(mat: THREE.Material, inner: number, outer: number) {
+/** A material whose instances only show between `inner` and `outer` metres (horizontal) from the camera. Either radius
+ *  can be a shared uniform ({ value }) to move the ring at run time (the detailed model ring takes over the inside). */
+export function ringMaterial<M extends THREE.Material>(mat: M, inner: number | { value: number }, outer: number | { value: number }) {
+  const uIn = typeof inner === 'number' ? { value: inner } : inner, uOut = typeof outer === 'number' ? { value: outer } : outer;
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uCam = sceneryUniforms.uCam;
-    sh.vertexShader = 'uniform vec3 uCam;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+    sh.uniforms.uRingIn = uIn;
+    sh.uniforms.uRingOut = uOut;
+    sh.vertexShader = 'uniform vec3 uCam;\nuniform float uRingIn;\nuniform float uRingOut;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
       #ifdef USE_INSTANCING
         vec4 iw = modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
         float dd = distance(iw.xz, uCam.xz);
         // collapsed to a point: nothing is rasterised
-        if (dd < ${inner.toFixed(1)} || dd > ${outer.toFixed(1)}) transformed = vec3(0.0);
+        if (dd < uRingIn || dd > uRingOut) transformed = vec3(0.0);
       #endif`);
   };
-  mat.customProgramCacheKey = () => `ring${inner}-${outer}`;
+  mat.customProgramCacheKey = () => 'ring';
   return mat;
 }
 

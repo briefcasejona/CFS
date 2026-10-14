@@ -5,6 +5,8 @@ import { buildAirfield } from './airfield.js';
 import { coverAt, coverOf, detailNoise, DETAIL_N, PATCH, treeAt, builtAt, type CoverGrid } from '../world/landcover.js';
 import { FarScenery, hash2, NEAR_SCENERY, ringMaterial } from './scenery.js';
 import { Imagery, IMAGERY_GLSL, mercator } from './imagery.js';
+import { ModelScenery, DETAIL_SCENERY, proceduralInner, pick, type CellPick } from './modelScenery.js';
+import { hdModelsEnabled } from './hdModels.js';
 
 const CHUNK = 16000; // m
 const LODS = [
@@ -161,7 +163,7 @@ export class TerrainRenderer {
     this.material = new THREE.MeshLambertMaterial({ vertexColors: true });
     addGroundShader(this.material, this.uniforms);
     this.group.name = 'terrain';
-    this.group.add(this.far.group);
+    this.group.add(this.far.group, this.models.group);
   }
 
   /** the active theater's cover grid, uploaded as a texture when it changes */
@@ -183,6 +185,7 @@ export class TerrainRenderer {
     this.treeAt.set(Infinity, Infinity);
     this.houseAt.set(Infinity, Infinity);
     this.far.clear();
+    this.modelAt.set(Infinity, Infinity);
   }
 
   private buildChunk(ci: number, cj: number, res: number): THREE.Mesh {
@@ -326,6 +329,8 @@ export class TerrainRenderer {
   private houseAt = new THREE.Vector2(Infinity, Infinity);
   private pitchedHouse: THREE.BufferGeometry | null = null;
   private far = new FarScenery();
+  private models = new ModelScenery();
+  private modelAt = new THREE.Vector2(Infinity, Infinity);
   private flatHouse: THREE.BufferGeometry | null = null;
   updateTrees(camPos: THREE.Vector3) {
     const agl = camPos.y - Math.max(0, terrainHeight(camPos.x, camPos.z));
@@ -342,7 +347,7 @@ export class TerrainRenderer {
         new THREE.IcosahedronGeometry(4.6, 0).scale(1, 0.85, 1).translate(0, 8.4, 0),
       ]);
       for (const geo of [conifer, broadleaf]) {
-        const m = new THREE.InstancedMesh(geo, ringMaterial(new THREE.MeshLambertMaterial({ color: 0xffffff }), 0, NEAR_SCENERY), TREE_MAX);
+        const m = new THREE.InstancedMesh(geo, ringMaterial(new THREE.MeshLambertMaterial({ color: 0xffffff }), proceduralInner, NEAR_SCENERY), TREE_MAX);
         m.frustumCulled = false;
         m.count = 0;
         this.trees.push(m);
@@ -361,7 +366,7 @@ export class TerrainRenderer {
       // desert towns: flat roofs
       this.flatHouse = paint(walls.clone().toNonIndexed(), 0.82, 0.78, 0.72);
       this.pitchedHouse = house;
-      this.houses = new THREE.InstancedMesh(house, ringMaterial(new THREE.MeshLambertMaterial({ vertexColors: true }), 0, NEAR_SCENERY), HOUSE_MAX);
+      this.houses = new THREE.InstancedMesh(house, ringMaterial(new THREE.MeshLambertMaterial({ vertexColors: true }), proceduralInner, NEAR_SCENERY), HOUSE_MAX);
       this.houses.frustumCulled = false;
       this.houses.count = 0;
       this.group.add(this.houses);
@@ -379,6 +384,16 @@ export class TerrainRenderer {
     if (this.houses!.visible && Math.hypot(camPos.x - this.houseAt.x, camPos.z - this.houseAt.y) > 1000) {
       this.houseAt.set(camPos.x, camPos.z);
       this.placeHouses(camPos, cover, pal);
+    }
+    // real 3D houses and trees close by (Europe; with the HD models setting)
+    const modelsOn = currentTheater().id === 'europe' && hdModelsEnabled();
+    if (modelsOn) this.models.load();
+    const showModels = modelsOn && this.models.ready && agl < 3000;
+    this.models.group.visible = showModels;
+    proceduralInner.value = showModels ? DETAIL_SCENERY : 0;
+    if (showModels && Math.hypot(camPos.x - this.modelAt.x, camPos.z - this.modelAt.y) > 1000) {
+      this.modelAt.set(camPos.x, camPos.z);
+      this.placeModels(camPos, cover, pal);
     }
   }
 
@@ -446,6 +461,70 @@ export class TerrainRenderer {
     houses.count = k;
     houses.instanceMatrix.needsUpdate = true;
     if (houses.instanceColor) houses.instanceColor.needsUpdate = true;
+  }
+
+  /** Model houses and trees on the same cells the procedural ones use (their hashes), within the detail ring. */
+  private placeModels(camPos: THREE.Vector3, cover: CoverGrid, pal: TerrainPalette) {
+    const M = this.models, F = M.fam, R = DETAIL_SCENERY + 1100, picks: CellPick[] = [];
+    // east of the Oder (Poland, Kaliningrad, Belarus) and in the former GDR the tall blocks are often prefab panel blocks
+    const ll = currentTheater().geo?.(camPos.x, camPos.z);
+    const east = !!ll && (ll.lon > 14.2 || (ll.lon > 11 && ll.lat < 54.2 && ll.lat > 50.4));
+    // houses: landmarks first (a church or a market square block in a dense core), then everything else around them
+    {
+      const ci = Math.floor(camPos.x / HOUSE_CELL), cj = Math.floor(camPos.z / HOUSE_CELL), r = Math.ceil(R / HOUSE_CELL);
+      const taken = new Set<number>();
+      const cells: Array<{ i: number; j: number; x: number; z: number; h: number; dense: number; hsh: number }> = [];
+      for (let j = cj - r; j <= cj + r; j++) for (let i = ci - r; i <= ci + r; i++) {
+        const hsh = hash2(i + 101, j - 77);
+        const x = (i + 0.2 + hsh * 0.6) * HOUSE_CELL, z = (j + 0.2 + hash2(j - 77, i + 101) * 0.6) * HOUSE_CELL;
+        if ((x - camPos.x) ** 2 + (z - camPos.z) ** 2 > R * R) continue;
+        if (!builtAt(cover, x, z)) continue;
+        const h = terrainHeight(x, z);
+        if (h < 1.5 || nearRunway(x, z)) continue;
+        cells.push({ i, j, x, z, h, dense: coverAt(cover, x, z, 1), hsh });
+      }
+      const key = (i: number, j: number) => i * 100003 + j;
+      for (const c of cells) {
+        if (!F.landmark.length || c.dense < 0.6 || hash2(c.i * 7 + 3, c.j * 13 - 5) > 0.012) continue;
+        const name = pick(F.landmark, hash2(c.i, c.j * 3));
+        const sz = M.sizeOf(name)!, span = Math.ceil(Math.max(sz[0], sz[2]) / 2 / HOUSE_CELL);
+        let free = true;
+        for (let dj = -span; dj <= span && free; dj++) for (let di = -span; di <= span; di++) if (taken.has(key(c.i + di, c.j + dj))) { free = false; break; }
+        if (!free) continue;
+        for (let dj = -span; dj <= span; dj++) for (let di = -span; di <= span; di++) taken.add(key(c.i + di, c.j + dj));
+        picks.push({ x: c.x, z: c.z, h: c.h - 0.6, rot: hash2(c.i + 1, c.j) < 0.5 ? 0 : Math.PI / 2, scale: 1, variant: name });
+      }
+      for (const c of cells) {
+        if (taken.has(key(c.i, c.j))) continue;
+        const tall = c.dense > 0.6 && c.hsh > 0.55;
+        const u = hash2(c.i + 17, c.j - 29);
+        let name: string | undefined;
+        if (tall) name = east && F.panel.length && u < 0.45 ? pick(F.panel, u / 0.45) : pick(F.block, u);
+        else name = pick(F.small, u);
+        if (!name) continue;
+        const rot = (hash2(c.i - 3, c.j + 3) < 0.5 ? 0 : Math.PI / 2) + (hash2(c.i, c.j + 5) < 0.5 ? 0 : Math.PI) + (c.hsh - 0.5) * 0.15;
+        picks.push({ x: c.x, z: c.z, h: c.h - 0.6, rot, scale: 0.92 + hash2(c.i + 9, c.j) * 0.16, variant: name });
+      }
+    }
+    // trees: conifers take over with height, broadleaf woods in the lowlands (as the procedural forest)
+    if (pal.trees && (F.conifer.length || F.broadleaf.length)) {
+      const ci = Math.floor(camPos.x / TREE_CELL), cj = Math.floor(camPos.z / TREE_CELL), r = Math.ceil(R / TREE_CELL);
+      for (let j = cj - r; j <= cj + r; j++) for (let i = ci - r; i <= ci + r; i++) {
+        const hsh = hash2(i, j);
+        const x = (i + hsh) * TREE_CELL, z = (j + hash2(j, i)) * TREE_CELL;
+        if ((x - camPos.x) ** 2 + (z - camPos.z) ** 2 > R * R) continue;
+        if (!treeAt(cover, x, z)) continue;
+        const h = terrainHeight(x, z);
+        if (h < 2 || h > pal.snowLine(x, z) - pal.rockBelowSnow - 150 || nearRunway(x, z)) continue;
+        const conifer = hash2(i + 3, j - 5) < 0.35 + h / 1200;
+        const list = conifer && F.conifer.length ? F.conifer : F.broadleaf.length ? F.broadleaf : F.conifer;
+        const name = pick(list, hash2(i + 7, j - 2));
+        // the pack's conifers are tall (25–33 m): scale them to a managed forest's 14–24 m
+        const sz = M.sizeOf(name)!, target = (conifer ? 15 : 13) * (0.75 + hsh * 0.6);
+        picks.push({ x, z, h: h - 0.5, rot: hsh * 6.283, scale: target / sz[1], variant: name });
+      }
+    }
+    M.set(picks);
   }
 
   /** Pre-build chunks around a point (during loading). */
