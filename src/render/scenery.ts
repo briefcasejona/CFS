@@ -11,7 +11,7 @@ import { builtAt, coverAt, treeAt, type CoverGrid } from '../world/landcover.js'
 export const NEAR_SCENERY = 5000;
 /** how far towns (and, to FAR_TREES, forests) are drawn */
 export const FAR_HOUSES = 32000, FAR_TREES = 16000;
-const TILE = 4000, HOUSE_CELL = 105, TREE_CELL = 75;
+const TILE = 4000, HOUSE_CELL = 105, TREE_CELL = 50;
 
 /** live camera position and ring radii, shared by every scenery material */
 export const sceneryUniforms = {

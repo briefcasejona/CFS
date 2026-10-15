@@ -48,7 +48,7 @@ function terrainColor(h: number, slope: number, x: number, z: number, pal: Terra
 }
 
 // the detailed ring is built 1 km wider than it is drawn (it is rebuilt every km); FarScenery takes over beyond
-const TREE_CELL = 38, TREE_RADIUS = NEAR_SCENERY + 1000, TREE_MAX = 48000;
+const TREE_CELL = 26, TREE_RADIUS = NEAR_SCENERY + 1000, TREE_MAX = 140000;
 const HOUSE_CELL = 42, HOUSE_RADIUS = NEAR_SCENERY + 1000, HOUSE_MAX = 30000;
 /** keep airfields clear of trees and houses */
 function nearRunway(x: number, z: number) {

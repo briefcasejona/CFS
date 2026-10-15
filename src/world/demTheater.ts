@@ -5,6 +5,7 @@ import { fbm } from './noise.js';
 import { Lcc } from './lcc.js';
 import type { Airbase, ObjectiveDef, Runway, Theater } from './theater.js';
 import { RUNWAYS } from './theaters/runways.js';
+import type { CoverPatch } from './landcover.js';
 
 export interface DemConfig {
   proj: { lat0: number; lon0: number; lat1: number; lat2: number };
@@ -145,6 +146,11 @@ export class DemGrid {
         const c = await fetch(`${base}/landcover.bin.gz`);
         if (c.ok) this.setCover(new Uint8Array(await gunzip(c)), theater);
       } catch { /* offline without the landcover cached */ }
+      // fine landcover around the airfields (houses on real built-up land, full forests) — optional as well
+      try {
+        const [ix, cb] = await Promise.all([fetch(`${base}/coverdetail.json`), fetch(`${base}/coverdetail.bin.gz`)]);
+        if (ix.ok && cb.ok && theater.cover) theater.cover.detail = splitCoverDetail((await ix.json()).patches, new Uint8Array(await gunzip(cb)));
+      } catch { /* offline without the fine landcover cached */ }
     }
     // borders and cities for the map — optional, the theater flies without them
     try {
@@ -152,6 +158,19 @@ export class DemGrid {
       if (o.ok) theater.overlay = await o.json();
     } catch { /* offline without the overlay cached */ }
   }
+}
+
+/** cut the concatenated detail patches (coverdetail.bin.gz) apart */
+export function splitCoverDetail(index: Array<{ x0: number; z0: number; n: number; res: number }>, data: Uint8Array): CoverPatch[] {
+  const out: CoverPatch[] = [];
+  let o = 0;
+  for (const p of index) {
+    const len = Math.ceil((p.n * p.n) / 4);
+    if (o + len > data.length) throw new Error('coverdetail.bin.gz is shorter than its index');
+    out.push({ x0: p.x0, z0: p.z0, n: p.n, res: p.res, data: data.subarray(o, o + len) });
+    o += len;
+  }
+  return out;
 }
 
 /** a fetched body, gunzipped unless a server already did (Content-Encoding: gzip) */

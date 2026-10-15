@@ -107,8 +107,10 @@ describe('HD models', () => {
       const r = new THREE.Box3().setFromObject(inst.wings!.right, true);
       return { half: r.max.x, root: r.min.x };
     };
-    // the model is drawn ~2% short of the published 19.54 m at 20°; the swept spans are the ones that matter in flight
-    for (const [sweep, full, tol] of [[20, 19.54, 0.6], [68, 11.65, 0.15], [75, 10.15, 0.15]]) {
+    // the model is drawn ~2% short of the published 19.54 m at 20°. Its straight wing root only stays inside the glove
+    // with the pivot ~0.45 m forward of where the published swept spans would put it, so the swept spans come out
+    // ~6% short: a playtester saw the root corner poke out of the glove, nobody sees 0.7 m of span
+    for (const [sweep, full, tol] of [[20, 19.54, 0.6], [68, 11.65, 0.75], [75, 10.15, 0.75]]) {
       const s = span(sweep);
       expect(Math.abs(2 * s.half - full) < tol, `span at ${sweep}°: ${(2 * s.half).toFixed(2)} m, published ${full} m`).toBe(true);
       expect(s.root > 0.05, `at ${sweep}° the wing reaches x=${s.root.toFixed(2)}, across the centreline`).toBe(true);

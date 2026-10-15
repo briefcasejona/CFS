@@ -59,7 +59,7 @@ export class ModelScenery {
       const tree = kind === 'tree';
       const meshes: THREE.Mesh[] = [];
       node.traverse((o) => { if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh); });
-      const cap = tree ? 4000 : kind === 'panel' ? 300 : 1500;
+      const cap = tree ? 15000 : kind === 'panel' ? 300 : 1500;
       const v: Variant = { name, size, meshes: [], n: 0, cap };
       for (const m of meshes) {
         const src = m.material as THREE.MeshStandardMaterial;

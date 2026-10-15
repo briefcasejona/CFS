@@ -77,7 +77,8 @@ export const HD_SPECS: Record<string, HdSpec> = {
     axes: 'game',
     gearDown: /f14a-gearOn/, gearUp: NEVER,
     cockpit: /_(Cockpit\d+|VDI)_0|\/Meshpart(33|53|85|81)\//,
-    // wing panels, flaps, spoilers and tip lights are separate nodes; the gloves stay put
+    // wing panels, flaps, spoilers and tip lights are separate nodes; the gloves stay put. The pivot sits where the
+    // model's straight wing root stays inside the glove at full sweep (z 16, from the published spans, let it poke out)
     wings: { parts: /\/Meshes(5151|1361|1441|6141|951|1721|1051|4171|1151|7111|891|1541|1641)\//, pivot: { x: 12.0, z: 14.0 }, refSweep: 20 },
     eye: { y: 1.21, z: -4.92 },
     // the VDI (radar page) and, below it, the HSD (RWR / stores page)

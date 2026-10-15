@@ -16,3 +16,8 @@
 - `patches.json` + `patches.bin.gz`: 50 × 50 km elevation patches at 75 m spacing around each airfield (Int16, same
   projection), from the same **AWS Terrain Tiles** at zoom 11; blended into the 1 km grid over their outer 6 km.
   Baked by `scripts/terrain/bake-patches.mjs europe`.
+- `coverdetail.json` + `coverdetail.bin.gz`: 50 × 50 km landcover patches at 20 m spacing around each airfield (the
+  squares of `patches.json`), the **ESA WorldCover 10 m 2021 v200** class at each cell centre reduced to tree / built-up /
+  water / other (2 bits), © ESA WorldCover project 2021 / contains modified Copernicus Sentinel data (2021) processed by
+  the ESA WorldCover consortium, **CC BY 4.0**. Houses and forests near the fields are placed on these cells. Baked by
+  `scripts/terrain/bake-coverdetail.mjs europe`.
