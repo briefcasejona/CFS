@@ -50,7 +50,8 @@ a { color: var(--accent); cursor: pointer; }
 .btnrow.col { flex-direction: column; }
 .panel { background: var(--panel); border: 1px solid var(--line); padding: 12px 14px; border-radius: 4px; }
 
-.menu { align-items: center; justify-content: center; background: radial-gradient(ellipse 34% 75% at 50% 50%, rgba(6, 12, 18, 0.62) 0%, rgba(6, 12, 18, 0.25) 70%, transparent 100%); }
+.menu { align-items: flex-start; justify-content: center; padding-left: clamp(16px, 5vw, 72px); background: linear-gradient(90deg, rgba(6, 12, 18, 0.66) 0%, rgba(6, 12, 18, 0.32) 30%, transparent 52%); }
+.menu > * { max-width: min(460px, 100%); }
 .menu-buttons button { background: rgba(20, 32, 42, 0.78); backdrop-filter: blur(3px); }
 .menu-buttons button.primary { background: color-mix(in srgb, var(--accent) 30%, rgba(14, 26, 36, 0.85)); }
 .menu-buttons button:hover { background: color-mix(in srgb, var(--accent) 22%, rgba(20, 32, 42, 0.9)); }
@@ -68,14 +69,14 @@ a { color: var(--accent); cursor: pointer; }
 #menubg .mb-credit a { color: inherit; }
 body:has(#ui .screen.menu) #menubg .mb-credit { display: block; }
 
-.menu .title { text-align: center; margin-bottom: 28px; }
+.menu .title { text-align: left; margin-bottom: 28px; }
 .menu h1 { font-size: 96px; letter-spacing: 18px; margin: 0; color: #e8f2f8; text-shadow: 0 0 30px rgba(79, 179, 255, 0.35); }
 .menu .subtitle { letter-spacing: 9px; color: var(--accent); font-size: 16px; margin-bottom: 8px; }
 .menu-buttons { display: flex; flex-direction: column; gap: 8px; width: 300px; }
 .menu-buttons button { padding: 11px 11px 11px 20px; font-size: 16px; text-align: left; }
 .menu .hint { position: absolute; bottom: 18px; }
 .screen.menu { overflow-y: auto; justify-content: safe center; }
-.menu .hint { position: static; margin-top: 14px; text-align: center; }
+.menu .hint { position: static; margin-top: 14px; text-align: left; }
 @media (max-height: 820px) {
   .menu h1 { font-size: 60px; letter-spacing: 12px; }
   .menu .title { margin-bottom: 14px; }
@@ -85,7 +86,8 @@ body:has(#ui .screen.menu) #menubg .mb-credit { display: block; }
 .menu .howto { width: 300px; margin-top: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 3px; padding: 6px 12px; }
 .menu .howto summary { cursor: pointer; color: var(--accent); }
 .menu .howto table { margin: 6px 0; }
-.menu .install { margin-top: 12px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.menu .install { margin-top: 12px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.menu .install-row { justify-content: flex-start; }
 .install-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
 a.btnlink { display: inline-block; text-decoration: none; color: var(--text); background: var(--panel2); border: 1px solid var(--accent); padding: 7px 14px; border-radius: 3px; }
 a.btnlink:hover { background: #22384a; }

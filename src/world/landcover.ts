@@ -9,7 +9,25 @@ import type { Theater } from './theater.js';
 
 /** Uint8 RGBA per cell (tree, built-up, cropland, water × 255), row-major z then x; cell (i, j) sits at
  *  (−half + i·res, −half + j·res) */
-export interface CoverGrid { data: Uint8Array; n: number; half: number; res: number }
+export interface CoverGrid { data: Uint8Array; n: number; half: number; res: number; detail?: CoverPatch[] }
+
+/** Fine landcover around an airfield (scripts/terrain/bake-coverdetail.mjs): the WorldCover class at each cell,
+ *  2 bits (0 other, 1 tree, 2 built-up, 3 water), 4 cells per byte, low bits first, row-major z then x; cell (i, j)
+ *  sits at (x0 + i·res, z0 + j·res). */
+export interface CoverPatch { x0: number; z0: number; n: number; res: number; data: Uint8Array }
+export const COVER_TREE = 1, COVER_BUILT = 2, COVER_WATER = 3;
+
+/** the fine landcover class at x, z (nearest cell), or −1 outside every detail patch */
+export function detailClass(g: CoverGrid, x: number, z: number): number {
+  if (!g.detail) return -1;
+  for (const p of g.detail) {
+    const i = Math.round((x - p.x0) / p.res), j = Math.round((z - p.z0) / p.res);
+    if (i < 0 || j < 0 || i >= p.n || j >= p.n) continue;
+    const k = j * p.n + i;
+    return (p.data[k >> 2] >> ((k & 3) * 2)) & 3;
+  }
+  return -1;
+}
 
 /** bilinear cover fraction (0..1) of one channel: 0 tree, 1 built-up, 2 cropland, 3 water */
 export function coverAt(g: CoverGrid, x: number, z: number, ch: number): number {
@@ -89,9 +107,22 @@ export const PATCH = { tree: [1900, 0.13], built: [1100, 0.61], crop: [2600, 0.8
 
 /** forest at x, z (instanced trees go where the shader paints forest) */
 export function treeAt(g: CoverGrid, x: number, z: number) {
+  const c = detailClass(g, x, z);
+  if (c >= 0) return c === COVER_TREE;
   return coverMask(coverAt(g, x, z, 0), patchNoise(x, z, PATCH.tree[0], PATCH.tree[1])) > 0.5;
 }
 /** built-up land at x, z (instanced houses) */
 export function builtAt(g: CoverGrid, x: number, z: number) {
+  const c = detailClass(g, x, z);
+  if (c >= 0) {
+    // built-up with built-up on at least three sides: towns and villages, not the single-cell lines of roads
+    if (c !== COVER_BUILT) return false;
+    const r = g.detail![0].res;
+    let n = 0;
+    for (const [dx, dz] of [[r, 0], [-r, 0], [0, r], [0, -r]]) if (detailClass(g, x + dx, z + dz) === COVER_BUILT) n++;
+    return n >= 3;
+  }
+  // away from the detail patches: never on a cell that is mostly water
+  if (coverAt(g, x, z, 3) > 0.5) return false;
   return coverMask(coverAt(g, x, z, 1), patchNoise(x, z, PATCH.built[0], PATCH.built[1])) > 0.5;
 }

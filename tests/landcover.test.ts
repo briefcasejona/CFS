@@ -4,7 +4,8 @@ import { gunzipSync } from 'node:zlib';
 import { expect } from './expect.js';
 import { EUROPE, setEuropeCover, europeLcc } from '../src/world/theaters/europe.js';
 import { VARNIA } from '../src/world/theaters/varnia.js';
-import { coverAt, coverOf, coverMask, patchNoise, treeAt, builtAt, PATCH } from '../src/world/landcover.js';
+import { coverAt, coverOf, coverMask, patchNoise, treeAt, builtAt, detailClass, COVER_BUILT, COVER_WATER, PATCH } from '../src/world/landcover.js';
+import { splitCoverDetail } from '../src/world/demTheater.js';
 
 describe('landcover', () => {
   it('Europe: the baked WorldCover grid puts towns, forest and water where they are', () => {
@@ -16,6 +17,28 @@ describe('landcover', () => {
     expect(at(48.0, 8.2, 0)).toBeGreaterThan(0.6);     // Black Forest
     expect(at(52.6, 5.4, 3)).toBeGreaterThan(0.8);     // IJsselmeer: open water
     expect(at(52.6, 5.4, 0)).toBeLessThan(0.05);
+  });
+
+  it('Europe: around the airfields houses follow the 20 m WorldCover cells: in towns, never in water', () => {
+    const buf = gunzipSync(readFileSync('assets/theaters/europe/landcover.bin.gz'));
+    setEuropeCover(new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength));
+    const g = EUROPE.cover!;
+    const idx = JSON.parse(readFileSync('assets/theaters/europe/coverdetail.json', 'utf8')).patches;
+    g.detail = splitCoverDetail(idx, new Uint8Array(gunzipSync(readFileSync('assets/theaters/europe/coverdetail.bin.gz'))));
+    const cls = (lat: number, lon: number) => { const p = europeLcc.forward(lat, lon); return detailClass(g, p.x, p.z); };
+    expect(cls(53.201, 5.799)).toBe(COVER_BUILT);       // Leeuwarden town centre
+    expect(cls(53.40, 5.60)).toBe(COVER_WATER);        // Wadden Sea north of Harlingen
+    // no house on any water cell of the Leeuwarden patch, and some in the town
+    const p = g.detail[idx.findIndex((q: { id: string }) => q.id === 'leeuwarden')];
+    let wet = 0, town = 0;
+    for (let k = 0; k < 20000; k++) {
+      const x = p.x0 + ((k * 7919) % 50000), z = p.z0 + ((k * 104729) % 50000);
+      if (!builtAt(g, x, z)) continue;
+      if (detailClass(g, x, z) === COVER_WATER) wet++; else town++;
+    }
+    expect(wet).toBe(0);
+    expect(town).toBeGreaterThan(100);
+    g.detail = undefined;
   });
 
   it('a fraction f paints about f of the ground (shader and instanced trees agree on where)', () => {
