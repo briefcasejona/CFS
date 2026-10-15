@@ -220,3 +220,29 @@ describe('HD missiles', () => {
     }
   });
 });
+
+describe('F-14B(U) moving parts', () => {
+  it('drives flaps, stabilators, rudders and gear legs from the flight model', async () => {
+    const def = getAircraft('f14b'), spec = HD_SPECS.f14b;
+    const inst = instantiateHd({ root: bake(await loadGlbScene(spec.url), spec, def), spec });
+    expect(inst.movers.length).toBe(spec.movers!.length);
+    const by = (re: RegExp) => inst.movers.find((m) => m.spec.parts.source === re.source)!;
+    const flapR = by(spec.movers![0].parts), stabR = by(/\/Meshes1841\//), rudR = by(/\/Meshes2131\//), noseLeg = by(spec.movers![10].parts);
+    // world-space bounds of a mover's meshes
+    const bounds = (g: THREE.Object3D) => { inst.root.updateMatrixWorld(true); return new THREE.Box3().setFromObject(g); };
+    const ctl = { elev: 0, ail: 0, rud: 0, roll: 0, flap: 0, brake: 0 };
+    updateHdInstance(inst, 1, 20, ctl);
+    const flap0 = bounds(flapR.group), stab0 = bounds(stabR.group), rud0 = bounds(rudR.group), leg0 = bounds(noseLeg.group);
+    updateHdInstance(inst, 0.5, 20, { ...ctl, flap: 1, elev: 10 * Math.PI / 180, rud: 20 * Math.PI / 180 });
+    // flaps down: the trailing edge drops; nose-up stabilator: trailing edge up; right rudder: trailing edge to +x
+    expect(bounds(flapR.group).min.y).toBeLessThan(flap0.min.y - 0.5);
+    expect(bounds(stabR.group).max.y).toBeGreaterThan(stab0.max.y + 0.1);
+    expect(bounds(rudR.group).max.x).toBeGreaterThan(rud0.max.x + 0.1);
+    // gear half way up: the nose leg has swung forward and up
+    expect(bounds(noseLeg.group).min.y).toBeGreaterThan(leg0.min.y + 0.3);
+    expect(noseLeg.group.children.every((c) => c.visible)).toBe(true);
+    // stowed gear legs are hidden
+    updateHdInstance(inst, 0, 20, ctl);
+    expect(noseLeg.group.children.some((c) => c.visible)).toBe(false);
+  });
+});
