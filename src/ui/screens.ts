@@ -42,7 +42,6 @@ export function mainMenu(app: AppApi): HTMLElement {
       <div class="title">
         <h1>CFS</h1>
         <div class="subtitle">COMBAT FLIGHT SIMULATOR</div>
-        <div class="muted">Varnia Peninsula theater · 16 aircraft · ${realismLabel(app.settings)}</div>
       </div>
       <div class="menu-buttons">
         <button data-a="quick" class="primary">⚡ Quick Fight <small class="muted">— F-16C vs MiG-29, guns + heaters</small></button>

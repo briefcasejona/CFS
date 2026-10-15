@@ -18,7 +18,8 @@ export interface HdSpec {
    *  the wing on the source's +X side in source metres, and the sweep (deg) the model is built at.
    *  `split`: the wings are fused into the airframe mesh of the `parts` nodes — every triangle that reaches beyond
    *  |x| > reach (game metres) with its centre forward of z < maxZ (clear of the tailplanes) is cut out and swept with
-   *  its side's wing; the pivot is then given in game metres (x outboard, z aft of the model's centre) */
+   *  its side's wing; the pivot is then given in game metres (x outboard, z aft of the model's centre)
+   *  Separate wing parts have their roots trimmed to the glove outline (see RootTrim). */
   wings?: { parts: RegExp; pivot: { x: number; z: number }; refSweep: number; split?: { reach: number; maxZ: number } };
   /** gear doors modelled into an airframe mesh: triangles of the `parts` nodes whose centre hangs below `below`
    *  between z[0] and z[1] and with |x| within `x` (source metres, after `axes`) are cut out and
@@ -48,6 +49,11 @@ const BOH_F14: HdSpec = {
   wings: { parts: /airframe_0/, pivot: { x: 2.72, z: 1.55 }, refSweep: 20, split: { reach: 3.6, maxZ: 5.0 } },
   // raised so the canopy sill sits well below the eye and you look over the glareshield, as from the F-16C seat
   eye: { y: 1.72, z: -5.05 },
+  // the VDI (radar page) and, below it, the HSD (RWR / stores page)
+  mfds: [
+    { c: [0, 1.31, -5.632], w: 0.15, h: 0.124, n: [0, 0.17, 0.98], screen: 0 },
+    { c: [0, 1.126, -5.604], w: 0.15, h: 0.15, n: [0, 0.42, 0.91], screen: 1 },
+  ],
 };
 
 const BOH_F16: HdSpec = {
@@ -72,8 +78,13 @@ export const HD_SPECS: Record<string, HdSpec> = {
     gearDown: /f14a-gearOn/, gearUp: NEVER,
     cockpit: /_(Cockpit\d+|VDI)_0|\/Meshpart(33|53|85|81)\//,
     // wing panels, flaps, spoilers and tip lights are separate nodes; the gloves stay put
-    wings: { parts: /\/Meshes(5151|1361|1441|6141|951|1721|1051|4171|1151|7111|891|1541|1641)\//, pivot: { x: 12.0, z: 16.0 }, refSweep: 20 },
+    wings: { parts: /\/Meshes(5151|1361|1441|6141|951|1721|1051|4171|1151|7111|891|1541|1641)\//, pivot: { x: 12.0, z: 14.0 }, refSweep: 20 },
     eye: { y: 1.21, z: -4.92 },
+    // the VDI (radar page) and, below it, the HSD (RWR / stores page)
+    mfds: [
+      { c: [0.001, 0.785, -5.602], w: 0.146, h: 0.146, n: [0, 0.38, 0.92], screen: 0 },
+      { c: [0.002, 0.585, -5.577], w: 0.13, h: 0.13, n: [0, 0.39, 0.92], screen: 1 },
+    ],
   },
   // F-14D: one articulated model: wings, slats, flaps and spoilers are separate nodes that sweep
   // rigidly about the real pivot (2.72 m from the centreline) — the published 68° / 75° spans check out on it
@@ -231,6 +242,7 @@ export function bake(scene: THREE.Object3D, spec: HdSpec, def: AircraftDef): THR
     root.userData.pivot = { x: Math.abs(pv.x), z: pv.z };
   }
   for (const p of parts) p.geo.applyMatrix4(fix);
+  const trim = spec.wings && !spec.wings.split ? gloveOutline(parts, root.userData.pivot) : null;
   const split = spec.wings?.split;
   if (split) {
     for (const p of [...parts]) {
@@ -258,7 +270,7 @@ export function bake(scene: THREE.Object3D, spec: HdSpec, def: AircraftDef): THR
   for (const g of groups.values()) {
     // a merge that still fails must not drop parts: fall back to one mesh per part
     const merged = g.geos.length === 1 ? g.geos[0] : mergeGeometries(g.geos, false);
-    const mat = g.hud && spec.hudGlass ? hudGlassMaterial() : g.mat;
+    const mat = g.hud && spec.hudGlass ? hudGlassMaterial() : g.wing && trim && !Array.isArray(g.mat) ? trimmedWingMaterial(g.mat, trim, spec.url) : g.mat;
     for (const geo of merged ? [merged] : g.geos) {
       geo.computeBoundingSphere();
       const mesh = new THREE.Mesh(geo, mat);
@@ -273,6 +285,70 @@ export function bake(scene: THREE.Object3D, spec: HdSpec, def: AircraftDef): THR
 }
 
 const GEAR_DOORS = '#gearDoors';
+
+/**
+ * A model's wing root reaches forward of the pivot, hidden in the glove at the sweep it was built at. A real Tomcat's
+ * root is rounded about the pivot so it stays inside the glove at any sweep; a modelled straight root swings its
+ * forward corner out through the side of the glove instead. The wing's material therefore discards, per pixel, every
+ * part of the wing that sits inside the glove outline at the reference sweep forward of the pivot: hidden anyway at
+ * that sweep, and exactly the part that would poke out at higher ones.
+ */
+export interface RootTrim { pivotZ: number; z0: number; dz: number; edge: Float32Array }
+const TRIM_N = 64;
+
+/** the glove/fuselage half-width (game metres) along z forward of the pivot, from the airframe near wing height */
+export function gloveOutline(parts: { name: string; geo: THREE.BufferGeometry; wing: number }[], pivot: { x: number; z: number }): RootTrim | null {
+  const wings = parts.filter((p) => p.wing);
+  if (!wings.length) return null;
+  let wy = 0, wn = 0;
+  for (const p of wings) { const a = p.geo.getAttribute('position'); for (let i = 0; i < a.count; i++) { wy += a.getY(i); wn++; } }
+  wy /= wn;
+  const dz = 0.125, z0 = pivot.z - dz * (TRIM_N - 1);
+  const edge = new Float32Array(TRIM_N);
+  for (const p of parts) {
+    if (p.wing || /gear|wheel/i.test(p.name)) continue;
+    const a = p.geo.getAttribute('position');
+    for (let i = 0; i < a.count; i++) {
+      if (Math.abs(a.getY(i) - wy) > 0.6) continue;
+      const k = Math.round((a.getZ(i) - z0) / dz);
+      if (k >= 0 && k < TRIM_N) edge[k] = Math.max(edge[k], Math.abs(a.getX(i)));
+    }
+  }
+  // a little inside the outline, so the wing still meets the glove edge with no gap
+  for (let k = 0; k < TRIM_N; k++) edge[k] = Math.max(0, edge[k] - 0.04);
+  return { pivotZ: pivot.z, z0, dz, edge };
+}
+
+const trimmed = new Map<string, THREE.Material>();
+/** the wing material with the glove cut-out (see RootTrim); cached per source material and trim */
+export function trimmedWingMaterial(mat: THREE.Material, trim: RootTrim, key: string): THREE.Material {
+  const k = `${mat.uuid}|${key}`;
+  let m = trimmed.get(k);
+  if (m) return m;
+  m = mat.clone();
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uTrimEdge = { value: Array.from(trim.edge) };
+    sh.uniforms.uTrim = { value: new THREE.Vector3(trim.pivotZ, trim.z0, trim.dz) };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vRefPos;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRefPos = position;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+varying vec3 vRefPos;
+uniform float uTrimEdge[${TRIM_N}];
+uniform vec3 uTrim;`)
+      .replace('void main() {', `void main() {
+  if (vRefPos.z < uTrim.x) {
+    float f = clamp((vRefPos.z - uTrim.y) / uTrim.z, 0.0, ${TRIM_N - 1}.0);
+    int i = int(floor(f));
+    float e = mix(uTrimEdge[i], uTrimEdge[min(i + 1, ${TRIM_N - 1})], fract(f));
+    if (abs(vRefPos.x) < e) discard;
+  }`);
+  };
+  m.customProgramCacheKey = () => `wingtrim|${k}`;
+  trimmed.set(k, m);
+  return m;
+}
 
 /** Split a geometry's triangles by their centroid: [rest, picked] (picked is null when no triangle matches). */
 export function cutTriangles(g: THREE.BufferGeometry, pick: (c: THREE.Vector3, far: number) => boolean):
