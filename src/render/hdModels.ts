@@ -1,6 +1,6 @@
 // Optional high-detail (HD) aircraft models loaded from glTF files (third-party, see the LICENSE.md next to each
-// file under assets/models/). The procedural model stays the source of truth: it is shown until the GLB has loaded,
-// beyond HD_RANGE, when HD models are disabled, and it is what hit-tests/physics are sized from.
+// file under assets/models/). The procedural model stays the source of truth: it is shown until the GLB has loaded and
+// when HD models are disabled, and it is what hit-tests/physics are sized from.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -160,8 +160,9 @@ export const HD_SPECS: Record<string, HdSpec> = {
   },
 };
 
-/** Distance (m) beyond which the cheaper procedural model is drawn instead. */
-export const HD_RANGE = 3500;
+/** Distance (m) beyond which the cheaper procedural model is drawn instead: none — CFS is aimed at high-end PCs, and a
+ *  jet that switches to a boxy stand-in in the distance is what playtesters notice. */
+export const HD_RANGE = Infinity;
 
 let enabled = true;
 export function setHdModelsEnabled(on: boolean) { enabled = on; }

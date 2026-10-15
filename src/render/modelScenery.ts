@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { ringMaterial, hash2 } from './scenery.js';
 
-export const DETAIL_SCENERY = 2000;
+export const DETAIL_SCENERY = 3000;
 /** inner radius of the procedural houses/trees ring: DETAIL_SCENERY while the models are shown, else 0 */
 export const proceduralInner = { value: 0 };
 const PLACE_R = DETAIL_SCENERY + 1100;   // placed this far, rebuilt every ~1 km of travel
@@ -59,7 +59,7 @@ export class ModelScenery {
       const tree = kind === 'tree';
       const meshes: THREE.Mesh[] = [];
       node.traverse((o) => { if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh); });
-      const cap = tree ? 15000 : kind === 'panel' ? 300 : 1500;
+      const cap = tree ? 30000 : kind === 'panel' ? 600 : 3000;
       const v: Variant = { name, size, meshes: [], n: 0, cap };
       for (const m of meshes) {
         const src = m.material as THREE.MeshStandardMaterial;
