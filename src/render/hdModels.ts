@@ -137,6 +137,23 @@ export const HD_SPECS: Record<string, HdSpec> = {
       { c: [0.187, 1.268, -4.808], w: 0.125, h: 0.112, n: [0, 0.21, 0.98], screen: 1 },
     ],
   },
+  // the F-15E only: its conformal tanks and two-seat canopy don't fit the F-15C/D
+  f15e: {
+    url: 'assets/models/cc-by-nc-sa/f15e.glb', title: 'F-15E Strike Eagle - Fighter Jet - Free', ...BOHMERANG,
+    source: 'https://sketchfab.com/3d-models/f-15e-strike-eagle-fighter-jet-free-fff7d75490474e9b964d90cc031c8d01', ...BOH_PARTS,
+    mfds: [
+      { c: [-0.2, 1.424, -5.645], w: 0.15, h: 0.14, n: [0, 0.2, 0.98], screen: 0 },
+      { c: [0.209, 1.424, -5.645], w: 0.15, h: 0.14, n: [0, 0.2, 0.98], screen: 1 },
+    ],
+  },
+  mig29a: {
+    url: 'assets/models/cc-by-nc-sa/mig29.glb', title: 'MiG-29 - Fighter Jet - Free', ...BOHMERANG,
+    source: 'https://sketchfab.com/3d-models/mig-29-fighter-jet-free-0a21787096244220b246ec8747e7b09c', ...BOH_PARTS,
+    // the HUD-derived eye point sits behind the seat: forward and up, over the HUD
+    eye: { y: 1.45, z: -3.2 },
+    // the radar/IRST display right of the HUD
+    mfds: [{ c: [0.19, 1.06, -3.838], w: 0.11, h: 0.1, n: [0, 0.26, 0.97], screen: 0 }],
+  },
   f4e: {
     url: 'assets/models/cc-by-nc-sa/f4.glb', title: 'F-4 Phantom II - Fighter Jet - Free', ...BOHMERANG,
     source: 'https://sketchfab.com/3d-models/f-4-phantom-ii-fighter-jet-free-f0b9ac8bdab149f3b75352a9f4f4e1c8', ...BOH_PARTS,
