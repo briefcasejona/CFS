@@ -30,13 +30,18 @@ function finSurface(points: P2[], thickness: number, mat: THREE.Material): THREE
   return new THREE.Mesh(g, mat);
 }
 
-import { HD_RANGE, hdModelsEnabled, requestHdModel, updateHdInstance, type HdInstance } from './hdModels.js';
+import { HD_RANGE, hdModelsEnabled, hdSpecFor, requestHdModel, updateHdInstance, type HdInstance } from './hdModels.js';
+import { createBurner, setBurnerTime, type Burner } from './afterburner.js';
+import { attachHdStore, hdStoreVersion, storeSpecFor } from './hdStores.js';
 
 export interface AircraftModel {
   root: THREE.Group;
   body: THREE.Group;
   stores: (THREE.Object3D | null)[];
-  burners: THREE.Mesh[];
+  /** procedural model's burners (shown while the HD model is not) */
+  burners: Burner[];
+  /** burners at the HD model's fitted nozzle exits */
+  hdBurners: Burner[];
   gear: THREE.Group;
   wingL: THREE.Object3D | null;
   wingR: THREE.Object3D | null;
@@ -49,7 +54,7 @@ export interface AircraftModel {
   /** optional high-detail glTF model (see hdModels.ts) */
   hd: HdInstance | null;
   /** stores hung against the HD airframe (done once after it loads) */
-  storesSnapped?: boolean;
+  storesSnapped?: number;
 }
 
 const storeMats = {
@@ -58,6 +63,13 @@ const storeMats = {
   tank: new THREE.MeshLambertMaterial({ color: 0x9aa0a4 }),
   arm: new THREE.MeshLambertMaterial({ color: 0xd8d8cc }),
 };
+
+/** length and body radius (m) of a missile: the HD model's real length when there is one */
+export function missileDims(id: string) {
+  const w = WEAPONS[id];
+  const r = Math.min(0.35, 0.08 + (w?.mass ?? 100) / 4000);
+  return { len: storeSpecFor(id)?.length ?? Math.min(5, 1.5 + (w?.mass ?? 100) / 70), r };
+}
 
 export function storeMesh(id: string): THREE.Object3D {
   const w = WEAPONS[id];
@@ -78,8 +90,7 @@ export function storeMesh(id: string): THREE.Object3D {
       g.add(s);
     }
   } else {
-    const len = Math.min(5, 1.5 + w.mass / 70);
-    const r = Math.min(0.35, 0.08 + w.mass / 4000);
+    const { len, r } = missileDims(id);
     const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 8), w.kind === 'arm' ? storeMats.arm : storeMats.missile);
     m.rotation.x = Math.PI / 2;
     g.add(m);
@@ -90,6 +101,7 @@ export function storeMesh(id: string): THREE.Object3D {
     fin.position.z = len / 2 - r * 2;
     g.add(fin);
     const fin2 = fin.clone(); fin2.rotation.z = Math.PI / 2; g.add(fin2);
+    attachHdStore(g, id);
   }
   return g;
 }
@@ -145,20 +157,16 @@ export function buildAircraftModel(def: AircraftDef, side: 'blue' | 'red'): Airc
     }
   }
 
-  const burners: THREE.Mesh[] = [];
-  const burnMat = new THREE.MeshBasicMaterial({ color: 0xffa040, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false });
+  const burners: Burner[] = [];
   const nozMat = new THREE.MeshLambertMaterial({ color: 0x3a3a3a, side: THREE.DoubleSide });
   for (const x of md.engines === 2 ? [-R * 0.6, R * 0.6] : [0]) {
     const nz = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.45, R * 0.5, L * 0.06, 10, 1, true), nozMat);
     nz.rotation.x = Math.PI / 2;
     nz.position.set(x, 0, L * 0.47);
     body.add(nz);
-    const plume = new THREE.Mesh(new THREE.ConeGeometry(R * 0.42, L * 0.35, 10, 1, true), burnMat);
-    plume.rotation.x = -Math.PI / 2;
-    plume.position.set(x, 0, L * 0.67);
-    plume.visible = false;
-    body.add(plume);
-    burners.push(plume);
+    const b = createBurner(x, 0, L * 0.5, R * 0.45);
+    body.add(b.group);
+    burners.push(b);
   }
 
   // wings
@@ -242,8 +250,11 @@ export function buildAircraftModel(def: AircraftDef, side: 'blue' | 'red'): Airc
   wheel(gd.track / 2, gd.main);
   body.add(gear);
 
-  const model: AircraftModel = { root, body, stores: [], burners, gear, wingL, wingR, canopy, fuselage, proc: body.children.filter((c) => !burners.includes(c as THREE.Mesh)), hd: null };
-  requestHdModel(def, (inst) => { model.hd = inst; body.add(inst.root); });
+  const model: AircraftModel = { root, body, stores: [], burners, hdBurners: [], gear, wingL, wingR, canopy, fuselage, proc: body.children.filter((c) => !burners.some((b) => b.group === c)), hd: null };
+  requestHdModel(def, (inst) => {
+    model.hd = inst; body.add(inst.root);
+    for (const n of hdSpecFor(def)?.nozzles ?? []) { const b = createBurner(n.x, n.y, n.z, n.r); inst.root.add(b.group); model.hdBurners.push(b); }
+  });
   return model;
 }
 
@@ -264,7 +275,8 @@ export function syncStores(model: AircraftModel, ac: Aircraft, stationOffset: (i
     if (m) m.visible = !!ac.stores[i] && ac.def.id !== 'su57';
   }
   // once the HD airframe is in, hang every store right under the surface above its station
-  if (model.hd && !model.storesSnapped) { snapStores(model, stationOffset); model.storesSnapped = true; }
+  // (again whenever an HD missile model has loaded since, as it changes the store's size)
+  if (model.hd && model.storesSnapped !== hdStoreVersion()) { snapStores(model, stationOffset); model.storesSnapped = hdStoreVersion(); }
 }
 
 const snapRay = new THREE.Raycaster();
@@ -293,11 +305,10 @@ export function updateAircraftModel(model: AircraftModel, ac: Aircraft, t: numbe
   const fm = ac.fm;
   model.root.position.copy(fm.pos);
   model.root.quaternion.copy(fm.quat);
-  const ab = fm.abFrac;
-  for (const b of model.burners) {
-    b.visible = ab > 0.05 && ac.alive;
-    b.scale.set(1, 0.6 + ab * 0.6 + Math.sin(t * 60 + b.id) * 0.05, 1);
-  }
+  setBurnerTime(t);
+  const eng = { ab: fm.abFrac, core: fm.core, alive: ac.alive };
+  for (const b of model.burners) b.update(eng);
+  for (const b of model.hdBurners) b.update(eng);
   model.gear.visible = fm.gearPos > 0.3;
   model.gear.scale.y = Math.max(0.05, fm.gearPos);
   if (ac.def.fcs.swingWing && model.wingL && model.wingR) {
@@ -309,6 +320,8 @@ export function updateAircraftModel(model: AircraftModel, ac: Aircraft, t: numbe
     const useHd = hdModelsEnabled() && camDist < HD_RANGE;
     model.hd.root.visible = useHd;
     for (const p of model.proc) p.visible = !useHd;
+    // the HD model carries its own burners (inside its root); without fitted nozzles keep the procedural ones
+    for (const b of model.burners) b.group.visible = !useHd || model.hdBurners.length === 0;
     if (useHd) { model.gear.visible = false; updateHdInstance(model.hd, fm.gearPos, fm.sweep); }
     else model.gear.visible = fm.gearPos > 0.3;
   }

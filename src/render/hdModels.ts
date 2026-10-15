@@ -35,6 +35,9 @@ export interface HdSpec {
   /** live MFD screens laid over the model's painted ones (game body frame, metres): centre, size, facing normal and
    *  which display (0 = left MFD canvas, 1 = right) — measured by raycasting the cockpit from the eye point */
   mfds?: Array<{ c: [number, number, number]; w: number; h: number; n: [number, number, number]; screen: 0 | 1 }>;
+  /** engine nozzle exits (game body frame, metres): centre of the exit plane and its inner radius; fitted by casting
+   *  rays forward from behind the jet and taking the rearmost ring of the nozzle petals */
+  nozzles?: Array<{ x: number; y: number; z: number; r: number }>;
 }
 
 const BOHMERANG = { author: 'bohmerang', license: 'CC BY-NC-SA 4.0' };
@@ -44,6 +47,7 @@ const NEVER = /(?!)/;
 // bohmerang's F-14A: the wings are part of the one airframe mesh, so they are cut out of it at bake time
 const BOH_F14: HdSpec = {
   url: 'assets/models/cc-by-nc-sa/f14.glb', title: 'F-14 Tomcat - Fighter Jet - Free', ...BOHMERANG,
+  nozzles: [{ x: -1.436, y: 0.211, z: 8.695, r: 0.39 }, { x: 1.436, y: 0.211, z: 8.695, r: 0.39 }],
   source: 'https://sketchfab.com/3d-models/f-14-tomcat-fighter-jet-free-497f77c311b5411d9b567d8707a81c33',
   gearDown: /gearOn/i, gearUp: /gearOff/i, cockpit: /cockpit|instrGlass/i,
   wings: { parts: /airframe_0/, pivot: { x: 2.72, z: 1.55 }, refSweep: 20, split: { reach: 3.6, maxZ: 5.0 } },
@@ -58,6 +62,7 @@ const BOH_F14: HdSpec = {
 
 const BOH_F16: HdSpec = {
   url: 'assets/models/cc-by-nc-sa/f16.glb', title: 'F-16 Fighting Falcon - Fighter Jet - Free', ...BOHMERANG,
+  nozzles: [{ x: 0, y: 0.242, z: 6.963, r: 0.39 }],
   source: 'https://sketchfab.com/3d-models/f-16-fighting-falcon-fighter-jet-free-f0b00989e5634764848ef2c235c64db5', ...BOH_PARTS,
   mfds: [
     { c: [-0.168, 0.835, -3.923], w: 0.08, h: 0.088, n: [0, 0.23, 0.97], screen: 0 },
@@ -73,6 +78,7 @@ export const HD_SPECS: Record<string, HdSpec> = {
   // F-14B(U): KOG_THORNS' F-14B, fitted with bohmerang's F-14A landing gear (so the file is CC BY-NC-SA as a whole)
   f14b: {
     url: 'assets/models/cc-by-nc-sa/f14b.glb', title: 'Grumman F-14B Tomcat', author: 'KOG_THORNS, gear by bohmerang',
+    nozzles: [{ x: -1.43, y: -0.144, z: 8.96, r: 0.45 }, { x: 1.43, y: -0.144, z: 8.96, r: 0.45 }],
     source: 'https://sketchfab.com/3d-models/grumman-f-14b-tomcat-50285312fae748b3811b9cb7804cab29', license: 'CC BY 4.0 / CC BY-NC-SA 4.0',
     axes: 'game',
     gearDown: /f14a-gearOn/, gearUp: NEVER,
@@ -91,6 +97,7 @@ export const HD_SPECS: Record<string, HdSpec> = {
   // rigidly about the real pivot (2.72 m from the centreline) — the published 68° / 75° spans check out on it
   f14d: {
     url: 'assets/models/cc-by/f14d.glb', title: 'Grumman F-14D "Super Tomcat"', author: 'KOG_THORNS',
+    nozzles: [{ x: -1.394, y: 0.214, z: 9.17, r: 0.45 }, { x: 1.394, y: 0.214, z: 9.17, r: 0.45 }],
     source: 'https://sketchfab.com/3d-models/grumman-f-14d-super-tomcat-74be89a104a34caabacb25a705708097', license: 'CC BY 4.0',
     axes: 'zfwd',
     gearDown: /vehicle#(gear|wheel)_/i, gearUp: NEVER,
@@ -104,6 +111,7 @@ export const HD_SPECS: Record<string, HdSpec> = {
   },
   'JAS 39': {
     url: 'assets/models/cc-by-nc-sa/gripen.glb', title: 'Saab JAS 39 Gripen - Fighter Jet - Free', ...BOHMERANG,
+    nozzles: [{ x: 0, y: 0.436, z: 7.048, r: 0.31 }],
     source: 'https://sketchfab.com/3d-models/saab-jas-39-gripen-fighter-jet-free-03d4f4f0f7e94f469299ba7db4c707c4', ...BOH_PARTS,
     // the model's canopy is small for the jet: sit high in it, just aft of the windscreen bow, to see over the HUD
     eye: { y: 1.04, z: -2.82 },
@@ -120,6 +128,7 @@ export const HD_SPECS: Record<string, HdSpec> = {
   // two-seat F-16D Block 70 (the model is a Block 60, with the conformal tanks the Block 70 carries)
   f16d70: {
     url: 'assets/models/cc-by/f16d70.glb', title: 'General Dynamics F-16D Block 60', author: 'MirzaArrafiERV_45',
+    nozzles: [{ x: 0, y: 0.377, z: 7.127, r: 0.5 }],
     source: 'https://sketchfab.com/3d-models/general-dynamics-f-16d-block-60-ea8edb08d79e4eafa9c794c581f88cf3', license: 'CC BY 4.0',
     // single-primitive nodes load as the mesh itself, named after the node with '.' dropped (Object_9.001 → Object_9001)
     axes: 'game', gearDown: /\/Object_(9|11)\/$/, gearUp: NEVER, hide: /\/Object_21\/$/,
@@ -131,6 +140,7 @@ export const HD_SPECS: Record<string, HdSpec> = {
   // the Super Hornet model only: the legacy F/A-18C has a different (smaller) airframe and keeps the procedural model
   fa18e: {
     url: 'assets/models/cc-by-nc-sa/fa18f.glb', title: 'Boeing F/A-18F Super Hornet - Free', ...BOHMERANG,
+    nozzles: [{ x: -0.445, y: 0.696, z: 8.209, r: 0.32 }, { x: 0.445, y: 0.696, z: 8.209, r: 0.32 }],
     source: 'https://sketchfab.com/3d-models/boeing-fa-18f-super-hornet-free-447caa975f534554a83f70f0877b73fb', ...BOH_PARTS,
     mfds: [
       { c: [-0.186, 1.268, -4.808], w: 0.125, h: 0.112, n: [0, 0.21, 0.98], screen: 0 },
@@ -140,6 +150,7 @@ export const HD_SPECS: Record<string, HdSpec> = {
   // the F-15E only: its conformal tanks and two-seat canopy don't fit the F-15C/D
   f15e: {
     url: 'assets/models/cc-by-nc-sa/f15e.glb', title: 'F-15E Strike Eagle - Fighter Jet - Free', ...BOHMERANG,
+    nozzles: [{ x: -0.684, y: 0.529, z: 8.101, r: 0.35 }, { x: 0.684, y: 0.529, z: 8.101, r: 0.35 }],
     source: 'https://sketchfab.com/3d-models/f-15e-strike-eagle-fighter-jet-free-fff7d75490474e9b964d90cc031c8d01', ...BOH_PARTS,
     mfds: [
       { c: [-0.2, 1.424, -5.645], w: 0.15, h: 0.14, n: [0, 0.2, 0.98], screen: 0 },
@@ -148,6 +159,7 @@ export const HD_SPECS: Record<string, HdSpec> = {
   },
   mig29a: {
     url: 'assets/models/cc-by-nc-sa/mig29.glb', title: 'MiG-29 - Fighter Jet - Free', ...BOHMERANG,
+    nozzles: [{ x: -0.916, y: -0.089, z: 7.0, r: 0.42 }, { x: 0.916, y: -0.089, z: 7.0, r: 0.42 }],
     source: 'https://sketchfab.com/3d-models/mig-29-fighter-jet-free-0a21787096244220b246ec8747e7b09c', ...BOH_PARTS,
     // the HUD-derived eye point sits behind the seat: forward and up, over the HUD
     eye: { y: 1.45, z: -3.2 },
@@ -156,6 +168,7 @@ export const HD_SPECS: Record<string, HdSpec> = {
   },
   f4e: {
     url: 'assets/models/cc-by-nc-sa/f4.glb', title: 'F-4 Phantom II - Fighter Jet - Free', ...BOHMERANG,
+    nozzles: [{ x: -0.65, y: 0.3, z: 5.85, r: 0.42 }, { x: 0.65, y: 0.3, z: 5.85, r: 0.42 }],
     source: 'https://sketchfab.com/3d-models/f-4-phantom-ii-fighter-jet-free-f0b9ac8bdab149f3b75352a9f4f4e1c8', ...BOH_PARTS,
   },
 };
