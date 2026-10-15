@@ -195,3 +195,28 @@ describe('HD models', () => {
     }
   });
 });
+
+describe('HD missiles', () => {
+  it('turns a missile to nose-forward (-z), centres it and scales it to its real length', async () => {
+    const { normaliseStore, storeSpecFor } = await import('../src/render/hdStores.js');
+    for (const id of ['aim120c', 'aim54c', 'aim9m']) {
+      const spec = storeSpecFor(id)!;
+      const t = normaliseStore(await loadGlbScene(spec.url), spec.length, spec.roll);
+      const box = new THREE.Box3().setFromObject(t);
+      expect(box.max.z - box.min.z).toBeCloseTo(spec.length, 2);
+      expect(Math.abs(box.max.z + box.min.z)).toBeLessThan(0.01);
+      // the nose (-z end) is a point; the tail end carries the nozzle and fins
+      let rNose = 0, rTail = 0;
+      t.traverse((o) => {
+        const g = (o as THREE.Mesh).geometry; if (!g) return;
+        const p = g.attributes.position;
+        for (let i = 0; i < p.count; i++) {
+          const z = p.getZ(i), r = Math.hypot(p.getX(i), p.getY(i));
+          if (z < box.min.z + 0.05) rNose = Math.max(rNose, r);
+          if (z > box.max.z - 0.05) rTail = Math.max(rTail, r);
+        }
+      });
+      expect(rNose).toBeLessThan(rTail);
+    }
+  });
+});

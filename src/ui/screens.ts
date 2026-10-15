@@ -11,6 +11,7 @@ import type { NetHook } from '../game/session.js';
 import { multiplayerScreen } from './multiplayer.js';
 import { editorScreen } from './editor.js';
 import { hdCredits, setHdModelsEnabled } from '../render/hdModels.js';
+import { hdStoreCredits } from '../render/hdStores.js';
 import { MENU_THEMES } from './menuBackground.js';
 import { setImageryEnabled } from '../render/imagery.js';
 import { SCENERY_CREDITS } from '../render/modelScenery.js';
@@ -384,7 +385,7 @@ export function settingsScreen(app: AppApi): HTMLElement {
           <label>Field of view (deg) <input data-n="fov" type="number" min="40" max="110" value="${s.fov}"></label>
           <label>Max visibility (km) <input data-n="visibilityKm" type="number" min="10" max="150" value="${s.visibilityKm}"></label>
           ${chk('hdModels', 'HD aircraft models', 'detailed 3D models where available (F-14, F-16, F/A-18F, F-4, Gripen) and real buildings and trees on the Europe map; loaded on demand, ~4–7 MB each')}
-          <div class="muted small credits">3D models: ${hdCredits().map((c) => `"${esc(c.title)}" by ${esc(c.author)} (<a href="${c.source}" target="_blank" rel="noopener">Sketchfab</a>), ${c.license}, textures re-encoded`).join(' · ')}</div>
+          <div class="muted small credits">3D models: ${[...hdCredits(), ...hdStoreCredits()].map((c) => `"${esc(c.title)}" by ${esc(c.author)} (<a href="${c.source}" target="_blank" rel="noopener">Sketchfab</a>), ${c.license}, textures re-encoded`).join(' · ')}</div>
           <div class="muted small credits">Europe buildings and trees: ${SCENERY_CREDITS.map((c) => `"${esc(c.title)}" by ${esc(c.author)} (<a href="${c.source}" target="_blank" rel="noopener">Sketchfab</a>)`).join(' · ')}, CC BY 4.0; split into separate objects, merged and textures re-encoded.</div>
           ${chk('satImagery', 'Satellite imagery', 'real Sentinel-2 imagery on the Northern Europe and Persian Gulf maps, streamed while you fly (your browser contacts tiles.maps.eox.at); off = painted ground, nothing downloaded')}
           <div class="muted small credits">Satellite imagery: <a href="https://s2maps.eu" target="_blank" rel="noopener">Sentinel-2 cloudless - https://s2maps.eu</a> by <a href="https://eox.at" target="_blank" rel="noopener">EOX IT Services GmbH</a> (Contains modified Copernicus Sentinel data 2024), <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>; reprojected onto the terrain.</div>

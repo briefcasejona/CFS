@@ -4,7 +4,8 @@ import type { Aircraft, GroundUnit } from '../sim/entities.js';
 import type { Missile } from '../weapons/missile.js';
 import { TerrainRenderer, buildScenery } from './terrainMesh.js';
 import { buildCarrierMesh } from './carrierMesh.js';
-import { buildAircraftModel, updateAircraftModel, syncStores, groundMesh, storeMesh, type AircraftModel } from './models.js';
+import { buildAircraftModel, updateAircraftModel, syncStores, groundMesh, storeMesh, missileDims, type AircraftModel } from './models.js';
+import { createBurner, type Burner } from './afterburner.js';
 import { hdSpecFor } from './hdModels.js';
 import { updatePapi, type Airfield } from './airfield.js';
 import { Effects } from './particles.js';
@@ -187,7 +188,15 @@ export class SceneRenderer {
     for (const ms of world.missiles) {
       mseen.add(ms.id);
       let m = this.missileModels.get(ms.id);
-      if (!m) { m = storeMesh(ms.def.id); this.missileModels.set(ms.id, m); this.scene.add(m); }
+      if (!m) {
+        m = storeMesh(ms.def.id);
+        // the motor's flame at the tail, the same burner the jets use
+        const { len, r } = missileDims(ms.def.id);
+        const b = createBurner(0, 0, len / 2, r * 0.75);
+        m.add(b.group); m.userData.burner = b;
+        this.missileModels.set(ms.id, m); this.scene.add(m);
+      }
+      (m.userData.burner as Burner).update({ ab: ms.motorOn ? 1 : 0, core: ms.motorOn ? 1 : 0, alive: ms.motorOn });
       m.position.copy(ms.pos);
       const v = ms.vel.clone();
       if (v.lengthSq() > 1) m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), v.normalize());

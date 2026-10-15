@@ -316,7 +316,7 @@ const _v = new THREE.Vector3(), _f = new THREE.Vector3(), _a = new THREE.Vector3
  */
 export class Effects {
   readonly group = new THREE.Group();
-  smoke = new Particles(9000, 'smoke');
+  smoke = new Particles(24000, 'smoke');
   fire = new Particles(4000, 'fire', { minPx: 1.2 });
   sparks = new Particles(3000, 'spark', { stretch: 0.045, minPx: 1.4 });
   /** tracers, flare cores and muzzle flashes: rebuilt every frame */
@@ -371,10 +371,22 @@ export class Effects {
       live.add(ms.id);
       _f.copy(ms.vel); const spd = _f.length(); if (spd > 1) _f.multiplyScalar(1 / spd); else _f.set(0, 0, -1);
       _v.copy(ms.pos).addScaledVector(_f, -1.8);
-      if (glare < G.max) G.put(glare++, _v.x, _v.y, _v.z, 0, 0, 0, 3.2 + Math.random(), 0.9, Math.random() * 6, 1, 1, 0.85, 0.6);
+      // a soft halo for distance (the motor flame itself is a burner on the missile model, see afterburner.ts)
+      if (glare < G.max) G.put(glare++, _v.x, _v.y, _v.z, 0, 0, 0, 1.6 + Math.random() * 0.5, 0.35, Math.random() * 6, 1, 1, 0.85, 0.6);
       if (hot < H.max) H.put(hot++, _v.x, _v.y, _v.z, -_f.x * 120, -_f.y * 120, -_f.z * 120, 0.5, 1, 0, 1, 1, 0.75, 0.4);
-      this.trail(ms.id, _v, Math.max(4, spd / 140), (x, y, z, f) => {
-        S.emit(x, y, z, rnd(2), rnd(2), rnd(2), 7 + Math.random() * 5, 1.4, 11 + Math.random() * 6, 0.55, 0.9, 0.9, 0.9, { drag: 0.6, buoy: 0.25, heat: f > 0.8 ? 0.25 : 0 });
+      // smoke: a tight, continuous column right behind the motor (short-lived puffs every half metre, lit orange by the
+      // flame) that hands over to a trail which billows out over ~20 s into broad, drifting cloud; the grey varies a
+      // little puff to puff
+      live.add(ms.id + 0.5);
+      this.trail(ms.id + 0.5, _v, 0.5, (x, y, z) => {
+        const g = 0.93 + Math.random() * 0.05;
+        S.emit(x, y, z, -_f.x * 20 + rnd(1), -_f.y * 20 + rnd(1), -_f.z * 20 + rnd(1), 0.5 + Math.random() * 0.3, 1.0, 3.2, 0.55,
+          g, g, g * 0.97, { drag: 2.5, heat: 0.25, fadeIn: 0.01 });
+      });
+      this.trail(ms.id, _v, Math.max(2.5, spd / 160), (x, y, z, f) => {
+        const g = 0.86 + Math.random() * 0.1;
+        S.emit(x + rnd(0.25), y + rnd(0.25), z + rnd(0.25), rnd(2.5), rnd(2.5), rnd(2.5), 14 + Math.random() * 10, 1.6, 13 + Math.random() * 8, 0.6,
+          g, g, g * 0.98, { drag: 0.5, buoy: 0.2, heat: f > 0.85 ? 0.2 : 0, fadeIn: 0.004 });
       });
     }
 
