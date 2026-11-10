@@ -38,6 +38,33 @@ export interface HdSpec {
   /** engine nozzle exits (game body frame, metres): centre of the exit plane and its inner radius; fitted by casting
    *  rays forward from behind the jet and taking the rearmost ring of the nozzle petals */
   nozzles?: Array<{ x: number; y: number; z: number; r: number }>;
+  /** moving parts (control surfaces, gear legs, doors), each turning about a hinge line given in the game body frame
+   *  (metres, at the reference sweep for parts on a swing wing); see Mover */
+  movers?: Mover[];
+}
+
+/**
+ * A part that turns about a hinge line a→b. Horizontal hinges are taken pointing +x (whichever order they are given in)
+ * and vertical ones pointing up, so a positive angle is trailing edge down, or trailing edge to the right for a rudder.
+ * The angle is the sum of the drives: surface deflections in radians times a gain (elev/ail/rud), and degrees at
+ * full travel for flaps (0..1), speedbrake (0..1), spoilers (rising with the roll command towards `side`, locked out
+ * above `maxSweep`) and gear (0 down .. 1 stowed; a stowed gear leg is hidden).
+ */
+export interface Mover {
+  parts: RegExp;
+  hinge: [[number, number, number], [number, number, number]];
+  elev?: number; ail?: number; rud?: number;
+  flap?: number; brake?: number; gear?: number;
+  spoiler?: { deg: number; side: 1 | -1; maxSweep?: number };
+}
+
+/** Flight-control state that drives the movers. */
+export interface HdControls {
+  /** surface deflections (rad, flight-model sign) */
+  elev: number; ail: number; rud: number;
+  /** roll command, −1..1 (+ = right wing down) */
+  roll: number;
+  flap: number; brake: number;
 }
 
 const BOHMERANG = { author: 'bohmerang', license: 'CC BY-NC-SA 4.0' };
@@ -87,6 +114,30 @@ export const HD_SPECS: Record<string, HdSpec> = {
     // model's straight wing root stays inside the glove at full sweep (z 16, from the published spans, let it poke out)
     wings: { parts: /\/Meshes(5151|1361|1441|6141|951|1721|1051|4171|1151|7111|891|1541|1641)\//, pivot: { x: 12.0, z: 14.0 }, refSweep: 20 },
     eye: { y: 1.21, z: -4.92 },
+    // hinge lines fitted to the parts' edges (flaps, spoilers: leading edge; slats: trailing edge; rudders: leading
+    // edge; stabilators: their spindle at ~40 % root chord; gear legs: top of the strut)
+    movers: [
+      // flaps (with their track fittings) and slats on the maneuver/landing flap handle
+      { parts: /\/Meshes(1051|1441|1361)\//, hinge: [[2.255, 0.424, 3.253], [8.896, 0.442, 4.662]], flap: 35 },
+      { parts: /\/Meshes(1151|1541)\//, hinge: [[-2.395, 0.388, 3.322], [-8.89, 0.408, 4.699]], flap: 35 },
+      { parts: /\/Meshes6141\//, hinge: [[3.623, 0.511, 1.828], [8.749, 0.431, 3.938]], flap: -17 },
+      { parts: /\/Meshes7111\//, hinge: [[-3.698, 0.472, 1.911], [-8.719, 0.398, 3.975]], flap: -17 },
+      // spoilers: roll control at low sweep, up on the down-going wing
+      { parts: /\/Meshes951\//, hinge: [[4.341, 0.503, 3.358], [8.112, 0.462, 4.315]], spoiler: { deg: 55, side: 1, maxSweep: 57 } },
+      { parts: /\/Meshes891\//, hinge: [[-4.398, 0.467, 3.413], [-8.086, 0.427, 4.348]], spoiler: { deg: 55, side: -1, maxSweep: 57 } },
+      // stabilators: pitch, plus differential for roll; rudders
+      { parts: /\/Meshes1841\//, hinge: [[2.0, -0.1, 6.9], [4.9, -0.2, 6.9]], elev: -1, ail: -0.6 },
+      { parts: /\/Meshes1941\//, hinge: [[-2.0, -0.1, 6.9], [-4.9, -0.2, 6.9]], elev: -1, ail: 0.6 },
+      { parts: /\/Meshes2131\//, hinge: [[1.411, 0.485, 7.622], [1.562, 2.662, 8.811]], rud: 1 },
+      { parts: /\/Meshes2041\//, hinge: [[-1.29, 0.484, 7.611], [-1.556, 2.654, 8.805]], rud: 1 },
+      // gear: the nose leg and both main legs swing forward into the fuselage and gloves, the doors swing shut
+      { parts: /\/f14a-gearOn(010|017|025)?\//, hinge: [[-0.3, 0.25, -4.25], [0.3, 0.25, -4.25]], gear: 100 },
+      { parts: /\/f14a-gearOn(002|003|005|018)\//, hinge: [[1.9, 0.1, 2.6], [2.4, 0.1, 2.6]], gear: 95 },
+      { parts: /\/f14a-gearOn(001|004|006|019)\//, hinge: [[-1.9, 0.1, 2.6], [-2.4, 0.1, 2.6]], gear: 95 },
+      { parts: /\/f14a-gearOn007\//, hinge: [[1.95, -0.03, 1.08], [1.95, -0.03, 1.9]], gear: 90 },
+      { parts: /\/f14a-gearOn008\//, hinge: [[-1.95, -0.02, 1.08], [-1.95, -0.02, 1.9]], gear: -90 },
+      { parts: /\/f14a-gearOn013\//, hinge: [[0.3, 0.05, -5.39], [0.3, 0.05, -4.3]], gear: 90 },
+    ],
     // the VDI (radar page) and, below it, the HSD (RWR / stores page)
     mfds: [
       { c: [0.001, 0.785, -5.602], w: 0.146, h: 0.146, n: [0, 0.38, 0.92], screen: 0 },
@@ -234,7 +285,7 @@ function pathOf(o: THREE.Object3D) {
 export function bake(scene: THREE.Object3D, spec: HdSpec, def: AircraftDef): THREE.Group {
   scene.updateMatrixWorld(true);
   const toGame = SRC_TO_GAME[spec.axes ?? 'xfwd'];
-  const parts: { name: string; geo: THREE.BufferGeometry; mat: THREE.Material; wing: number }[] = [];
+  const parts: { name: string; geo: THREE.BufferGeometry; mat: THREE.Material; wing: number; mover: number }[] = [];
   scene.traverse((o) => {
     const m = o as THREE.Mesh;
     if (!m.isMesh) return;
@@ -246,7 +297,8 @@ export function bake(scene: THREE.Object3D, spec: HdSpec, def: AircraftDef): THR
     if (!g.getAttribute('normal')) g.computeVertexNormals();   // parts simplified without normals
     let wing = 0;
     if (spec.wings?.parts.test(name) && !spec.wings.split) { g.computeBoundingBox(); wing = Math.sign(g.boundingBox!.min.x + g.boundingBox!.max.x) || 1; }
-    parts.push({ name, geo: g, mat: m.material as THREE.Material, wing });
+    const mover = spec.movers?.findIndex((mv) => mv.parts.test(name)) ?? -1;
+    parts.push({ name, geo: g, mat: m.material as THREE.Material, wing, mover });
   });
   const doors = spec.gearDoors;
   if (doors) {
@@ -286,7 +338,7 @@ export function bake(scene: THREE.Object3D, spec: HdSpec, def: AircraftDef): THR
     }
   }
   // merge parts that share role, wing side, material and attribute layout
-  const groups = new Map<string, { role: string; wing: number; mat: THREE.Material; geos: THREE.BufferGeometry[]; name: string; hud: boolean }>();
+  const groups = new Map<string, { role: string; wing: number; mover: number; mat: THREE.Material; geos: THREE.BufferGeometry[]; name: string; hud: boolean }>();
   for (const p of parts) {
     const role = isGearDown(p.name) ? 'gearDown' : spec.gearUp.test(p.name) ? 'gearUp'
       : spec.cockpit.test(p.name) ? 'cockpit' : spec.hide?.test(p.name) ? 'hidden' : 'body';
@@ -294,9 +346,9 @@ export function bake(scene: THREE.Object3D, spec: HdSpec, def: AircraftDef): THR
     const mats = (Array.isArray(p.mat) ? p.mat : [p.mat]) as THREE.MeshStandardMaterial[];
     for (const mt of mats) if (mt.isMeshStandardMaterial && mt.metalness > 0.4) mt.metalness = 0.4; // no env map: keep metal from going black
     const layout = Object.keys(p.geo.attributes).sort().join(',') + (p.geo.index ? ':i' : ':n');
-    const key = `${role}|${p.wing}|${hud}|${(p.mat as THREE.Material).uuid}|${layout}`;
+    const key = `${role}|${p.wing}|${p.mover}|${hud}|${(p.mat as THREE.Material).uuid}|${layout}`;
     let g = groups.get(key);
-    if (!g) { g = { role, wing: p.wing, mat: p.mat, geos: [], name: p.name, hud }; groups.set(key, g); }
+    if (!g) { g = { role, wing: p.wing, mover: p.mover, mat: p.mat, geos: [], name: p.name, hud }; groups.set(key, g); }
     g.geos.push(p.geo);
   }
   for (const g of groups.values()) {
@@ -309,6 +361,7 @@ export function bake(scene: THREE.Object3D, spec: HdSpec, def: AircraftDef): THR
       mesh.name = g.name;
       mesh.userData.role = g.role;
       mesh.userData.wing = g.wing;
+      mesh.userData.mover = g.mover;
       mesh.userData.hud = g.hud;
       root.add(mesh);
     }
@@ -447,11 +500,13 @@ export interface HdInstance {
   glass: THREE.Object3D[];
   /** pilot eye in the body frame */
   eye: THREE.Vector3;
+  /** hinged parts: one group per mover, sitting on its hinge */
+  movers: Array<{ group: THREE.Group; axis: THREE.Vector3; spec: Mover }>;
 }
 
 export function instantiateHd(t: { root: THREE.Group; spec: HdSpec }): HdInstance {
   const root = new THREE.Group();
-  const inst: HdInstance = { root, wings: null, gearDown: [], gearUp: [], cockpit: [], glass: [], eye: new THREE.Vector3() };
+  const inst: HdInstance = { root, wings: null, gearDown: [], gearUp: [], cockpit: [], glass: [], eye: new THREE.Vector3(), movers: [] };
   const pivot = t.root.userData.pivot as { x: number; z: number } | undefined;
   if (t.spec.wings && pivot) {
     const left = new THREE.Group(), right = new THREE.Group();
@@ -461,6 +516,7 @@ export function instantiateHd(t: { root: THREE.Group; spec: HdSpec }): HdInstanc
     inst.wings = { left, right, refSweep: t.spec.wings.refSweep };
   }
   const hudBox = new THREE.Box3();
+  const moverGroups = new Map<number, { group: THREE.Group; axis: THREE.Vector3; spec: Mover; a: THREE.Vector3 }>();
   for (const src of t.root.children as THREE.Mesh[]) {
     const role = src.userData.role as string;
     if (role === 'hidden') continue;
@@ -474,11 +530,29 @@ export function instantiateHd(t: { root: THREE.Group; spec: HdSpec }): HdInstanc
     const mm = m.material as THREE.Material;
     if (!src.userData.hud && (mm.transparent || /glass|canopy/i.test(mm.name))) inst.glass.push(m);
     const w = src.userData.wing as number;
-    if (inst.wings && w) {
+    const wingGrp = inst.wings && w ? (w < 0 ? inst.wings.left : inst.wings.right) : null;
+    const mi = src.userData.mover as number ?? -1;
+    if (mi >= 0 && t.spec.movers) {
+      // a hinged part: its group sits on the hinge (inside the wing group for a part on a swing wing)
+      let mv = moverGroups.get(mi);
+      if (!mv) {
+        const ms = t.spec.movers[mi];
+        const a = new THREE.Vector3(...ms.hinge[0]), axis = new THREE.Vector3(...ms.hinge[1]).sub(a).normalize();
+        if (Math.abs(axis.y) > 0.7 ? axis.y < 0 : axis.x < 0) axis.negate();
+        const group = new THREE.Group();
+        group.position.copy(a);
+        if (wingGrp) { group.position.sub(wingGrp.position); wingGrp.add(group); } else root.add(group);
+        mv = { group, axis, spec: ms, a };
+        moverGroups.set(mi, mv);
+        inst.movers.push(mv);
+      }
+      m.position.copy(mv.a).negate();
+      m.userData.hinged = true;
+      mv.group.add(m);
+    } else if (wingGrp) {
       // the wing group sits at the pivot, so the mesh is offset back by it
-      const grp = w < 0 ? inst.wings.left : inst.wings.right;
-      m.position.set(-grp.position.x, 0, -grp.position.z);
-      grp.add(m);
+      m.position.set(-wingGrp.position.x, 0, -wingGrp.position.z);
+      wingGrp.add(m);
     } else root.add(m);
   }
   // eye: explicit; else the design eye point ~0.65 m behind and just above the HUD combiner; else from the cockpit
@@ -508,10 +582,23 @@ export function hdCredits() {
 /** sweep (deg) → wing group rotation (rad) relative to the sweep the model was built at */
 export function wingRotation(sweepDeg: number, refSweep: number) { return (sweepDeg - refSweep) * Math.PI / 180; }
 
-export function updateHdInstance(inst: HdInstance, gearPos: number, sweepDeg: number) {
+const RAD = Math.PI / 180;
+
+export function updateHdInstance(inst: HdInstance, gearPos: number, sweepDeg: number, ctl?: HdControls) {
   const down = gearPos > 0.5;
-  for (const g of inst.gearDown) g.visible = down;
+  // gear legs with a hinge stay out while they travel; the rest of the gear swaps at half travel
+  for (const g of inst.gearDown) g.visible = g.userData.hinged ? gearPos > 0.01 : down;
   for (const g of inst.gearUp) g.visible = !down;
+  for (const mv of inst.movers) {
+    const m = mv.spec;
+    let a = (m.gear ?? 0) * (1 - gearPos) * RAD;
+    if (ctl) {
+      a += (m.elev ?? 0) * ctl.elev + (m.ail ?? 0) * ctl.ail + (m.rud ?? 0) * ctl.rud
+        + ((m.flap ?? 0) * ctl.flap + (m.brake ?? 0) * ctl.brake) * RAD;
+      if (m.spoiler && sweepDeg <= (m.spoiler.maxSweep ?? 90)) a -= m.spoiler.deg * Math.max(0, Math.min(1, m.spoiler.side * ctl.roll)) * RAD;
+    }
+    mv.group.quaternion.setFromAxisAngle(mv.axis, a);
+  }
   if (inst.wings) {
     // swept back, both tips move aft (+z): the left wing (−x) turns positive about +y, the right one negative
     const a = wingRotation(sweepDeg, inst.wings.refSweep);

@@ -322,7 +322,9 @@ export function updateAircraftModel(model: AircraftModel, ac: Aircraft, t: numbe
     for (const p of model.proc) p.visible = !useHd;
     // the HD model carries its own burners (inside its root); without fitted nozzles keep the procedural ones
     for (const b of model.burners) b.group.visible = !useHd || model.hdBurners.length === 0;
-    if (useHd) { model.gear.visible = false; updateHdInstance(model.hd, fm.gearPos, fm.sweep); }
+    if (useHd) { model.gear.visible = false; updateHdInstance(model.hd, fm.gearPos, fm.sweep, {
+      elev: fm.elev, ail: fm.ail, rud: fm.rud, roll: fm.ail / Math.max(1e-3, ac.def.controls.ail * DEG), flap: fm.flapPos, brake: fm.brakePos,
+    }); }
     else model.gear.visible = fm.gearPos > 0.3;
   }
 }
