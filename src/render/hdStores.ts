@@ -109,7 +109,7 @@ export function normaliseStore(scene: THREE.Object3D, length: number, roll = 0):
     p.geo.applyMatrix4(xf);
     p.geo.computeBoundingSphere();
     const mat = p.mat.clone() as THREE.MeshStandardMaterial;
-    if (mat.isMeshStandardMaterial && mat.metalness > 0.4) mat.metalness = 0.4;   // no env map: keep metal from going black
+    if (mat.isMeshStandardMaterial && mat.metalness > 0.75) mat.metalness = 0.75;   // painted stores: no mirror chrome
     const mesh = new THREE.Mesh(p.geo, mat);
     mesh.castShadow = true;
     root.add(mesh);

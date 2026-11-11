@@ -52,7 +52,17 @@ export interface HdSpec {
  */
 export interface Mover {
   parts: RegExp;
-  hinge: [[number, number, number], [number, number, number]];
+  /** hinge line; left out, it is fitted to the part: its leading edge ('le', the default: flaps, ailerons,
+   *  rudders), trailing edge ('te': slats, leading-edge flaps) or a third of the way back ('spindle': all-moving
+   *  stabilators) */
+  hinge?: [[number, number, number], [number, number, number]];
+  auto?: 'le' | 'te' | 'spindle';
+  /** the part is modelled into a larger mesh (one-piece airframes): the triangles of the `parts` nodes whose centre
+   *  lies inside this outline (game body frame, metres: [x, z] corners, or [z, y] corners with `side` for a fin-like
+   *  part) and, if given, within y[0]..y[1] (or x[0]..x[1] for a side outline) are cut out. With `shells`, whole
+   *  connected shells are taken instead (surfaces modelled as separate pieces of the mesh): those whose bounds lie
+   *  inside the outline's bounds and whose centre lies inside the outline */
+  cut?: { poly: Array<[number, number]>; y?: [number, number]; x?: [number, number]; side?: boolean; shells?: boolean };
   elev?: number; ail?: number; rud?: number;
   flap?: number; brake?: number; gear?: number;
   spoiler?: { deg: number; side: 1 | -1; maxSweep?: number };
@@ -74,6 +84,15 @@ const NEVER = /(?!)/;
 // bohmerang's F-14A: the wings are part of the one airframe mesh, so they are cut out of it at bake time
 const BOH_F14: HdSpec = {
   url: 'assets/models/cc-by-nc-sa/f14.glb', title: 'F-14 Tomcat - Fighter Jet - Free', ...BOHMERANG,
+  // flaps (cut out of the swinging wing pieces), stabilators, rudders; the spoilers stay painted on
+  movers: [
+    { parts: /airframe/, cut: { poly: [[3.7, 2], [9.1, 2.6], [9.1, 3.2], [3.7, 2.9]] }, flap: 35 },
+    { parts: /airframe/, cut: { poly: [[-3.7, 2], [-9.1, 2.6], [-9.1, 3.2], [-3.7, 2.9]] }, flap: 35 },
+    { parts: /airframe/, cut: { poly: [[1.95, 5.2], [5, 5.2], [5, 9.6], [1.95, 9.6]], shells: true }, auto: 'spindle', elev: -1, ail: -0.6 },
+    { parts: /airframe/, cut: { poly: [[-1.95, 5.2], [-5, 5.2], [-5, 9.6], [-1.95, 9.6]], shells: true }, auto: 'spindle', elev: -1, ail: 0.6 },
+    { parts: /airframe/, cut: { side: true, poly: [[8.25, 0.86], [8.95, 3.11], [9.5, 3.11], [8.8, 0.86]], x: [0.8, 2.6] }, rud: 1 },
+    { parts: /airframe/, cut: { side: true, poly: [[8.25, 0.86], [8.95, 3.11], [9.5, 3.11], [8.8, 0.86]], x: [-2.6, -0.8] }, rud: 1 },
+  ],
   nozzles: [{ x: -1.436, y: 0.211, z: 8.695, r: 0.39 }, { x: 1.436, y: 0.211, z: 8.695, r: 0.39 }],
   source: 'https://sketchfab.com/3d-models/f-14-tomcat-fighter-jet-free-497f77c311b5411d9b567d8707a81c33',
   gearDown: /gearOn/i, gearUp: /gearOff/i, cockpit: /cockpit|instrGlass/i,
@@ -90,6 +109,14 @@ const BOH_F14: HdSpec = {
 const BOH_F16: HdSpec = {
   url: 'assets/models/cc-by-nc-sa/f16.glb', title: 'F-16 Fighting Falcon - Fighter Jet - Free', ...BOHMERANG,
   nozzles: [{ x: 0, y: 0.242, z: 6.963, r: 0.39 }],
+  movers: [
+    // flaperons (roll, and down as flaps), all-moving stabilators (pitch plus differential roll), rudder
+    { parts: /airframe/, cut: { poly: [[1.05, 2.68], [3.46, 3.08], [3.46, 3.7], [1.05, 3.7]], y: [-0.3, 0.6] }, ail: -1, flap: 20 },
+    { parts: /airframe/, cut: { poly: [[-1.05, 2.68], [-3.46, 3.08], [-3.46, 3.7], [-1.05, 3.7]], y: [-0.3, 0.6] }, ail: 1, flap: 20 },
+    { parts: /airframe/, cut: { poly: [[1.0, 4.6], [2.9, 4.6], [2.9, 7.2], [1.0, 7.2]], y: [-0.3, 0.4] }, auto: 'spindle', elev: -1, ail: -0.5 },
+    { parts: /airframe/, cut: { poly: [[-1.0, 4.6], [-2.9, 4.6], [-2.9, 7.2], [-1.0, 7.2]], y: [-0.3, 0.4] }, auto: 'spindle', elev: -1, ail: 0.5 },
+    { parts: /airframe/, cut: { side: true, poly: [[5.74, 1.4], [7.05, 3.29], [7.6, 3.29], [6.6, 1.4]], x: [-0.2, 0.2] }, rud: 1 },
+  ],
   source: 'https://sketchfab.com/3d-models/f-16-fighting-falcon-fighter-jet-free-f0b00989e5634764848ef2c235c64db5', ...BOH_PARTS,
   mfds: [
     { c: [-0.168, 0.835, -3.923], w: 0.08, h: 0.088, n: [0, 0.23, 0.97], screen: 0 },
@@ -155,6 +182,22 @@ export const HD_SPECS: Record<string, HdSpec> = {
     cockpit: /MFD Display|DISPLAY|\/HUD\/|cockpit|Meshpart|RIO|\/Glass\//i,
     hud: /\/HUD\//,
     wings: { parts: /vehicle#(wing_[lr]_|slat_[lr]_|flap\w*?_[lr]_|aileron_interceptor_[lr]_)/i, pivot: { x: 2.72, z: 0.32 }, refSweep: 20 },
+    // every control surface is its own node: flaps, slats and spoilers ride on the swinging wings
+    movers: [
+      { parts: /vehicle#flap\w*_r_/, flap: 35 },
+      { parts: /vehicle#flap\w*_l_/, flap: 35 },
+      { parts: /vehicle#slat_r_/, auto: 'te', flap: -17 },
+      { parts: /vehicle#slat_l_/, auto: 'te', flap: -17 },
+      { parts: /vehicle#aileron_interceptor_r_/, spoiler: { deg: 55, side: 1, maxSweep: 57 } },
+      { parts: /vehicle#aileron_interceptor_l_/, spoiler: { deg: 55, side: -1, maxSweep: 57 } },
+      { parts: /elevator1_159/, auto: 'spindle', elev: -1, ail: -0.6 },
+      { parts: /elevator0_158/, auto: 'spindle', elev: -1, ail: 0.6 },
+      { parts: /vehicle#rudder1/, rud: 1 },
+      { parts: /vehicle#rudder0/, rud: 1 },
+      // speedbrake: the upper panel opens up, the lower one down
+      { parts: /vehicle#airbrake_l/, hinge: [[-0.8, 0.4, 7.32], [0.8, 0.4, 7.32]], brake: -55 },
+      { parts: /vehicle#airbrake_r/, hinge: [[-0.7, 0.27, 7.12], [0.7, 0.27, 7.12]], brake: 55 },
+    ],
     mfds: [
       { c: [0.007, 1.164, -5.652], w: 0.11, h: 0.105, n: [0, 0.17, 0.99], screen: 0 },
       { c: [0.187, 1.176, -5.653], w: 0.11, h: 0.105, n: [0, 0.17, 0.99], screen: 1 },
@@ -162,6 +205,16 @@ export const HD_SPECS: Record<string, HdSpec> = {
   },
   'JAS 39': {
     url: 'assets/models/cc-by-nc-sa/gripen.glb', title: 'Saab JAS 39 Gripen - Fighter Jet - Free', ...BOHMERANG,
+    movers: [
+      // inboard and outboard elevons (pitch and roll), all-moving canards, rudder
+      { parts: /airframe/, cut: { poly: [[1, 3.75], [2.44, 3.8], [2.44, 4.65], [1, 4.7]], y: [-0.4, 0.8] }, elev: -0.8, ail: -0.5 },
+      { parts: /airframe/, cut: { poly: [[-1, 3.75], [-2.44, 3.8], [-2.44, 4.65], [-1, 4.7]], y: [-0.4, 0.8] }, elev: -0.8, ail: 0.5 },
+      { parts: /airframe/, cut: { poly: [[2.46, 3.8], [3.85, 3.88], [3.85, 4.4], [2.46, 4.65]], y: [-0.4, 0.8] }, elev: -0.6, ail: -1 },
+      { parts: /airframe/, cut: { poly: [[-2.46, 3.8], [-3.85, 3.88], [-3.85, 4.4], [-2.46, 4.65]], y: [-0.4, 0.8] }, elev: -0.6, ail: 1 },
+      { parts: /airframe/, cut: { poly: [[0.97, -2.4], [2.2, -2.4], [2.2, 0.15], [0.97, 0.15]], y: [-0.3, 1.2] }, auto: 'spindle', elev: 1 },
+      { parts: /airframe/, cut: { poly: [[-0.97, -2.4], [-2.2, -2.4], [-2.2, 0.15], [-0.97, 0.15]], y: [-0.3, 1.2] }, auto: 'spindle', elev: 1 },
+      { parts: /airframe/, cut: { side: true, poly: [[5.67, 0.98], [5.78, 2.19], [6.25, 2.19], [6.36, 0.98]], x: [-0.3, 0.3] }, rud: 1 },
+    ],
     nozzles: [{ x: 0, y: 0.436, z: 7.048, r: 0.31 }],
     source: 'https://sketchfab.com/3d-models/saab-jas-39-gripen-fighter-jet-free-03d4f4f0f7e94f469299ba7db4c707c4', ...BOH_PARTS,
     // the model's canopy is small for the jet: sit high in it, just aft of the windscreen bow, to see over the HUD
@@ -187,10 +240,33 @@ export const HD_SPECS: Record<string, HdSpec> = {
     // nose and main gear doors are part of the lower fuselage mesh
     eye: { y: 1.27, z: -3.1 },
     gearDoors: { parts: /\/Object_5\/$/, boxes: [{ below: 0.9, z: [-3.2, -0.6] }, { below: 1.25, z: [-1.5, 2.5], x: [0.8, 1.35] }] },
+    // flaperons cut out of the wing mesh, the stabilators are their own nodes, the rudder is cut out of the fin
+    movers: [
+      { parts: /\/Object_[46]\/$/, cut: { poly: [[1.05, 2.68], [3.46, 3.08], [3.46, 3.7], [1.05, 3.7]], y: [-0.3, 0.7] }, ail: -1, flap: 20 },
+      { parts: /\/Object_[46]\/$/, cut: { poly: [[-1.05, 2.68], [-3.46, 3.08], [-3.46, 3.7], [-1.05, 3.7]], y: [-0.3, 0.7] }, ail: 1, flap: 20 },
+      { parts: /\/Object_23002\/$/, auto: 'spindle', elev: -1, ail: -0.5 },
+      { parts: /\/Object_23001\/$/, auto: 'spindle', elev: -1, ail: 0.5 },
+      { parts: /\/Object_23\/$/, cut: { side: true, poly: [[5.74, 1.4], [7.05, 3.29], [7.6, 3.29], [6.6, 1.4]], x: [-0.2, 0.2] }, rud: 1 },
+    ],
   },
   // the Super Hornet model only: the legacy F/A-18C has a different (smaller) airframe and keeps the procedural model
   fa18e: {
     url: 'assets/models/cc-by-nc-sa/fa18f.glb', title: 'Boeing F/A-18F Super Hornet - Free', ...BOHMERANG,
+    movers: [
+      // trailing-edge flaps and ailerons (flaps droop the ailerons too), leading-edge flaps, stabilators, rudders
+      { parts: /airframe/, cut: { poly: [[1.2, 2.85], [4.36, 2.85], [4.36, 4.5], [1.2, 4.5]], shells: true }, flap: 30 },
+      { parts: /airframe/, cut: { poly: [[-1.2, 2.85], [-4.36, 2.85], [-4.36, 4.5], [-1.2, 4.5]], shells: true }, flap: 30 },
+      { parts: /airframe/, cut: { poly: [[4.3, 3.2], [6.44, 3.2], [6.44, 4.35], [4.3, 4.35]], shells: true }, ail: -1, flap: 20 },
+      { parts: /airframe/, cut: { poly: [[-4.3, 3.2], [-6.44, 3.2], [-6.44, 4.35], [-4.3, 4.35]], shells: true }, ail: 1, flap: 20 },
+      { parts: /airframe/, cut: { poly: [[1.8, -0.05], [4.66, -0.05], [4.66, 2.05], [1.8, 2.05]], shells: true }, auto: 'te', flap: -12 },
+      { parts: /airframe/, cut: { poly: [[-1.8, -0.05], [-4.66, -0.05], [-4.66, 2.05], [-1.8, 2.05]], shells: true }, auto: 'te', flap: -12 },
+      { parts: /airframe/, cut: { poly: [[4.6, 1.25], [6.35, 1.25], [6.35, 2.7], [4.6, 2.7]], shells: true }, auto: 'te', flap: -12 },
+      { parts: /airframe/, cut: { poly: [[-4.6, 1.25], [-6.35, 1.25], [-6.35, 2.7], [-4.6, 2.7]], shells: true }, auto: 'te', flap: -12 },
+      { parts: /airframe/, cut: { poly: [[0.95, 5.2], [3.7, 5.2], [3.7, 9.3], [0.95, 9.3]], shells: true, y: [0.3, 1.05] }, auto: 'spindle', elev: -1, ail: -0.5 },
+      { parts: /airframe/, cut: { poly: [[-0.95, 5.2], [-3.7, 5.2], [-3.7, 9.3], [-0.95, 9.3]], shells: true, y: [0.3, 1.05] }, auto: 'spindle', elev: -1, ail: 0.5 },
+      { parts: /airframe/, cut: { side: true, poly: [[5.76, 1.19], [6.38, 2.94], [6.85, 2.94], [6.55, 1.19]], x: [0.6, 2.5] }, rud: 1 },
+      { parts: /airframe/, cut: { side: true, poly: [[5.76, 1.19], [6.38, 2.94], [6.85, 2.94], [6.55, 1.19]], x: [-2.5, -0.6] }, rud: 1 },
+    ],
     nozzles: [{ x: -0.445, y: 0.696, z: 8.209, r: 0.32 }, { x: 0.445, y: 0.696, z: 8.209, r: 0.32 }],
     source: 'https://sketchfab.com/3d-models/boeing-fa-18f-super-hornet-free-447caa975f534554a83f70f0877b73fb', ...BOH_PARTS,
     mfds: [
@@ -201,6 +277,17 @@ export const HD_SPECS: Record<string, HdSpec> = {
   // the F-15E only: its conformal tanks and two-seat canopy don't fit the F-15C/D
   f15e: {
     url: 'assets/models/cc-by-nc-sa/f15e.glb', title: 'F-15E Strike Eagle - Fighter Jet - Free', ...BOHMERANG,
+    movers: [
+      // plain flaps, ailerons, all-moving stabilators, rudders
+      { parts: /airframe/, cut: { poly: [[2.05, 4.38], [3.93, 4.38], [3.93, 5.32], [2.05, 5.32]], y: [-0.3, 1.2] }, flap: 30 },
+      { parts: /airframe/, cut: { poly: [[-2.05, 4.38], [-3.93, 4.38], [-3.93, 5.32], [-2.05, 5.32]], y: [-0.3, 1.2] }, flap: 30 },
+      { parts: /airframe/, cut: { poly: [[3.97, 4.42], [5.61, 5], [5.61, 5.58], [3.97, 5.32]], y: [-0.3, 1.2] }, ail: -1 },
+      { parts: /airframe/, cut: { poly: [[-3.97, 4.42], [-5.61, 5], [-5.61, 5.58], [-3.97, 5.32]], y: [-0.3, 1.2] }, ail: 1 },
+      { parts: /airframe/, cut: { poly: [[1.82, 6.2], [4.5, 6.2], [4.5, 9.9], [1.82, 9.9]], y: [-0.6, 0.9] }, auto: 'spindle', elev: -1, ail: -0.5 },
+      { parts: /airframe/, cut: { poly: [[-1.82, 6.2], [-4.5, 6.2], [-4.5, 9.9], [-1.82, 9.9]], y: [-0.6, 0.9] }, auto: 'spindle', elev: -1, ail: 0.5 },
+      { parts: /airframe/, cut: { side: true, poly: [[7.59, 1.08], [7.91, 2.54], [8.45, 2.54], [8.4, 1.08]], x: [1.2, 2.8] }, rud: 1 },
+      { parts: /airframe/, cut: { side: true, poly: [[7.59, 1.08], [7.91, 2.54], [8.45, 2.54], [8.4, 1.08]], x: [-2.8, -1.2] }, rud: 1 },
+    ],
     nozzles: [{ x: -0.684, y: 0.529, z: 8.101, r: 0.35 }, { x: 0.684, y: 0.529, z: 8.101, r: 0.35 }],
     source: 'https://sketchfab.com/3d-models/f-15e-strike-eagle-fighter-jet-free-fff7d75490474e9b964d90cc031c8d01', ...BOH_PARTS,
     mfds: [
@@ -210,6 +297,17 @@ export const HD_SPECS: Record<string, HdSpec> = {
   },
   mig29a: {
     url: 'assets/models/cc-by-nc-sa/mig29.glb', title: 'MiG-29 - Fighter Jet - Free', ...BOHMERANG,
+    movers: [
+      // flaps, ailerons, all-moving stabilators, rudders
+      { parts: /airframe/, cut: { poly: [[1.7, 3.4], [3.55, 3.4], [3.55, 4.65], [1.7, 4.65]], shells: true }, flap: 25 },
+      { parts: /airframe/, cut: { poly: [[-1.7, 3.4], [-3.55, 3.4], [-3.55, 4.65], [-1.7, 4.65]], shells: true }, flap: 25 },
+      { parts: /airframe/, cut: { poly: [[3.5, 3.9], [4.85, 3.9], [4.85, 4.9], [3.5, 4.9]], shells: true }, ail: -1 },
+      { parts: /airframe/, cut: { poly: [[-3.5, 3.9], [-4.85, 3.9], [-4.85, 4.9], [-3.5, 4.9]], shells: true }, ail: 1 },
+      { parts: /airframe/, cut: { poly: [[1.65, 5.2], [3.9, 5.2], [3.9, 8.6], [1.65, 8.6]], shells: true, y: [-0.3, 0.5] }, auto: 'spindle', elev: -1, ail: -0.5 },
+      { parts: /airframe/, cut: { poly: [[-1.65, 5.2], [-3.9, 5.2], [-3.9, 8.6], [-1.65, 8.6]], shells: true, y: [-0.3, 0.5] }, auto: 'spindle', elev: -1, ail: 0.5 },
+      { parts: /airframe/, cut: { side: true, poly: [[6.41, 0.75], [6.76, 1.95], [7.25, 1.95], [7.2, 0.75]], x: [0.5, 2.5] }, rud: 1 },
+      { parts: /airframe/, cut: { side: true, poly: [[6.41, 0.75], [6.76, 1.95], [7.25, 1.95], [7.2, 0.75]], x: [-2.5, -0.5] }, rud: 1 },
+    ],
     nozzles: [{ x: -0.916, y: -0.089, z: 7.0, r: 0.42 }, { x: 0.916, y: -0.089, z: 7.0, r: 0.42 }],
     source: 'https://sketchfab.com/3d-models/mig-29-fighter-jet-free-0a21787096244220b246ec8747e7b09c', ...BOH_PARTS,
     // the HUD-derived eye point sits behind the seat: forward and up, over the HUD
@@ -219,6 +317,16 @@ export const HD_SPECS: Record<string, HdSpec> = {
   },
   f4e: {
     url: 'assets/models/cc-by-nc-sa/f4.glb', title: 'F-4 Phantom II - Fighter Jet - Free', ...BOHMERANG,
+    movers: [
+      // inboard flaps, ailerons, the anhedral all-moving stabilator, rudder
+      { parts: /airframe/, cut: { poly: [[1.27, 2.78], [2.64, 3.18], [2.64, 4.15], [1.27, 3.9]], y: [-0.3, 1.0] }, flap: 30 },
+      { parts: /airframe/, cut: { poly: [[-1.27, 2.78], [-2.64, 3.18], [-2.64, 4.15], [-1.27, 3.9]], y: [-0.3, 1.0] }, flap: 30 },
+      { parts: /airframe/, cut: { poly: [[2.66, 3.18], [4, 3.52], [4, 4.6], [2.66, 4.15]], y: [-0.3, 1.0] }, ail: -1, flap: 15 },
+      { parts: /airframe/, cut: { poly: [[-2.66, 3.18], [-4, 3.52], [-4, 4.6], [-2.66, 4.15]], y: [-0.3, 1.0] }, ail: 1, flap: 15 },
+      { parts: /airframe/, cut: { poly: [[0.5, 6.6], [2.6, 6.6], [2.6, 9.5], [0.5, 9.5]], y: [-0.5, 1.6] }, auto: 'spindle', elev: -1 },
+      { parts: /airframe/, cut: { poly: [[-0.5, 6.6], [-2.6, 6.6], [-2.6, 9.5], [-0.5, 9.5]], y: [-0.5, 1.6] }, auto: 'spindle', elev: -1 },
+      { parts: /airframe/, cut: { side: true, poly: [[8.9, 1.82], [9.02, 3.32], [9.5, 3.32], [9.4, 1.82]], x: [-0.3, 0.3] }, rud: 1 },
+    ],
     nozzles: [{ x: -0.65, y: 0.3, z: 5.85, r: 0.42 }, { x: 0.65, y: 0.3, z: 5.85, r: 0.42 }],
     source: 'https://sketchfab.com/3d-models/f-4-phantom-ii-fighter-jet-free-f0b9ac8bdab149f3b75352a9f4f4e1c8', ...BOH_PARTS,
   },
@@ -297,7 +405,7 @@ export function bake(scene: THREE.Object3D, spec: HdSpec, def: AircraftDef): THR
     if (!g.getAttribute('normal')) g.computeVertexNormals();   // parts simplified without normals
     let wing = 0;
     if (spec.wings?.parts.test(name) && !spec.wings.split) { g.computeBoundingBox(); wing = Math.sign(g.boundingBox!.min.x + g.boundingBox!.max.x) || 1; }
-    const mover = spec.movers?.findIndex((mv) => mv.parts.test(name)) ?? -1;
+    const mover = spec.movers?.findIndex((mv) => !mv.cut && mv.parts.test(name)) ?? -1;
     parts.push({ name, geo: g, mat: m.material as THREE.Material, wing, mover });
   });
   const doors = spec.gearDoors;
@@ -337,6 +445,30 @@ export function bake(scene: THREE.Object3D, spec: HdSpec, def: AircraftDef): THR
       if (right) parts.push({ ...p, geo: right, wing: 1 });
     }
   }
+  // control surfaces and doors modelled into one-piece meshes: cut them out by outline
+  spec.movers?.forEach((mv, mi) => {
+    const c = mv.cut;
+    if (!c) return;
+    for (const p of [...parts]) {
+      if (p.mover >= 0 || !mv.parts.test(p.name)) continue;
+      const inside = (v: THREE.Vector3) => (!c.y || (v.y >= c.y[0] && v.y <= c.y[1]))
+        && (!c.x || (v.x >= c.x[0] && v.x <= c.x[1])) && (c.side ? inPoly(c.poly, v.z, v.y) : inPoly(c.poly, v.x, v.z));
+      let rest: THREE.BufferGeometry, piece: THREE.BufferGeometry | null;
+      if (c.shells) {
+        // the outline's bounds, in the outline's plane
+        const u0 = Math.min(...c.poly.map((q) => q[0])) - 0.05, u1 = Math.max(...c.poly.map((q) => q[0])) + 0.05;
+        const w0 = Math.min(...c.poly.map((q) => q[1])) - 0.05, w1 = Math.max(...c.poly.map((q) => q[1])) + 0.05;
+        const within = (b: THREE.Box3) => c.side ? b.min.z >= u0 && b.max.z <= u1 && b.min.y >= w0 && b.max.y <= w1
+          : b.min.x >= u0 && b.max.x <= u1 && b.min.z >= w0 && b.max.z <= w1;
+        [rest, piece] = cutShells(p.geo, (b) => within(b) && inside(b.getCenter(new THREE.Vector3())));
+      } else [rest, piece] = cutTriangles(p.geo, inside);
+      if (!piece) continue;
+      p.geo = rest;
+      parts.push({ ...p, geo: piece, mover: mi });
+    }
+  });
+  // hinge lines: given, or fitted to the parts' edges
+  root.userData.hinges = spec.movers?.map((mv, mi) => mv.hinge ?? fitHinge(parts.filter((p) => p.mover === mi).map((p) => p.geo), mv.auto ?? 'le'));
   // merge parts that share role, wing side, material and attribute layout
   const groups = new Map<string, { role: string; wing: number; mover: number; mat: THREE.Material; geos: THREE.BufferGeometry[]; name: string; hud: boolean }>();
   for (const p of parts) {
@@ -344,7 +476,7 @@ export function bake(scene: THREE.Object3D, spec: HdSpec, def: AircraftDef): THR
       : spec.cockpit.test(p.name) ? 'cockpit' : spec.hide?.test(p.name) ? 'hidden' : 'body';
     const hud = (spec.hud ?? /hud/i).test(p.name);
     const mats = (Array.isArray(p.mat) ? p.mat : [p.mat]) as THREE.MeshStandardMaterial[];
-    for (const mt of mats) if (mt.isMeshStandardMaterial && mt.metalness > 0.4) mt.metalness = 0.4; // no env map: keep metal from going black
+    for (const mt of mats) if (mt.isMeshStandardMaterial && mt.metalness > 0.75) mt.metalness = 0.75; // painted airframes: no mirror chrome
     const layout = Object.keys(p.geo.attributes).sort().join(',') + (p.geo.index ? ':i' : ':n');
     const key = `${role}|${p.wing}|${p.mover}|${hud}|${(p.mat as THREE.Material).uuid}|${layout}`;
     let g = groups.get(key);
@@ -370,6 +502,46 @@ export function bake(scene: THREE.Object3D, spec: HdSpec, def: AircraftDef): THR
 }
 
 const GEAR_DOORS = '#gearDoors';
+
+/** point-in-polygon (even-odd) on [x, z] corners */
+export function inPoly(poly: Array<[number, number]>, x: number, z: number) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, zi] = poly[i], [xj, zj] = poly[j];
+    if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * Hinge line of a surface from its vertices: at each end of its span (along |x|, or along y for a fin-like part that
+ * is taller than it is wide), the mean of the vertices on its leading (or trailing) edge.
+ */
+export function fitHinge(geos: THREE.BufferGeometry[], edge: 'le' | 'te' | 'spindle'): [[number, number, number], [number, number, number]] | undefined {
+  if (edge === 'spindle') {
+    const le = fitHinge(geos, 'le'), te = fitHinge(geos, 'te');
+    if (!le || !te) return undefined;
+    const mix = (a: number[], b: number[]) => a.map((v, k) => +(v + (b[k] - v) * 0.33).toFixed(3)) as [number, number, number];
+    return [mix(le[0], te[0]), mix(le[1], te[1])];
+  }
+  const P: THREE.Vector3[] = [];
+  for (const g of geos) { const a = g.getAttribute('position'); for (let i = 0; i < a.count; i++) P.push(new THREE.Vector3().fromBufferAttribute(a, i)); }
+  if (P.length < 3) return undefined;
+  const box = new THREE.Box3().setFromPoints(P), size = box.getSize(new THREE.Vector3());
+  const vertical = size.y > size.x;
+  const span = (p: THREE.Vector3) => (vertical ? p.y : Math.abs(p.x));
+  let lo = Infinity, hi = -Infinity;
+  for (const p of P) { lo = Math.min(lo, span(p)); hi = Math.max(hi, span(p)); }
+  const band = Math.max(0.05, (hi - lo) * 0.06);
+  const end = (at: number) => {
+    const sel = P.filter((p) => Math.abs(span(p) - at) < band);
+    const zz = edge === 'le' ? Math.min(...sel.map((p) => p.z)) : Math.max(...sel.map((p) => p.z));
+    const e = sel.filter((p) => Math.abs(p.z - zz) < 0.06);
+    const m = e.reduce((a, p) => a.add(p), new THREE.Vector3()).divideScalar(e.length);
+    return [+m.x.toFixed(3), +m.y.toFixed(3), +m.z.toFixed(3)] as [number, number, number];
+  };
+  return [end(lo), end(hi)];
+}
 
 /**
  * A model's wing root reaches forward of the pivot, hidden in the glove at the sweep it was built at. A real Tomcat's
@@ -436,7 +608,7 @@ uniform vec3 uTrim;`)
 }
 
 /** Split a geometry's triangles by their centroid: [rest, picked] (picked is null when no triangle matches). */
-export function cutTriangles(g: THREE.BufferGeometry, pick: (c: THREE.Vector3, far: number) => boolean):
+export function cutTriangles(g: THREE.BufferGeometry, pick: (c: THREE.Vector3, far: number, t: number) => boolean):
   [THREE.BufferGeometry, THREE.BufferGeometry | null] {
   const src = g.index ? g.toNonIndexed() : g;
   const pos = src.getAttribute('position');
@@ -450,7 +622,7 @@ export function cutTriangles(g: THREE.BufferGeometry, pick: (c: THREE.Vector3, f
       if (Math.abs(x) > Math.abs(far)) far = x;
       c.x += x / 3; c.y += pos.getY(3 * t + k) / 3; c.z += pos.getZ(3 * t + k) / 3;
     }
-    sel[t] = pick(c, far) ? 1 : 0;
+    sel[t] = pick(c, far, t) ? 1 : 0;
   }
   const take = (want: number) => {
     const n = sel.reduce((a, s) => a + (s === want ? 1 : 0), 0);
@@ -469,6 +641,27 @@ export function cutTriangles(g: THREE.BufferGeometry, pick: (c: THREE.Vector3, f
     return out;
   };
   return [take(0) ?? new THREE.BufferGeometry(), take(1)];
+}
+
+/** Split a geometry by connected shells (vertices welded by position): [rest, picked] for the shells `pick` accepts. */
+export function cutShells(g: THREE.BufferGeometry, pick: (box: THREE.Box3) => boolean): [THREE.BufferGeometry, THREE.BufferGeometry | null] {
+  const src = g.index ? g.toNonIndexed() : g;
+  const pos = src.getAttribute('position'), n = pos.count;
+  const ids = new Map<string, number>(), vid = new Int32Array(n);
+  for (let i = 0; i < n; i++) {
+    const k = `${pos.getX(i).toFixed(4)},${pos.getY(i).toFixed(4)},${pos.getZ(i).toFixed(4)}`;
+    let v = ids.get(k);
+    if (v === undefined) { v = ids.size; ids.set(k, v); }
+    vid[i] = v;
+  }
+  const par = new Int32Array(ids.size).map((_, i) => i);
+  const find = (a: number) => { while (par[a] !== a) a = par[a] = par[par[a]]; return a; };
+  for (let t = 0; t < n / 3; t++) { const a = find(vid[3 * t]); for (let k = 1; k < 3; k++) { const b = find(vid[3 * t + k]); if (a !== b) par[b] = a; } }
+  const boxes = new Map<number, THREE.Box3>(), v = new THREE.Vector3();
+  for (let i = 0; i < n; i++) { const r = find(vid[i]); let b = boxes.get(r); if (!b) boxes.set(r, b = new THREE.Box3()); b.expandByPoint(v.fromBufferAttribute(pos, i)); }
+  const chosen = new Set<number>();
+  for (const [r, b] of boxes) if (pick(b)) chosen.add(r);
+  return cutTriangles(src, (_c, _f, t) => chosen.has(find(vid[3 * t])));
 }
 
 /** Cut the wing triangles out of a fused airframe geometry (game frame): [rest, left wing, right wing]. */
@@ -537,7 +730,8 @@ export function instantiateHd(t: { root: THREE.Group; spec: HdSpec }): HdInstanc
       let mv = moverGroups.get(mi);
       if (!mv) {
         const ms = t.spec.movers[mi];
-        const a = new THREE.Vector3(...ms.hinge[0]), axis = new THREE.Vector3(...ms.hinge[1]).sub(a).normalize();
+        const h = (t.root.userData.hinges as Mover['hinge'][] | undefined)?.[mi] ?? ms.hinge ?? [[0, 0, 0], [1, 0, 0]];
+        const a = new THREE.Vector3(...h[0]), axis = new THREE.Vector3(...h[1]).sub(a).normalize();
         if (Math.abs(axis.y) > 0.7 ? axis.y < 0 : axis.x < 0) axis.negate();
         const group = new THREE.Group();
         group.position.copy(a);

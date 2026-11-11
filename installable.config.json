@@ -40,6 +40,20 @@
       "to": "vendor/three/examples/jsm/utils/SkeletonUtils.js"
     },
     {
+      "from": "node_modules/three/examples/jsm/objects/Sky.js",
+      "to": "vendor/three/examples/jsm/objects/Sky.js"
+    },
+    {
+      "from": "node_modules/three/examples/jsm/postprocessing",
+      "to": "vendor/three/examples/jsm/postprocessing",
+      "include": "\\.js$"
+    },
+    {
+      "from": "node_modules/three/examples/jsm/shaders",
+      "to": "vendor/three/examples/jsm/shaders",
+      "include": "\\.js$"
+    },
+    {
       "from": "assets/models",
       "to": "assets/models"
     },

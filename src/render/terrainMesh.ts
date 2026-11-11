@@ -7,6 +7,7 @@ import { FarScenery, hash2, NEAR_SCENERY, ringMaterial } from './scenery.js';
 import { Imagery, IMAGERY_GLSL, mercator } from './imagery.js';
 import { ModelScenery, DETAIL_SCENERY, proceduralInner, pick, type CellPick } from './modelScenery.js';
 import { hdModelsEnabled } from './hdModels.js';
+import { realBuildings, type Building } from './buildings.js';
 
 const CHUNK = 16000; // m
 const LODS = [
@@ -79,7 +80,7 @@ function coverTexture(g: CoverGrid) {
 /** Per-pixel ground: vertex colours carry height/slope colour (aCover.x = how much landcover shows, aCover.y = the
  *  slope shading), and the fragment shader paints forests, field patchworks, towns and lakes from the theater's cover
  *  grid. Being per pixel, none of it changes when a chunk swaps its level of detail. */
-function addGroundShader(mat: THREE.MeshLambertMaterial, uniforms: Record<string, THREE.IUniform>) {
+function addGroundShader(mat: THREE.MeshStandardMaterial, uniforms: Record<string, THREE.IUniform>) {
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, uniforms);
     sh.vertexShader = `attribute vec2 aCover;\nattribute vec2 aMerc;\nvarying vec2 vCover;\nvarying vec2 vMerc;\nvarying vec3 vWorldPos;\n` + sh.vertexShader.replace('#include <worldpos_vertex>',
@@ -92,8 +93,17 @@ float patchN(vec2 p, float s, float o) {
 float coverMask(float f, float n) { return smoothstep(-0.06, 0.06, f - (1.0 - n)) * smoothstep(0.0, 0.05, f); }
 float hash(vec2 c) { return fract(sin(dot(c, vec2(12.9898, 78.233))) * 43758.5453); }
 ${IMAGERY_GLSL}
-` + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+` + sh.fragmentShader.replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+      // open water is a mirror for the sky (glint and all); land is matt
+      roughnessFactor = mix(roughnessFactor, 0.07, waterF);`).replace('#include <lights_fragment_end>', `
+      // the ground's sky fill comes from the hemisphere light alone (the sky probe would wash the land out blue)
+      iblIrradiance *= waterF;
+      #include <lights_fragment_end>
+      // fields and forests don't mirror the sky at grazing angles (only water does)
+      reflectedLight.indirectSpecular *= waterF;
+      reflectedLight.directSpecular *= mix(0.25, 1.0, waterF);`).replace('#include <color_fragment>', `#include <color_fragment>
       float dist = length(vWorldPos - cameraPosition);
+      float waterF = vWorldPos.y < -1.0 ? 1.0 : 0.0;
       vec2 p = vWorldPos.xz;
       if (vCover.x > 0.01) {
         vec4 lc = texture2D(uCover, ((p + uCoverGrid.x) / uCoverGrid.y + 0.5) / uCoverGrid.z);
@@ -126,7 +136,8 @@ ${IMAGERY_GLSL}
         g = mix(g, cropC, mC);
         g = mix(g, treeC, mT);
         g = mix(g, builtC, mB);
-        g = mix(g, vec3(0.12, 0.2, 0.28), mW);
+        g = mix(g, vec3(0.05, 0.09, 0.12), mW);
+        waterF = max(waterF, mW * vCover.x);
         diffuseColor.rgb = mix(diffuseColor.rgb, g, vCover.x);
       }
       // satellite imagery over land (real-world theaters); the sea keeps its own colour
@@ -148,7 +159,7 @@ export class TerrainRenderer {
   group = new THREE.Group();
   private chunks = new Map<string, ChunkEntry>();
   readonly imagery = new Imagery();
-  private material: THREE.MeshLambertMaterial;
+  private material: THREE.MeshStandardMaterial;
   private frame = 0;
   private buildBudget = 3;
   private uniforms: Record<string, THREE.IUniform> = {
@@ -160,10 +171,12 @@ export class TerrainRenderer {
   private cover: CoverGrid | null = null;
 
   constructor() {
-    this.material = new THREE.MeshLambertMaterial({ vertexColors: true });
+    this.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.96, metalness: 0 });
     addGroundShader(this.material, this.uniforms);
     this.group.name = 'terrain';
-    this.group.add(this.far.group, this.models.group);
+    this.group.add(this.far.group, this.models.group, realBuildings.group);
+    // once the real-building areas are known, the hash towns inside them go
+    realBuildings.onIndex = () => { this.far.clear(); this.houseAt.set(Infinity, Infinity); this.modelAt.set(Infinity, Infinity); };
   }
 
   /** the active theater's cover grid, uploaded as a texture when it changes */
@@ -268,6 +281,7 @@ export class TerrainRenderer {
     geo.setIndex(idx);
     geo.computeBoundingSphere();
     const mesh = new THREE.Mesh(geo, this.material);
+    mesh.receiveShadow = true;
     mesh.position.set(x0, 0, z0);
     mesh.matrixAutoUpdate = false;
     mesh.updateMatrix();
@@ -372,6 +386,8 @@ export class TerrainRenderer {
       this.group.add(this.houses);
     }
     const pal = terrainPalette();
+    if (currentTheater().id === 'europe') realBuildings.load();
+    realBuildings.update(camPos, agl);
     this.far.update(camPos, cover, pal, agl);
     // invisible (and not worth rebuilding) higher up, where the far tiles alone carry the scene
     const treesOn = agl < 3500 && pal.trees;
@@ -441,7 +457,7 @@ export class TerrainRenderer {
         const hsh = hash2(i + 101, j - 77);
         const x = (i + 0.2 + hsh * 0.6) * HOUSE_CELL, z = (j + 0.2 + hash2(j - 77, i + 101) * 0.6) * HOUSE_CELL;
         if ((x - camPos.x) ** 2 + (z - camPos.z) ** 2 > HOUSE_RADIUS * HOUSE_RADIUS) continue;
-        if (!builtAt(cover, x, z)) continue;
+        if (!builtAt(cover, x, z) || realBuildings.covers(x, z)) continue;
         const h = terrainHeight(x, z);
         if (h < 1.5 || nearRunway(x, z)) continue;
         // dense cores grow taller blocks; the edges are houses
@@ -478,7 +494,7 @@ export class TerrainRenderer {
         const hsh = hash2(i + 101, j - 77);
         const x = (i + 0.2 + hsh * 0.6) * HOUSE_CELL, z = (j + 0.2 + hash2(j - 77, i + 101) * 0.6) * HOUSE_CELL;
         if ((x - camPos.x) ** 2 + (z - camPos.z) ** 2 > R * R) continue;
-        if (!builtAt(cover, x, z)) continue;
+        if (!builtAt(cover, x, z) || realBuildings.covers(x, z)) continue;
         const h = terrainHeight(x, z);
         if (h < 1.5 || nearRunway(x, z)) continue;
         cells.push({ i, j, x, z, h, dense: coverAt(cover, x, z, 1), hsh });
@@ -505,6 +521,8 @@ export class TerrainRenderer {
         const rot = (hash2(c.i - 3, c.j + 3) < 0.5 ? 0 : Math.PI / 2) + (hash2(c.i, c.j + 5) < 0.5 ? 0 : Math.PI) + (c.hsh - 0.5) * 0.15;
         picks.push({ x: c.x, z: c.z, h: c.h - 0.6, rot, scale: 0.92 + hash2(c.i + 9, c.j) * 0.16, variant: name });
       }
+      // real house footprints: the model house of the nearest shape, fitted to the footprint
+      for (const b of realBuildings.housesNear(camPos.x, camPos.z, R)) { const pk = this.fitHouse(b); if (pk) picks.push(pk); }
     }
     // trees: conifers take over with height, broadleaf woods in the lowlands (as the procedural forest)
     if (pal.trees && (F.conifer.length || F.broadleaf.length)) {
@@ -527,6 +545,23 @@ export class TerrainRenderer {
     M.set(picks);
   }
 
+  /** a small model house fitted to a real footprint: long side to long side, height from the data or kept in proportion */
+  private fitHouse(b: Building): CellPick | null {
+    const M = this.models, list = M.fam.small;
+    if (!list.length) return null;
+    const want = b.w / b.d;
+    const ranked = list.map((n) => { const sz = M.sizeOf(n)!; const a = Math.max(sz[0], sz[2]) / Math.min(sz[0], sz[2]); return { n, sz, e: Math.abs(Math.log(a / want)) }; }).sort((p, q) => p.e - q.e);
+    const c = ranked[Math.min(ranked.length - 1, Math.floor(b.seed * Math.min(3, ranked.length)))];
+    const alongX = c.sz[0] >= c.sz[2];
+    const long = Math.max(c.sz[0], c.sz[2]), short = Math.min(c.sz[0], c.sz[2]);
+    const sl = b.w / long, ss = b.d / short;
+    const sy = b.h > 0 ? Math.min(1.6, Math.max(0.6, b.h / c.sz[1])) : Math.min(1.3, Math.max(0.75, (sl + ss) / 2));
+    const h = terrainHeight(b.x, b.z) - 0.6;
+    return alongX
+      ? { x: b.x, z: b.z, h, rot: b.rot + (b.seed > 0.5 ? Math.PI : 0), scale: 1, variant: c.n, sx: sl, sy, sz: ss }
+      : { x: b.x, z: b.z, h, rot: b.rot + Math.PI / 2 + (b.seed > 0.5 ? Math.PI : 0), scale: 1, variant: c.n, sx: ss, sy, sz: sl };
+  }
+
   /** Pre-build chunks around a point (during loading). */
   prewarm(p: THREE.Vector3, viewDist: number) {
     const old = this.buildBudget;
@@ -543,7 +578,8 @@ export function buildScenery(): THREE.Group {
     // finely divided: with the logarithmic depth buffer, a two-triangle plane thousands of km across gets its depth
     // wrong near the camera and is drawn over the land (the terrain "flashing" on and off as the view moved)
     new THREE.PlaneGeometry(THEATER_HALF * 6, THEATER_HALF * 6, 240, 240),
-    new THREE.MeshLambertMaterial({ color: 0x1d3446 }),
+    // beyond the terrain: a matt sea (a mirror here would draw a bright line along the horizon)
+    new THREE.MeshStandardMaterial({ color: 0x0c1a24, roughness: 0.55, metalness: 0, envMapIntensity: 0.25 }),
   );
   sea.rotation.x = -Math.PI / 2;
   // below the terrain's own sea surface (-2 m): low coasts sit within a metre of sea level and would z-fight with it

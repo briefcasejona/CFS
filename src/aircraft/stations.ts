@@ -19,6 +19,27 @@ function fuselageRadius(def: AircraftDef) {
   return Math.max(0.55, def.length * 0.042) * (def.model.engines === 2 ? 1.15 : 1);
 }
 
+/**
+ * Stations measured on the HD models (right side, metres in the game frame: x out along the wing, z aft): the pylon or
+ * missile rail centre each store hangs from. Listed per kind from the inside out; the left side mirrors them. Types
+ * without an entry keep the generic layout below.
+ */
+type Measured = Array<[x: number, z: number, kind: SlotKind]>;
+const MEASURED: Array<{ match: (def: AircraftDef) => boolean; slots: Measured }> = [
+  // F-16: station 4 wet pylon, LAU-129 rails on stations 3 and 2, wingtip rail
+  { match: (d) => (d.family ?? d.name) === 'F-16', slots: [[2.1, 1.2, 'wing'], [3.03, 1.57, 'wing'], [3.97, 2.18, 'wing'], [4.59, 2.39, 'tip']] },
+  // F/A-18E/F: inboard, mid and outboard wing pylons, wingtip rail; the nacelle stations stay generic
+  { match: (d) => d.id === 'fa18e', slots: [[3.48, 0.97, 'wing'], [4.33, 2.08, 'wing'], [5.08, 3.1, 'wing'], [6.46, 2.66, 'tip']] },
+  // F-15E: wing pylon with its two shoulder rails, forward fuselage station and the three conformal-tank stubs
+  { match: (d) => d.id === 'f15e', slots: [[2.93, 2.17, 'wing'], [2.67, 0.82, 'tip'], [3.19, 0.82, 'tip'], [1.19, -1.2, 'fuse'], [2.03, -0.15, 'fuse'], [2.03, 2.33, 'fuse'], [2.03, 4.93, 'fuse']] },
+  // MiG-29: three pylons under each wing
+  { match: (d) => d.id === 'mig29a', slots: [[2.36, 2.0, 'wing'], [3.1, 2.67, 'wing'], [3.76, 3.05, 'wing']] },
+  // F-4E: inboard pylon with LAU-7 shoulder rails, outboard pylon (the tank station, so listed with the centreline)
+  { match: (d) => d.id === 'f4e', slots: [[2.1, -0.4, 'wing'], [3.4, 2.02, 'center'], [1.85, -0.6, 'tip'], [2.34, -0.6, 'tip']] },
+  // Gripen: inboard and mid wing pylons, wingtip rail, the station under each intake
+  { match: (d) => d.id === 'jas39', slots: [[1.86, 1.8, 'wing'], [2.74, 2.6, 'wing'], [3.85, 3.44, 'tip'], [0.77, -0.8, 'fuse']] },
+];
+
 function slotsFor(def: AircraftDef): Slot[] {
   const fam = def.family ?? def.name;
   const R = fuselageRadius(def), L = def.length, half = def.span / 2;
@@ -27,6 +48,17 @@ function slotsFor(def: AircraftDef): Slot[] {
     slots.push({ pos: new THREE.Vector3(-x, y, z), kind, rank }, { pos: new THREE.Vector3(x, y, z), kind, rank });
   };
   slots.push({ pos: new THREE.Vector3(0, -R - 0.35, -L * 0.02), kind: 'center', rank: 0 });
+  const measured = MEASURED.find((m) => m.match(def));
+  if (measured) {
+    const rank: Partial<Record<SlotKind, number>> = {};
+    const y: Record<SlotKind, number> = { wing: -R * 0.15 - 0.45, tip: -R * 0.15 - 0.05, fuse: -R * 0.75, center: -R - 0.35 };
+    for (const [x, z, kind] of measured.slots) { pair(x, y[kind], z, kind, rank[kind] ?? 0); rank[kind] = (rank[kind] ?? 0) + 1; }
+    if (FUSE_AAM.test(fam) && !measured.slots.some((s) => s[2] === 'fuse')) {
+      pair(R * 0.75, -R * 0.75, -L * 0.1, 'fuse', 0);
+      pair(R * 0.75, -R * 0.75, L * 0.12, 'fuse', 1);
+    }
+    return slots;
+  }
   if (def.fcs.swingWing) {
     // F-14: four tunnel stations between the nacelles and a pylon under each glove — nothing on the moving wing
     pair(R * 0.55, -R - 0.15, -L * 0.12, 'fuse', 0);
@@ -80,6 +112,7 @@ const CLASS_ORDER: StoreClass[] = ['tank', 'heavy', 'radar', 'ir', 'other'];
 export function stationLayout(def: AircraftDef, stores: string[]): THREE.Vector3[] {
   const slots = slotsFor(def);
   const used = new Set<Slot>();
+  const held = new Map<Slot, { id: string; n: number }>();
   const out: THREE.Vector3[] = new Array(stores.length);
   const mirrorOf = (k: Slot) => slots.find((o) => o !== k && Math.abs(o.pos.x + k.pos.x) < 1e-6 && Math.abs(o.pos.z - k.pos.z) < 1e-6 && Math.abs(o.pos.y - k.pos.y) < 1e-6 && o.kind === k.kind);
   // by store type — tanks and heavy stores first so they get the inboard stations, then the missiles; an even count
@@ -100,10 +133,25 @@ export function stationLayout(def: AircraftDef, stores: string[]): THREE.Vector3
       }
       return null;
     };
+    const rackFor = () => slots.find((k) => k.pos.x < 0 && k.kind === 'wing' && held.get(k)?.id === id && held.get(k)!.n < 3);
+    const canRack = () => storeClass(id) === 'heavy' && idx.length >= 2 && !!rackFor();
     while (idx.length) {
-      const got = idx.length % 2 === 1 ? take(false) ?? take(true) : take(true) ?? take(false);
-      if (!got) break;
-      for (const k of got) { const i = idx.shift(); if (i === undefined) break; used.add(k); out[i] = k.pos.clone(); }
+      const got = idx.length % 2 === 1 ? take(false) ?? take(true) : take(true) ?? (canRack() ? null : take(false));
+      if (got) {
+        for (const k of got) { const i = idx.shift(); if (i === undefined) break; used.add(k); out[i] = k.pos.clone(); held.set(k, { id, n: 1 }); }
+        continue;
+      }
+      // out of pylons: bombs double up on a triple ejector rack — the next two ride the rack's shoulders
+      if (storeClass(id) !== 'heavy' || idx.length < 2) break;
+      const rack = rackFor();
+      const twin = rack && mirrorOf(rack);
+      if (!rack || !twin || held.get(twin)?.id !== id) break;
+      const side = held.get(rack)!.n === 1 ? -1 : 1;   // first shoulder outboard, then inboard
+      for (const k of [rack, twin]) {
+        const i = idx.shift()!;
+        out[i] = k.pos.clone().add(new THREE.Vector3(Math.sign(k.pos.x) * side * -0.3, 0.12, 0));
+        held.get(k)!.n++;
+      }
     }
   }
   // fallback: the previous generic spread

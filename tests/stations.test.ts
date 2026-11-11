@@ -24,7 +24,7 @@ describe('weapon stations', () => {
     const l = d.loadouts.find((x) => x.name.startsWith('CAP'))!;
     const pos = stationLayout(d, l.stores);
     const xs = (id: string) => pos.filter((_, i) => l.stores[i] === id).map((p) => Math.abs(p.x));
-    for (const x of xs('aim9x')) expect(x).toBeGreaterThan(d.span / 2 - 0.3);
+    for (const x of xs('aim9x')) expect(x).toBeGreaterThan(d.span / 2 - 0.5);
     expect(Math.max(...xs('tank'))).toBeLessThan(Math.min(...xs('aim120c')));
   });
 

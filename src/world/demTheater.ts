@@ -174,7 +174,7 @@ export function splitCoverDetail(index: Array<{ x0: number; z0: number; n: numbe
 }
 
 /** a fetched body, gunzipped unless a server already did (Content-Encoding: gzip) */
-async function gunzip(res: Response): Promise<ArrayBuffer> {
+export async function gunzip(res: Response): Promise<ArrayBuffer> {
   const bytes = await res.arrayBuffer();
   const head = new Uint8Array(bytes, 0, 2);
   if (head[0] !== 0x1f || head[1] !== 0x8b) return bytes;
