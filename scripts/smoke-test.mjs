@@ -10,6 +10,8 @@ const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const PORT = 5180;
 const server = spawn(process.execPath, [resolve(root, 'scripts', 'serve.mjs'), '--site'], { env: { ...process.env, PORT: String(PORT) }, stdio: 'inherit' });
 await new Promise((r) => setTimeout(r, 800));
+// screenshots are for looking at, not the test: on a software renderer a frame can take longer than the default wait
+const shot = async (page, path) => { try { await page.screenshot({ path, timeout: 90000 }); } catch (e) { console.warn(`screenshot ${path} skipped: ${e.message.split('\n')[0]}`); } };
 
 const errors = [];
 const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
@@ -20,10 +22,10 @@ try {
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
   await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'load' });
   await page.getByRole('button', { name: /Quick Fight/ }).waitFor({ timeout: 15000 });
-  await page.screenshot({ path: 'smoke-menu.png' });
+  await shot(page, 'smoke-menu.png');
   await page.getByRole('button', { name: /Quick Fight/ }).click();
   await page.waitForTimeout(8000);
-  await page.screenshot({ path: 'smoke-flight.png' });
+  await shot(page, 'smoke-flight.png');
   const state = await page.evaluate(() => ({
     simVisible: getComputedStyle(document.getElementById('ui')).display === 'none',
     sw: 'serviceWorker' in navigator ? !!navigator.serviceWorker.controller || 'registering' : 'unsupported',
