@@ -74,6 +74,7 @@ export class ModelScenery {
         const im = new THREE.InstancedMesh(geo, ringMaterial(mat, 0, DETAIL_SCENERY), cap);
         im.count = 0;
         im.frustumCulled = false;
+        im.castShadow = true; im.receiveShadow = true;
         im.name = name;
         v.meshes.push(im);
         this.group.add(im);

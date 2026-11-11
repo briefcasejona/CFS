@@ -58,7 +58,8 @@ function blockGeometry() {
 
 /** walls from the instance colour with floors of windows; roofs in tile, slate or bitumen by a per-building hash */
 function buildingMaterial(pitched: boolean, inner: { value: number } | null) {
-  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, metalness: 0 });
+  // a weak sky probe: roofs facing the whole sky would otherwise read white from above
+  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, metalness: 0, envMapIntensity: 0.4 });
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uRingIn = inner ?? { value: 0 };
     sh.uniforms.uCam2 = { value: new THREE.Vector3() };
@@ -284,7 +285,8 @@ export class RealBuildings {
     });
     im.instanceMatrix.needsUpdate = true;
     im.computeBoundingSphere();
-    im.castShadow = true; im.receiveShadow = true;
+    // the houses' ring cut is not in the shadow pass: inside the model ring the model houses cast instead
+    im.castShadow = geo === this.blockGeo; im.receiveShadow = true;
     this.group.add(im);
     return im;
   }

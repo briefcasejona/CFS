@@ -80,7 +80,7 @@ function coverTexture(g: CoverGrid) {
 /** Per-pixel ground: vertex colours carry height/slope colour (aCover.x = how much landcover shows, aCover.y = the
  *  slope shading), and the fragment shader paints forests, field patchworks, towns and lakes from the theater's cover
  *  grid. Being per pixel, none of it changes when a chunk swaps its level of detail. */
-function addGroundShader(mat: THREE.MeshLambertMaterial, uniforms: Record<string, THREE.IUniform>) {
+function addGroundShader(mat: THREE.MeshStandardMaterial, uniforms: Record<string, THREE.IUniform>) {
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, uniforms);
     sh.vertexShader = `attribute vec2 aCover;\nattribute vec2 aMerc;\nvarying vec2 vCover;\nvarying vec2 vMerc;\nvarying vec3 vWorldPos;\n` + sh.vertexShader.replace('#include <worldpos_vertex>',
@@ -93,8 +93,17 @@ float patchN(vec2 p, float s, float o) {
 float coverMask(float f, float n) { return smoothstep(-0.06, 0.06, f - (1.0 - n)) * smoothstep(0.0, 0.05, f); }
 float hash(vec2 c) { return fract(sin(dot(c, vec2(12.9898, 78.233))) * 43758.5453); }
 ${IMAGERY_GLSL}
-` + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+` + sh.fragmentShader.replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+      // open water is a mirror for the sky (glint and all); land is matt
+      roughnessFactor = mix(roughnessFactor, 0.07, waterF);`).replace('#include <lights_fragment_end>', `
+      // the ground's sky fill comes from the hemisphere light alone (the sky probe would wash the land out blue)
+      iblIrradiance *= waterF;
+      #include <lights_fragment_end>
+      // fields and forests don't mirror the sky at grazing angles (only water does)
+      reflectedLight.indirectSpecular *= waterF;
+      reflectedLight.directSpecular *= mix(0.25, 1.0, waterF);`).replace('#include <color_fragment>', `#include <color_fragment>
       float dist = length(vWorldPos - cameraPosition);
+      float waterF = vWorldPos.y < -1.0 ? 1.0 : 0.0;
       vec2 p = vWorldPos.xz;
       if (vCover.x > 0.01) {
         vec4 lc = texture2D(uCover, ((p + uCoverGrid.x) / uCoverGrid.y + 0.5) / uCoverGrid.z);
@@ -127,7 +136,8 @@ ${IMAGERY_GLSL}
         g = mix(g, cropC, mC);
         g = mix(g, treeC, mT);
         g = mix(g, builtC, mB);
-        g = mix(g, vec3(0.12, 0.2, 0.28), mW);
+        g = mix(g, vec3(0.05, 0.09, 0.12), mW);
+        waterF = max(waterF, mW * vCover.x);
         diffuseColor.rgb = mix(diffuseColor.rgb, g, vCover.x);
       }
       // satellite imagery over land (real-world theaters); the sea keeps its own colour
@@ -149,7 +159,7 @@ export class TerrainRenderer {
   group = new THREE.Group();
   private chunks = new Map<string, ChunkEntry>();
   readonly imagery = new Imagery();
-  private material: THREE.MeshLambertMaterial;
+  private material: THREE.MeshStandardMaterial;
   private frame = 0;
   private buildBudget = 3;
   private uniforms: Record<string, THREE.IUniform> = {
@@ -161,7 +171,7 @@ export class TerrainRenderer {
   private cover: CoverGrid | null = null;
 
   constructor() {
-    this.material = new THREE.MeshLambertMaterial({ vertexColors: true });
+    this.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.96, metalness: 0 });
     addGroundShader(this.material, this.uniforms);
     this.group.name = 'terrain';
     this.group.add(this.far.group, this.models.group, realBuildings.group);
@@ -271,6 +281,7 @@ export class TerrainRenderer {
     geo.setIndex(idx);
     geo.computeBoundingSphere();
     const mesh = new THREE.Mesh(geo, this.material);
+    mesh.receiveShadow = true;
     mesh.position.set(x0, 0, z0);
     mesh.matrixAutoUpdate = false;
     mesh.updateMatrix();
@@ -567,7 +578,7 @@ export function buildScenery(): THREE.Group {
     // finely divided: with the logarithmic depth buffer, a two-triangle plane thousands of km across gets its depth
     // wrong near the camera and is drawn over the land (the terrain "flashing" on and off as the view moved)
     new THREE.PlaneGeometry(THEATER_HALF * 6, THEATER_HALF * 6, 240, 240),
-    new THREE.MeshLambertMaterial({ color: 0x1d3446 }),
+    new THREE.MeshStandardMaterial({ color: 0x0c1a24, roughness: 0.08, metalness: 0 }),
   );
   sea.rotation.x = -Math.PI / 2;
   // below the terrain's own sea surface (-2 m): low coasts sit within a metre of sea level and would z-fight with it

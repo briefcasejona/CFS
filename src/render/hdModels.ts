@@ -476,7 +476,7 @@ export function bake(scene: THREE.Object3D, spec: HdSpec, def: AircraftDef): THR
       : spec.cockpit.test(p.name) ? 'cockpit' : spec.hide?.test(p.name) ? 'hidden' : 'body';
     const hud = (spec.hud ?? /hud/i).test(p.name);
     const mats = (Array.isArray(p.mat) ? p.mat : [p.mat]) as THREE.MeshStandardMaterial[];
-    for (const mt of mats) if (mt.isMeshStandardMaterial && mt.metalness > 0.4) mt.metalness = 0.4; // no env map: keep metal from going black
+    for (const mt of mats) if (mt.isMeshStandardMaterial && mt.metalness > 0.75) mt.metalness = 0.75; // painted airframes: no mirror chrome
     const layout = Object.keys(p.geo.attributes).sort().join(',') + (p.geo.index ? ':i' : ':n');
     const key = `${role}|${p.wing}|${p.mover}|${hud}|${(p.mat as THREE.Material).uuid}|${layout}`;
     let g = groups.get(key);

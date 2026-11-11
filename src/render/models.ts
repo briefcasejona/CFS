@@ -253,6 +253,7 @@ export function buildAircraftModel(def: AircraftDef, side: 'blue' | 'red'): Airc
   const model: AircraftModel = { root, body, stores: [], burners, hdBurners: [], gear, wingL, wingR, canopy, fuselage, proc: body.children.filter((c) => !burners.some((b) => b.group === c)), hd: null };
   requestHdModel(def, (inst) => {
     model.hd = inst; body.add(inst.root);
+    inst.root.traverse((o) => { if ((o as THREE.Mesh).isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     for (const n of hdSpecFor(def)?.nozzles ?? []) { const b = createBurner(n.x, n.y, n.z, n.r); inst.root.add(b.group); model.hdBurners.push(b); }
   });
   return model;
