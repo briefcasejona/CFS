@@ -28,7 +28,7 @@ interface Variant {
 }
 
 /** what goes on a house or tree cell */
-export interface CellPick { x: number; z: number; h: number; rot: number; scale: number; variant: string }
+export interface CellPick { x: number; z: number; h: number; rot: number; scale: number; variant: string; sx?: number; sy?: number; sz?: number }
 
 export class ModelScenery {
   readonly group = new THREE.Group();
@@ -59,7 +59,7 @@ export class ModelScenery {
       const tree = kind === 'tree';
       const meshes: THREE.Mesh[] = [];
       node.traverse((o) => { if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh); });
-      const cap = tree ? 30000 : kind === 'panel' ? 600 : 3000;
+      const cap = tree ? 30000 : kind === "panel" ? 600 : 8000;
       const v: Variant = { name, size, meshes: [], n: 0, cap };
       for (const m of meshes) {
         const src = m.material as THREE.MeshStandardMaterial;
@@ -97,7 +97,7 @@ export class ModelScenery {
     for (const c of picks) {
       const v = this.variants.get(c.variant);
       if (!v || v.n >= v.cap) continue;
-      m.compose(p.set(c.x, c.h, c.z), q.setFromAxisAngle(up, c.rot), s.setScalar(c.scale));
+      m.compose(p.set(c.x, c.h, c.z), q.setFromAxisAngle(up, c.rot), c.sx ? s.set(c.sx, c.sy ?? c.scale, c.sz ?? c.sx) : s.setScalar(c.scale));
       for (const im of v.meshes) im.setMatrixAt(v.n, m);
       v.n++;
     }

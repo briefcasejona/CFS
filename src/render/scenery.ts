@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { terrainHeight, type TerrainPalette } from '../world/theater.js';
 import { builtAt, coverAt, treeAt, type CoverGrid } from '../world/landcover.js';
+import { realBuildings } from './buildings.js';
 
 /** radius (m) of the detailed houses and trees around the camera; the far tiles take over from here */
 export const NEAR_SCENERY = 5000;
@@ -138,7 +139,7 @@ export class FarScenery {
         const ci = Math.round(ti * n) + i, cj = Math.round(tj * n) + j;
         const hsh = hash2(ci + 31, cj - 17);
         const x = (ci + 0.15 + hsh * 0.7) * HOUSE_CELL, z = (cj + 0.15 + hash2(cj - 17, ci + 31) * 0.7) * HOUSE_CELL;
-        if (!builtAt(cover, x, z)) continue;
+        if (!builtAt(cover, x, z) || realBuildings.covers(x, z)) continue;
         const h = terrainHeight(x, z);
         if (h < 1.5) continue;
         const dense = coverAt(cover, x, z, 1);

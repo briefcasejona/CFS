@@ -21,3 +21,10 @@
   water / other (2 bits), © ESA WorldCover project 2021 / contains modified Copernicus Sentinel data (2021) processed by
   the ESA WorldCover consortium, **CC BY 4.0**. Houses and forests near the fields are placed on these cells. Baked by
   `scripts/terrain/bake-coverdetail.mjs europe`.
+- `buildings/index.json` + `buildings/<field>.bin.gz`: every building footprint of 30 m² or more in the squares of
+  `coverdetail.json`, from the **Overture Maps** buildings theme (release 2026-10-21.0), which is built from
+  **© OpenStreetMap contributors** and other open building datasets, under the **Open Database License (ODbL) 1.0** —
+  https://opendatacommons.org/licenses/odbl/ (attribution: © OpenStreetMap contributors, Overture Maps Foundation).
+  Changes: each footprint reduced to its minimum-area rectangle (shrunk to the footprint's area), its height where
+  known, and re-projected to the theater grid. This derived database is offered under the ODbL as well. Baked by
+  `scripts/terrain/bake-buildings.mjs`.

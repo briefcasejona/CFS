@@ -433,7 +433,18 @@ export class SceneRenderer {
     this.fx.update(world, dt);
     this.updateCamera(world, dt);
     // world eye point (in VR the camera is posed inside the rig)
-    const cp = this.vrActive ? this.rig.position : this.camera.position;
+    this.renderEnvironment(this.vrActive ? this.rig.position : this.camera.position);
+  }
+
+  /** a still from any point (previews and tests): no entities, just the world */
+  renderView(pos: THREE.Vector3, look: THREE.Vector3) {
+    this.camera.position.copy(pos);
+    this.camera.lookAt(look);
+    this.camera.updateMatrixWorld();
+    this.renderEnvironment(pos);
+  }
+
+  private renderEnvironment(cp: THREE.Vector3) {
     this.sky.position.copy(cp);
     // haze sits in the lower atmosphere: looking out from altitude the air is clearer
     (this.scene.fog as THREE.FogExp2).density = this.baseFog * (0.45 + 0.55 * Math.exp(-Math.max(0, cp.y) / 5000));

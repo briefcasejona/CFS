@@ -7,6 +7,7 @@ import { FarScenery, hash2, NEAR_SCENERY, ringMaterial } from './scenery.js';
 import { Imagery, IMAGERY_GLSL, mercator } from './imagery.js';
 import { ModelScenery, DETAIL_SCENERY, proceduralInner, pick, type CellPick } from './modelScenery.js';
 import { hdModelsEnabled } from './hdModels.js';
+import { realBuildings, type Building } from './buildings.js';
 
 const CHUNK = 16000; // m
 const LODS = [
@@ -163,7 +164,9 @@ export class TerrainRenderer {
     this.material = new THREE.MeshLambertMaterial({ vertexColors: true });
     addGroundShader(this.material, this.uniforms);
     this.group.name = 'terrain';
-    this.group.add(this.far.group, this.models.group);
+    this.group.add(this.far.group, this.models.group, realBuildings.group);
+    // once the real-building areas are known, the hash towns inside them go
+    realBuildings.onIndex = () => { this.far.clear(); this.houseAt.set(Infinity, Infinity); this.modelAt.set(Infinity, Infinity); };
   }
 
   /** the active theater's cover grid, uploaded as a texture when it changes */
@@ -372,6 +375,8 @@ export class TerrainRenderer {
       this.group.add(this.houses);
     }
     const pal = terrainPalette();
+    if (currentTheater().id === 'europe') realBuildings.load();
+    realBuildings.update(camPos, agl);
     this.far.update(camPos, cover, pal, agl);
     // invisible (and not worth rebuilding) higher up, where the far tiles alone carry the scene
     const treesOn = agl < 3500 && pal.trees;
@@ -441,7 +446,7 @@ export class TerrainRenderer {
         const hsh = hash2(i + 101, j - 77);
         const x = (i + 0.2 + hsh * 0.6) * HOUSE_CELL, z = (j + 0.2 + hash2(j - 77, i + 101) * 0.6) * HOUSE_CELL;
         if ((x - camPos.x) ** 2 + (z - camPos.z) ** 2 > HOUSE_RADIUS * HOUSE_RADIUS) continue;
-        if (!builtAt(cover, x, z)) continue;
+        if (!builtAt(cover, x, z) || realBuildings.covers(x, z)) continue;
         const h = terrainHeight(x, z);
         if (h < 1.5 || nearRunway(x, z)) continue;
         // dense cores grow taller blocks; the edges are houses
@@ -478,7 +483,7 @@ export class TerrainRenderer {
         const hsh = hash2(i + 101, j - 77);
         const x = (i + 0.2 + hsh * 0.6) * HOUSE_CELL, z = (j + 0.2 + hash2(j - 77, i + 101) * 0.6) * HOUSE_CELL;
         if ((x - camPos.x) ** 2 + (z - camPos.z) ** 2 > R * R) continue;
-        if (!builtAt(cover, x, z)) continue;
+        if (!builtAt(cover, x, z) || realBuildings.covers(x, z)) continue;
         const h = terrainHeight(x, z);
         if (h < 1.5 || nearRunway(x, z)) continue;
         cells.push({ i, j, x, z, h, dense: coverAt(cover, x, z, 1), hsh });
@@ -505,6 +510,8 @@ export class TerrainRenderer {
         const rot = (hash2(c.i - 3, c.j + 3) < 0.5 ? 0 : Math.PI / 2) + (hash2(c.i, c.j + 5) < 0.5 ? 0 : Math.PI) + (c.hsh - 0.5) * 0.15;
         picks.push({ x: c.x, z: c.z, h: c.h - 0.6, rot, scale: 0.92 + hash2(c.i + 9, c.j) * 0.16, variant: name });
       }
+      // real house footprints: the model house of the nearest shape, fitted to the footprint
+      for (const b of realBuildings.housesNear(camPos.x, camPos.z, R)) { const pk = this.fitHouse(b); if (pk) picks.push(pk); }
     }
     // trees: conifers take over with height, broadleaf woods in the lowlands (as the procedural forest)
     if (pal.trees && (F.conifer.length || F.broadleaf.length)) {
@@ -525,6 +532,23 @@ export class TerrainRenderer {
       }
     }
     M.set(picks);
+  }
+
+  /** a small model house fitted to a real footprint: long side to long side, height from the data or kept in proportion */
+  private fitHouse(b: Building): CellPick | null {
+    const M = this.models, list = M.fam.small;
+    if (!list.length) return null;
+    const want = b.w / b.d;
+    const ranked = list.map((n) => { const sz = M.sizeOf(n)!; const a = Math.max(sz[0], sz[2]) / Math.min(sz[0], sz[2]); return { n, sz, e: Math.abs(Math.log(a / want)) }; }).sort((p, q) => p.e - q.e);
+    const c = ranked[Math.min(ranked.length - 1, Math.floor(b.seed * Math.min(3, ranked.length)))];
+    const alongX = c.sz[0] >= c.sz[2];
+    const long = Math.max(c.sz[0], c.sz[2]), short = Math.min(c.sz[0], c.sz[2]);
+    const sl = b.w / long, ss = b.d / short;
+    const sy = b.h > 0 ? Math.min(1.6, Math.max(0.6, b.h / c.sz[1])) : Math.min(1.3, Math.max(0.75, (sl + ss) / 2));
+    const h = terrainHeight(b.x, b.z) - 0.6;
+    return alongX
+      ? { x: b.x, z: b.z, h, rot: b.rot + (b.seed > 0.5 ? Math.PI : 0), scale: 1, variant: c.n, sx: sl, sy, sz: ss }
+      : { x: b.x, z: b.z, h, rot: b.rot + Math.PI / 2 + (b.seed > 0.5 ? Math.PI : 0), scale: 1, variant: c.n, sx: ss, sy, sz: sl };
   }
 
   /** Pre-build chunks around a point (during loading). */
