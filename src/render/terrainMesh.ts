@@ -578,7 +578,8 @@ export function buildScenery(): THREE.Group {
     // finely divided: with the logarithmic depth buffer, a two-triangle plane thousands of km across gets its depth
     // wrong near the camera and is drawn over the land (the terrain "flashing" on and off as the view moved)
     new THREE.PlaneGeometry(THEATER_HALF * 6, THEATER_HALF * 6, 240, 240),
-    new THREE.MeshStandardMaterial({ color: 0x0c1a24, roughness: 0.08, metalness: 0 }),
+    // beyond the terrain: a matt sea (a mirror here would draw a bright line along the horizon)
+    new THREE.MeshStandardMaterial({ color: 0x0c1a24, roughness: 0.55, metalness: 0, envMapIntensity: 0.25 }),
   );
   sea.rotation.x = -Math.PI / 2;
   // below the terrain's own sea surface (-2 m): low coasts sit within a metre of sea level and would z-fight with it

@@ -14,6 +14,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { CloudPass } from './clouds.js';
 
 /** the VR HUD quad sits far out so it reads as collimated (at infinity) */
 export const VR_HUD_DIST = 30;
@@ -49,6 +50,9 @@ export class SceneRenderer {
   /** HDR pipeline on a monitor (VR renders straight to the headset): MSAA scene → bloom → filmic tone mapping */
   private composer: EffectComposer;
   private bloom: UnrealBloomPass;
+  /** volumetric cloud layer (monitor); VR keeps the light textured deck */
+  private cloudPass: CloudPass;
+  private cloudsOn = true;
   private pmrem: THREE.PMREMGenerator;
   private envRT: THREE.WebGLRenderTarget | null = null;
   /** sky + ground used to light and reflect the scene (scene.environment), rebuilt with the weather */
@@ -119,9 +123,11 @@ export class SceneRenderer {
     const ground = new THREE.Mesh(new THREE.SphereGeometry(500, 32, 16, 0, Math.PI * 2, Math.PI / 2 + 0.02, Math.PI / 2 - 0.02), new THREE.MeshBasicMaterial({ color: 0x3a4232, side: THREE.BackSide }));
     this.envScene.add(this.envSky, ground);
     this.envScene.userData.ground = ground;
-    const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+    const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4, depthTexture: new THREE.DepthTexture(1, 1) });
     this.composer = new EffectComposer(this.renderer, rt);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.cloudPass = new CloudPass(this.camera);
+    this.composer.addPass(this.cloudPass);
     // only what is brighter than daylight blooms: the sun, its glint on water and canopies, burners, flares
     this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.2, 0.4, 6);
     this.composer.addPass(this.bloom);
@@ -173,7 +179,12 @@ export class SceneRenderer {
     fog.density = 3.0 / (Math.max(5, w.visibilityKm) * 1000);
     this.baseFog = fog.density;
     this.viewDist = Math.min(260000, w.visibilityKm * 1000 * 2.2);
-    this.clouds.visible = w.clouds !== 'clear';
+    this.cloudsOn = w.clouds !== 'clear';
+    // under an overcast the sun is a glow in the deck: the ground gets the sky's diffuse light, little direct sun
+    if (w.clouds === 'overcast') { this.sun.intensity *= 0.22; this.hemi.intensity *= 1.15; }
+    // the haze at the horizon is as bright as the sky there
+    fog.color.multiplyScalar(1.25);
+    this.cloudPass.setWeather(w.clouds, w.cloudBase);
     const cm = this.clouds.material as THREE.MeshLambertMaterial;
     cm.opacity = w.clouds === 'overcast' ? 0.97 : 0.75;
     cm.alphaTest = w.clouds === 'overcast' ? 0 : 0.35;
@@ -507,8 +518,13 @@ export class SceneRenderer {
     this.sun.target.position.copy(cp);
     this.sun.position.copy(cp).addScaledVector(this.sunDir, 10000);
     this.fx.setView(this.camera, this.renderer.domElement.height, this.sunDir, this.sun, this.hemi);
+    this.clouds.visible = this.cloudsOn && this.vrActive;
     if (this.vrActive) this.renderer.render(this.scene, this.camera);
-    else this.composer.render();
+    else {
+      this.cloudPass.enabled = this.cloudsOn;
+      if (this.cloudsOn) this.cloudPass.update(this.sunDir, this.sun, this.hemi.color.clone().multiplyScalar(this.hemi.intensity * 0.9), this.scene.fog as THREE.FogExp2, performance.now() / 1000);
+      this.composer.render();
+    }
   }
 
   /** Project world point to screen pixels; null if behind the camera. */
