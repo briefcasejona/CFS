@@ -754,7 +754,7 @@ function eigenSym3(m: number[][]): [number[], THREE.Vector3[]] {
  */
 export function rigGear(parts: { name: string; geo: THREE.BufferGeometry; mat: THREE.Material; wing: number; mover: number }[],
   isGear: (name: string) => boolean, rig: GearRig, movers: Mover[], label = '') {
-  interface Shell { part: number; id: number; box: THREE.Box3; c: THREE.Vector3; area: number; plate: boolean; normal: THREE.Vector3; long: THREE.Vector3; leg: number; kind: 'leg' | 'door' | 'well' }
+  interface Shell { part: number; id: number; box: THREE.Box3; c: THREE.Vector3; area: number; plate: boolean; thin: number; normal: THREE.Vector3; long: THREE.Vector3; leg: number; kind: 'leg' | 'door' | 'well'; far?: boolean }
   const shells: Shell[] = [];
   const srcs = new Map<number, { geo: THREE.BufferGeometry; shell: Int32Array }>();
   const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), m = new THREE.Vector3();
@@ -786,7 +786,7 @@ export function rigGear(parts: { name: string; geo: THREE.BufferGeometry; mat: T
       }
       const [val, vec] = eigenSym3(cov.map((r) => r.map((x) => x / s.area)));
       const e = val.map(Math.sqrt);
-      shells.push({ part: pi, id, box: s.box, c: s.c, area: s.area, plate: e[2] < 0.22 * e[1] && e[1] > 0.04, normal: vec[2], long: vec[0], leg: -1, kind: 'well' });
+      shells.push({ part: pi, id, box: s.box, c: s.c, area: s.area, plate: e[2] < 0.22 * e[1] && e[1] > 0.04, thin: e[2] / Math.max(e[1], 1e-6), normal: vec[2], long: vec[0], leg: -1, kind: 'well' });
     }
   });
   if (!shells.length) return;
@@ -810,7 +810,7 @@ export function rigGear(parts: { name: string; geo: THREE.BufferGeometry; mat: T
     const top = Math.max(...mine.map((s) => s.box.max.y)), bot = Math.min(...mine.map((s) => s.box.min.y)), H = top - bot;
     if (H < 0.3) continue;
     for (const s of mine) {
-      const hangs = s.box.max.y > top - 0.35 * H && s.box.min.y > bot + 0.22 * H;
+      const hangs = s.box.max.y > top - 0.35 * H && s.box.min.y > bot + 0.1 * H;
       if (s.plate && hangs && s.area > 0.04) s.kind = 'door';
       else if (s.box.min.y < bot + 0.5 * H || (s.box.min.y + s.box.max.y) / 2 < top - 0.4 * H) s.kind = 'leg';
     }
@@ -821,6 +821,17 @@ export function rigGear(parts: { name: string; geo: THREE.BufferGeometry; mat: T
     const tall = (s: Shell) => s.box.max.y - s.box.min.y;
     const strut = [...(legs.some((s) => !wheels.includes(s)) ? legs.filter((s) => !wheels.includes(s)) : legs)].sort((p, q) => tall(q) - tall(p))[0];
     const legTop = strut.box.max.y;
+    // what stands well clear of the strut and its wheels does not swing with them (it would sweep through the
+    // airframe): a big panel there is one more door, the rest goes with the door it touches or stays put
+    const column = new THREE.Box3().copy(strut.box);
+    for (const s of wheels) column.union(s.box);
+    column.expandByVector(new THREE.Vector3(0.45, 10, 0.45));
+    for (const s of legs) {
+      if (s === strut || wheels.includes(s) || column.containsPoint(s.c)) continue;
+      s.kind = s.thin < 0.5 && s.area > 0.3 && s.box.max.y > top - 0.35 * H ? 'door' : 'well';
+      s.far = true;
+    }
+    for (let i = legs.length - 1; i >= 0; i--) if (legs[i].kind !== 'leg') legs.splice(i, 1);
     const P = new THREE.Vector3((strut.box.min.x + strut.box.max.x) / 2, legTop, (strut.box.min.z + strut.box.max.z) / 2);
     {
       // centre of the strut's top end
@@ -843,7 +854,6 @@ export function rigGear(parts: { name: string; geo: THREE.BufferGeometry; mat: T
       ? { parts: NEVER, hinge: [[P.x, P.y, P.z], [P.x, P.y, P.z + 1]], gear: P.x > 0 ? -deg : deg, gearPhase: [0, 0.72], lift }
       : { parts: NEVER, hinge: [[P.x - 0.5, P.y, P.z], [P.x + 0.5, P.y, P.z]], gear: dir === 'fwd' ? deg : -deg, gearPhase: [0, 0.72], lift };
     movers.push(legMover);
-    if ((globalThis as { CFS_GEAR_DEBUG?: boolean }).CFS_GEAR_DEBUG) console.log('GEAR', label.split('/').pop(), 'leg', leg, 'W', W.clone().add(P).toArray().map((v) => v.toFixed(2)).join(','), 'shells', mine.length, 'legs', legs.length, 'doors', mine.filter((s) => s.kind === 'door').length, 'top', top.toFixed(2), 'bot', bot.toFixed(2), 'deg', deg.toFixed(0), 'P', P.toArray().map((v) => v.toFixed(2)).join(','), 'strut', strut.box.min.toArray().map((v) => v.toFixed(2)).join(','), strut.box.max.toArray().map((v) => v.toFixed(2)).join(','), 'zSplit', zSplit.toFixed(2));
     const legIdx = movers.length - 1;
     for (const s of legs) { let mp = split.get(s.part); if (!mp) split.set(s.part, mp = new Map()); mp.set(s.id, legIdx); }
     // doors: hinged along their upper edge, closing towards the well
@@ -874,6 +884,12 @@ export function rigGear(parts: { name: string; geo: THREE.BufferGeometry; mat: T
       movers.push({ parts: NEVER, hinge: [[hp.x, hp.y, hp.z], [hp.x + ax.x, hp.y, hp.z + ax.z]], gear: sense * tilt / RAD, gearPhase: [0.62, 0.99] });
       let mp = split.get(s.part); if (!mp) split.set(s.part, mp = new Map());
       mp.set(s.id, movers.length - 1);
+      // its jacks and links ride along
+      const reach = s.box.clone().expandByScalar(0.05);
+      for (const o of mine) if (o.far && o.kind === 'well' && reach.intersectsBox(o.box)) {
+        let op = split.get(o.part); if (!op) split.set(o.part, op = new Map());
+        op.set(o.id, movers.length - 1);
+      }
     }
   }
   // split the parts: one piece per mover, the wells stay
