@@ -1,6 +1,7 @@
 import { SceneRenderer, type ViewMode } from '../render/scene.js';
 import { Hud } from '../ui/hud.js';
 import { Mfds } from '../ui/mfd.js';
+import { SystemsPanel } from '../ui/systemsPanel.js';
 import { drawTheater, type MapMarker, type MapView } from '../ui/map.js';
 import type { InputManager } from '../input/input.js';
 import type { AudioSystem } from '../core/audio.js';
@@ -12,6 +13,8 @@ import { approach, clamp, DEG } from '../core/math.js';
 import { NM } from '../sim/atmosphere.js';
 import { COMMS, matchCommand, type CommsCommand } from './comms.js';
 import { VoiceInput } from '../input/voice.js';
+import type { Aircraft } from '../sim/entities.js';
+import type { World } from '../sim/world.js';
 
 const DT = 1 / 120;
 
@@ -68,6 +71,9 @@ export class FlightSession {
   private commsEl: HTMLElement;
   private commsOpen = false;
   private voice = new VoiceInput();
+  /** the player's cockpit switches, lights and checklist (aircraft with their own systems) */
+  private sysPanel: SystemsPanel;
+  private radarHeld = false;
 
   constructor(ui: SessionUI, input: InputManager, audio: AudioSystem, settings: Settings) {
     this.ui = ui;
@@ -89,6 +95,7 @@ export class FlightSession {
     this.commsEl.style.cssText = 'position:absolute;left:14px;top:90px;z-index:5;display:none;padding:10px 14px;background:rgba(0,0,0,.65);border:1px solid #3dff7a55;border-radius:6px;font:13px/1.6 monospace;color:#9fffb8;pointer-events:none';
     this.commsEl.innerHTML = '<b>RADIO</b><br>' + COMMS.map((c, k) => `${(k + 1) % 10}. ${c.label}`).join('<br>') + '<br><span style="opacity:.6">Esc or &#92; to close</span>';
     ui.root.append(this.commsEl);
+    this.sysPanel = new SystemsPanel(ui.root);
     // while the menu is open, digits pick a call instead of reaching the cockpit bindings (capture phase runs first)
     window.addEventListener('keydown', (e) => {
       if (!this.commsOpen || !this.running) return;
@@ -159,6 +166,12 @@ export class FlightSession {
     this.ui.overlay.innerHTML = '';
     this.ui.overlay.style.display = 'none';
     const p = this.built.player;
+    // the player's jet gets its own systems if its type has them; a ground start can be cold and dark
+    const state = !p.fm.wow ? 'air' : s.coldStart && this.built.world.carrierOps.state(p) !== 'cat' ? 'cold' : 'ground';
+    p.attachSystems(state, this.built.world.fmOpts(p));
+    this.sysPanel.attach(p.systems);
+    this.sysPanel.show(!!p.systems && state === 'cold');
+    this.radarHeld = false;
     if (p.radar && s.easyRadar) p.radar.def = { ...p.radar.def, range: p.radar.def.range * 1.6 };
     this.kb = { pitch: 0, roll: 0, yaw: 0 };
     // keyboard throttle starts where the mission put it (idle on the ground, cruise in the air, approach power on final)
@@ -172,7 +185,8 @@ export class FlightSession {
     this.acc = 0;
     this.lastKillCount = 0;
     this.lastStallCount = 0;
-    this.built.world.radio(`${spec.title}: ${p.callsign}, ${p.fm.wow ? 'cleared for takeoff' : 'you are cleared in'}.`, '#fff');
+    if (p.systems && state === 'cold') this.built.world.radio(`${spec.title}: ${p.callsign}, cold and dark. Work the checklist in the cockpit panel (K), or press Shift+K and the crew chief starts the jet.`, '#fff');
+    else this.built.world.radio(`${spec.title}: ${p.callsign}, ${p.fm.wow ? 'cleared for takeoff' : 'you are cleared in'}.`, '#fff');
     if (this.built.steerpoints.length) this.built.world.radio(`Steerpoint 1: ${this.built.steerpoints[0].name}`, '#ccc');
     cancelAnimationFrame(this.raf);
     this.raf = requestAnimationFrame((t) => this.frame(t));
@@ -267,6 +281,7 @@ export class FlightSession {
       steerName: `${this.steerIndex + 1} ${this.built.steerpoints[this.steerIndex]?.name ?? ''}`,
     }, dt);
     this.mfds.draw(world, dt);
+    this.sysPanel.update(dt);
     if (this.mapOpen) this.drawMap();
     this.updateAudio(dt);
   }
@@ -280,7 +295,7 @@ export class FlightSession {
     const warn = p.alive && this.hud.warnings(p).some((w) => w === 'PULL UP' || w === 'STALL' || w === 'BINGO');
     this.audio.update(dt, {
       rpm: p.fm.rpm, ab: p.fm.abFrac, qbar: p.fm.qbar, gun: p.gunFiring && p.gunRounds > 0, tone,
-      rwr, warn, cockpit: this.scene.view === 'cockpit', alive: p.alive,
+      rwr, warn: warn || (p.alive && !!p.systems?.horn()), cockpit: this.scene.view === 'cockpit', alive: p.alive,
     });
     const kills = this.built.world.kills;
     if (kills.length > this.lastKillCount) {
@@ -289,6 +304,29 @@ export class FlightSession {
         if (pos) this.audio.boom(pos.distanceTo(p.pos));
       }
       this.lastKillCount = kills.length;
+    }
+  }
+
+  /** Cockpit systems: panel and auto-start keys, crew alerts, and avionics that have lost their power. */
+  private handleSystems(p: Aircraft, world: World) {
+    const i = this.input;
+    const sys = p.systems;
+    if (!sys) {
+      if (i.pressed('systemsPanel') || i.pressed('autoStart')) world.radio(`${p.def.name}: this aircraft does not have its own systems yet.`, '#ccc');
+      return;
+    }
+    if (i.pressed('systemsPanel')) this.sysPanel.toggle();
+    if (i.pressed('autoStart')) {
+      sys.autoStart = !sys.autoStart;
+      world.radio(sys.autoStart ? 'Crew chief: starting the jet for you.' : 'Auto-start stopped.', '#ccc');
+    }
+    if (i.pressed('masterCaution')) { sys.set('masterCaution', 1); sys.set('masterCaution', 0); }
+    for (const m of sys.drainMessages()) world.radio(m.text, m.level === 'warning' ? '#ff6a5a' : m.level === 'caution' ? '#ffcf70' : '#ccc');
+    // a radar without power stops; it comes back in its search mode when power returns
+    if (p.radar) {
+      const on = sys.powered('radar');
+      if (!on && p.radar.mode !== 'OFF') { p.radar.setMode('OFF'); this.radarHeld = true; }
+      else if (on && this.radarHeld) { p.radar.setMode('RWS'); this.radarHeld = false; }
     }
   }
 
@@ -399,7 +437,9 @@ export class FlightSession {
     if (i.pressed('trimReset')) { c.trimPitch = 0; c.trimRoll = 0; c.trimYaw = 0; }
     // ---- systems
     if (i.pressed('gear')) {
-      if (c.gearDown && p.fm.wow) world.radio('Gear handle locked — weight on wheels.', '#fc8');
+      const why = p.systems ? p.systems.set('lgHandle', c.gearDown ? 0 : 1) : null;
+      if (why) world.radio(why, '#fc8');
+      else if (c.gearDown && p.fm.wow) world.radio('Gear handle locked — weight on wheels.', '#fc8');
       else { c.gearDown = !c.gearDown; world.radio(`Gear ${c.gearDown ? 'down' : 'up'}.`, '#ccc'); }
     }
     if (i.pressed('hook')) {
@@ -415,7 +455,14 @@ export class FlightSession {
       const msg = world.carrierOps.launch(p);
       if (msg) world.radio(msg, '#ffd27f');
     }
-    if (i.pressed('flaps')) c.flaps = c.flaps < 0.25 ? 0.5 : c.flaps < 0.75 ? 1 : 0;
+    if (i.pressed('flaps')) {
+      if (p.systems && p.systems.hooks.flapCmd !== null) {
+        // flaps that follow the gear handle: the key works the ALT FLAPS switch instead
+        const ext = p.systems.get('altFlaps') === 1;
+        p.systems.set('altFlaps', ext ? 0 : 1);
+        world.radio(`ALT FLAPS ${ext ? 'NORM: flaps follow the LG handle' : 'EXTEND'}.`, '#ccc');
+      } else c.flaps = c.flaps < 0.25 ? 0.5 : c.flaps < 0.75 ? 1 : 0;
+    }
     if (i.pressed('speedbrake')) c.speedbrake = c.speedbrake > 0.5 ? 0 : 1;
     if (i.down('speedbrakeHold')) c.speedbrake = 1;
     else if (i.released('speedbrakeHold')) c.speedbrake = 0;
@@ -427,14 +474,16 @@ export class FlightSession {
     if (i.down('nozzleUp')) c.nozzle = clamp(c.nozzle - 0.5 * dt, 0, 1);
     if (i.pressed('jettison')) { p.jettison(); world.radio('Stores jettisoned.', '#fc8'); }
     if (i.pressed('eject')) {
-      if (world.time - this.ejectArm < 1.5) this.eject();
+      if (p.systems && p.systems.get('seatArm') === 0) world.radio('Seat is SAFE: arm the ejection safety lever first.', '#f88');
+      else if (world.time - this.ejectArm < 1.5) this.eject();
       else { this.ejectArm = world.time; world.radio('EJECT armed — press again to eject.', '#f88'); }
     }
     // ---- weapons
     const sel = p.selWeapon;
-    p.gunFiring = (i.down('trigger') && !!p.def.gun) || (sel === 'gun' && i.down('fire'));
+    const hk = p.systems?.hooks;
+    p.gunFiring = ((i.down('trigger') && !!p.def.gun) || (sel === 'gun' && i.down('fire'))) && (!hk || hk.gunAvail);
     if (i.pressed('pickle') || (i.pressed('fire') && sel !== 'gun')) {
-      const r = world.fireSelected(p);
+      const r = hk && !hk.weaponsAvail ? 'No release: stores management is not powered (MMC / ST STA).' : world.fireSelected(p);
       if (r && !['FOX 1', 'FOX 2', 'FOX 3', 'PICKLE', 'MAGNUM', 'RIFLE'].includes(r)) world.radio(r, '#fc8');
     }
     if (i.pressed('weaponNext')) p.cycleWeapon(1);
@@ -466,6 +515,7 @@ export class FlightSession {
     if (i.pressed('cmsProgram')) {
       for (let k = 0; k < 4; k++) this.cmsQueue.push({ t: world.time + k * 0.25, kind: k % 2 === 0 ? 'chaff' : 'flare' });
     }
+    this.handleSystems(p, world);
     // ---- the carrier steerpoint moves with the ship
     for (const s of this.built.steerpoints) if (s.name === 'MOTHER' && world.carriers[0]) s.pos.set(world.carriers[0].pos.x, s.pos.y, world.carriers[0].pos.z);
     // ---- steerpoint sequencing

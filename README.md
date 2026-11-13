@@ -39,6 +39,10 @@ All 16 fly on the same **6-DOF rigid-body flight model**, and each jet supplies 
 * Pilot G tolerance: about 7.5 g sustained (8.5 g in reclined-seat jets). At 9 g the pilot greys out and blacks out after about 10 s; real G-LOC releases the controls for a few seconds.
 * ISA atmosphere, ground handling (gear spring-dampers, nosewheel steering, brakes), tail strikes, hard-landing gear collapse, over-G structural failure, G-LOC / red-out.
 
+## Aircraft systems
+
+Aircraft are being given their own systems and cockpit, one type at a time. The **F-16** is the first: electrical, hydraulic, fuel, engine start (JFS), EPU, landing gear, brakes and the warning and caution lights work as in the real jet, from the flight manual. Press **K** for the cockpit panel (switches, lights, gauges and the checklist), **Shift+K** to have the crew chief start the jet, **J** to reset the master caution. Turn on **Cold start** in Settings to begin ground missions cold and dark. See [docs/SYSTEMS.md](docs/SYSTEMS.md).
+
 ## Combat
 
 * Radar with RWS / TWS / STT / ACM modes. Detection range scales with RCS, and look-down Doppler notching and terrain masking apply. Some jets also carry an IRST.

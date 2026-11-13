@@ -126,6 +126,7 @@ export class World {
         const wasCrashed = ac.fm.crashed;
         // an unconscious pilot (G-LOC) lets go of the stick
         if (ac.glocTimer > 0) { ac.ctrl.pitch = 0; ac.ctrl.roll = 0; ac.ctrl.yaw = 0; }
+        if (ac.systems) ac.stepSystems(dt, this.fmOpts(ac));
         ac.fm.step(dt, ac.ctrl, this.env, this.fmOpts(ac));
         if (ac.fm.crashed && !wasCrashed) this.onCrash(ac);
         if (ac.isPlayer && this.carriers.length) {
