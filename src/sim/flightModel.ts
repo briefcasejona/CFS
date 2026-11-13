@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { AircraftDef } from '../aircraft/types.js';
 import { atmosphere, casFromTas, G0, type AtmoState } from './atmosphere.js';
 import { approach, clamp, DEG, smoothstep, table1 } from '../core/math.js';
+import type { FmHooks } from '../systems/types.js';
 
 /** F-16 FLCS: AoA limit (deg) and the speed (m/s, ≈450 kt) below which the stick's G gearing falls off */
 const F16_AOA_LIMIT = 25;
@@ -114,6 +115,9 @@ export class FlightModel {
   time = 0;
   atmo: AtmoState = atmosphere(0);
   damage: Damage = { engine: 1, controls: 1, fuelLeak: 0, hydraulics: 1 };
+  /** the aircraft's own systems, when it has them (src/systems): they decide whether the engine is lit, the gear
+   *  can move, how much power the flight controls have and so on. null = the generic assumptions below. */
+  sys: FmHooks | null = null;
 
   constructor(def: AircraftDef) {
     this.def = def;
@@ -189,7 +193,10 @@ export class FlightModel {
   /** Control surface effectiveness factor (supersonic loss). */
   ctrlEffectNow() { return 1 - 0.35 * smoothstep(0.9, 1.5, this.mach); }
 
-  get rpm() { return this.engineRunning && this.fuel > 0 ? 62 + 38 * this.core + 3 * this.abFrac : Math.max(0, 62 * this.core); }
+  get rpm() {
+    if (this.sys && this.sys.rpm !== null) return this.sys.rpm;
+    return this.engineRunning && this.fuel > 0 ? 62 + 38 * this.core + 3 * this.abFrac : Math.max(0, 62 * this.core);
+  }
 
   /** Engine thrust model, total for all engines (N). */
   private engineStep(dt: number, throttle: number, opts: FMOptions) {
@@ -205,8 +212,10 @@ export class FlightModel {
       coreCmd = 1;
       abCmd = (throttle - detent) / (1 - detent);
     }
-    const running = this.engineRunning && this.fuel + this.extFuel > 0;
+    const sys = this.sys;
+    const running = this.engineRunning && (sys ? sys.engineOn : this.fuel + this.extFuel > 0);
     if (!running) { coreCmd = 0; abCmd = 0; }
+    if (sys?.abInhibit) abCmd = 0;
     const rate = (1 / e.spoolTime) * (this.core < 0.3 ? 0.7 : 1.3);
     this.core = approach(this.core, coreCmd, rate, dt);
     if (abCmd > 0 && this.core > 0.95) {
@@ -227,7 +236,7 @@ export class FlightModel {
     const vmax = this.def.limits.vmaxKcas * 0.514444;
     const qLim = 0.5 * 1.225 * vmax * vmax;
     const qCut = clamp(1 - (this.qbar - qLim) / (0.3 * qLim), 0.2, 1);
-    this.thrust = (milT + abT) * e.count * inlet * qCut * this.damage.engine;
+    this.thrust = (milT + abT) * e.count * inlet * qCut * this.damage.engine * (sys ? sys.thrustScale : 1);
     // compressor stall (TF30): high AoA / sideslip / abrupt throttle in AB → one engine stalls for a few seconds
     this.asymThrust = 0;
     if (e.stallProne && running && e.count === 2) {
@@ -252,7 +261,7 @@ export class FlightModel {
     }
     this.lastThrottle = throttle;
     this.fuelFlow = running ? (milT * e.tsfcMil + abT * e.tsfcAB) * e.count + 0.05 : 0;
-    if (!opts.unlimitedFuel) {
+    if (!opts.unlimitedFuel && !sys?.ownsFuel) {
       const burn = (this.fuelFlow + this.damage.fuelLeak) * dt;
       if (this.extFuel > 0) this.extFuel = Math.max(0, this.extFuel - burn);
       else this.fuel = Math.max(0, this.fuel - burn);
@@ -275,11 +284,13 @@ export class FlightModel {
     const rho = this.atmo.rho;
 
     // --- secondary actuators
-    if (!this.wow || c.gearDown) this.gearPos = approach(this.gearPos, c.gearDown ? 1 : 0, 1 / 6, dt);
-    let flapCmd = c.flaps;
+    const sys = this.sys;
+    const gearCmd = sys && sys.gearCmd !== null ? sys.gearCmd : c.gearDown;
+    if (!this.wow || gearCmd) this.gearPos = approach(this.gearPos, gearCmd ? 1 : 0, (sys ? sys.gearRate : 1) / 6, dt);
+    let flapCmd = sys && sys.flapCmd !== null ? sys.flapCmd : c.flaps;
     if (this.ias > 140) flapCmd = 0; // flap blowback ~270 kt
     this.flapPos = approach(this.flapPos, flapCmd, 0.25, dt);
-    this.brakePos = approach(this.brakePos, c.speedbrake, 0.8, dt);
+    if (!sys || sys.speedbrakeAvail) this.brakePos = approach(this.brakePos, Math.min(c.speedbrake, sys ? sys.speedbrakeMax : 1), 0.8, dt);
     if (def.fcs.vtol) this.nozzleAngle = approach(this.nozzleAngle, c.nozzle * 98 * DEG, 90 * DEG, dt);
     if (def.fcs.swingWing) this.sweep = approach(this.sweep, 20 + 48 * smoothstep(0.45, 0.95, this.mach), 7, dt);
 
@@ -367,7 +378,7 @@ export class FlightModel {
     const pitchBreak = stallF * 0.08 * sgn * (def.fcs.canard ? 0.3 : 1);
 
     // --- flight control system -> surface deflections
-    const ctrlHealth = this.damage.controls * this.damage.hydraulics;
+    const ctrlHealth = this.damage.controls * this.damage.hydraulics * (this.sys ? this.sys.controlPower : 1);
     if (def.fcs.law === 'f16') {
       this.f16Flcs(dt, c, Vs, qbar, ctrlHealth, { CLa, CLmax, aStall: aStallPos, stallF, superCtrl, Cma, Cnb, Clb, Cnp, advYawDa, wingRock, pitchBreak });
     } else this.fcs(dt, c, V, Vs, qbar, CLa, aStallPos, ctrlHealth);
@@ -770,7 +781,10 @@ export class FlightModel {
     const gv = env.groundVelocity?.(this.pos.x, this.pos.z) ?? null;
     const speed = gv ? this.vel.clone().sub(gv).length() : this.vel.length();
     if (wheelsDown && !water) {
-      const steer = (speed < 20 ? 55 : 6) * DEG * clamp(c.yaw, -1, 1);
+      const sys = this.sys;
+      // without nosewheel steering the nosewheel castors: the rudder pedals do nothing to it
+      const steer = sys && !sys.nws ? 0 : (speed < 20 ? 55 : 6) * DEG * clamp(c.yaw, -1, 1);
+      const brakes = sys ? (sys.parkingBrake ? 1 : c.brakes * sys.brakeScale) : c.brakes;
       const pts: Array<[number, number, number, number]> = [
         [0, -g.height, -g.nose, 0],
         [-g.track / 2, -g.height, g.main, 1],
@@ -796,7 +810,7 @@ export class FlightModel {
         const wr = new THREE.Vector3(-wf.z, 0, wf.x);
         const vLong = vp.dot(wf);
         const vLat = vp.dot(wr);
-        const mu = 0.02 + (type === 1 ? 0.55 * c.brakes : 0);
+        const mu = 0.02 + (type === 1 ? 0.55 * brakes : 0);
         const fLong = -clamp(vLong / 0.4, -1, 1) * mu * Fn;
         const fLat = -clamp(vLat / 0.25, -1, 1) * 0.75 * Fn;
         const Fw = new THREE.Vector3(0, Fn, 0).addScaledVector(wf, fLong).addScaledVector(wr, fLat);

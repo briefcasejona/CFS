@@ -3,6 +3,8 @@ import type { AircraftDef, Side } from '../aircraft/types.js';
 import { FlightModel, defaultControls, type Controls } from './flightModel.js';
 import { WEAPONS, type WeaponDef } from '../weapons/stores.js';
 import type { SamType } from '../world/theater.js';
+import type { AircraftSystems, StartState, SystemsEnv } from '../systems/types.js';
+import { createSystems } from '../systems/registry.js';
 
 let NEXT_ID = 1;
 export const newId = () => NEXT_ID++;
@@ -88,6 +90,47 @@ export class Aircraft {
   netGhost = false;
   netProxy = false;
   squadronId = '';
+  /** this aircraft's own systems (src/systems), or null while it flies on the generic set */
+  systems: AircraftSystems | null = null;
+  /** vertical speed and stick activity for the systems, smoothed */
+  private stickAct = 0;
+
+  /** Give this aircraft its own systems, if its type has them. Returns false for a type still on the generic set. */
+  attachSystems(state: StartState, opts: { unlimitedFuel?: boolean; abDetent?: number } = {}): boolean {
+    const sys = createSystems(this.def);
+    if (!sys) return false;
+    this.systems = sys;
+    this.fm.sys = sys.hooks;
+    sys.init(state, this.systemsEnv(opts));
+    if (state === 'cold') { this.fm.core = 0; this.fm.abFrac = 0; this.ctrl.throttle = 0; }
+    return true;
+  }
+
+  systemsEnv(opts: { unlimitedFuel?: boolean; abDetent?: number } = {}): SystemsEnv {
+    const fm = this.fm, c = this.ctrl;
+    return {
+      wow: fm.wow, ias: fm.ias, tas: fm.tas, mach: fm.mach, alt: fm.pos.y, vs: fm.vel.y, nz: fm.nz,
+      throttle: c.throttle, abDetent: opts.abDetent ?? 0.8, core: fm.core, abFrac: fm.abFrac, fuelFlow: fm.fuelFlow,
+      gearPos: fm.gearPos, flapPos: fm.flapPos, brakes: c.brakes, stick: this.stickAct,
+      damage: fm.damage, fuel: fm.fuel, extFuel: fm.extFuel,
+      extTanks: this.stores.filter((s) => s === 'tank').length,
+      unlimitedFuel: !!opts.unlimitedFuel,
+    };
+  }
+
+  /** Advance the systems one step and hand their fuel state back to the flight model. Call before fm.step. */
+  stepSystems(dt: number, opts: { unlimitedFuel?: boolean; abDetent?: number } = {}) {
+    const sys = this.systems;
+    if (!sys) return;
+    const c = this.ctrl;
+    this.stickAct += (Math.min(1, Math.abs(c.pitch) + Math.abs(c.roll)) - this.stickAct) * Math.min(1, dt * 2);
+    sys.step(dt, this.systemsEnv(opts));
+    const f = sys.fuelState();
+    this.fm.fuel = f.internal; this.fm.extFuel = f.external;
+    this.fm.updateMass();
+    // the LG handle is a cockpit control: everything else reads it from the controls
+    c.gearDown = sys.get('lgHandle') === 1;
+  }
 
   constructor(def: AircraftDef, side: Side, callsign: string, loadout: string[]) {
     this.def = def;

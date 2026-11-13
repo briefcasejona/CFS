@@ -8,6 +8,8 @@ export interface Settings {
   gEffects: boolean;
   labels: boolean;
   easyRadar: boolean;
+  /** start cold and dark on the ground in aircraft that have their own systems (src/systems) */
+  coldStart: boolean;
   // controls
   abDetent: number;           // throttle position of the afterburner detent 0..1
   keyboardSensitivity: number;
@@ -38,6 +40,7 @@ export const DEFAULT_SETTINGS: Settings = {
   gEffects: true,
   labels: false,
   easyRadar: false,
+  coldStart: false,
   abDetent: 0.8,
   keyboardSensitivity: 1,
   fov: 75,

@@ -375,6 +375,7 @@ export function settingsScreen(app: AppApi): HTMLElement {
           ${chk('invulnerable', 'Invulnerable', 'your aircraft cannot be damaged (crashes still count)')}
           ${chk('labels', 'Labels', 'type and range labels on aircraft and ground units (F9 in flight)')}
           ${chk('easyRadar', 'Easy radar', '+60% radar detection range')}
+          ${chk('coldStart', 'Cold start', 'ground starts begin cold and dark in jets with their own systems (F-16): start the engine yourself, or Shift+K for auto-start')}
           <p class="muted">Realism profile: <b>${realismLabel(s)}</b></p>
         </div>
         <div class="col">

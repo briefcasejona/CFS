@@ -53,6 +53,7 @@ function orderAll(c: CommsContext, cmd: 'attack' | 'engage' | 'rejoin' | 'rtb', 
 function setGear(c: CommsContext, down: boolean): Array<[string, string]> {
   const p = c.player;
   if (!down && p.fm.wow) return [['—', 'Gear handle locked — weight on wheels.']];
+  if (p.systems) { const why = p.systems.set('lgHandle', down ? 1 : 0); if (why) return [['—', why]]; }
   p.ctrl.gearDown = down;
   return [['—', `Gear ${down ? 'down' : 'up'}.`]];
 }

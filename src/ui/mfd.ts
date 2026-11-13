@@ -43,7 +43,7 @@ export class Mfds {
       const c = cv.getContext('2d')!;
       c.fillStyle = '#050a06';
       c.fillRect(0, 0, 300, 300);
-      if (!p || !p.alive) { this.txt(c, 'OFF', 150, 150, DIM, 20, 'center'); continue; }
+      if (!p || !p.alive || (p.systems && !p.systems.powered('mfd'))) { this.txt(c, 'OFF', 150, 150, DIM, 20, 'center'); continue; }
       switch (page) {
         case 'FCR': this.fcr(c, p); break;
         case 'HSD': this.hsd(c, world, p); break;
