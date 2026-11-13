@@ -151,6 +151,22 @@ export function drawTheater(ctx: CanvasRenderingContext2D, v: MapView, opts: The
     }
   }
   if (opts.showObjectives !== false) for (const o of OBJECTIVES) drawObjective(ctx, v, o, opts.objectiveStatus?.[o.id]);
+  // the map's other airfields: grey, named once the map is zoomed in
+  for (const ab of currentTheater().fields ?? []) {
+    const p = w2s(v, ab.x, ab.z);
+    if (p.x < -50 || p.y < -50 || p.x > v.w + 50 || p.y > v.h + 50) continue;
+    if (v.mpp > 1500 && ab.kind !== 'hub') continue;
+    ctx.strokeStyle = 'rgba(205,210,215,0.85)';
+    ctx.lineWidth = 2;
+    for (const rw of runwaysOf(ab)) {
+      const q = w2s(v, rw.x, rw.z), hr = rw.hdg * Math.PI / 180, L = Math.max(5, rw.length / v.mpp);
+      ctx.beginPath();
+      ctx.moveTo(q.x - Math.sin(hr) * L / 2, q.y + Math.cos(hr) * L / 2);
+      ctx.lineTo(q.x + Math.sin(hr) * L / 2, q.y - Math.cos(hr) * L / 2);
+      ctx.stroke();
+    }
+    if (v.mpp < (ab.kind === 'hub' ? 600 : 250)) label(ctx, ab.name, p.x + 8, p.y + 10, 'rgba(205,210,215,0.9)');
+  }
   for (const ab of AIRBASES) {
     const owner = opts.airbaseOwners?.[ab.id] ?? ab.side;
     const p = w2s(v, ab.x, ab.z);

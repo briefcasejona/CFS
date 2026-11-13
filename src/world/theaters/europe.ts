@@ -3,6 +3,7 @@
 // western Belarus. Airfields are real military fields (positions/runways approximate).
 import { DemGrid, type AbRow, type ObjRow } from '../demTheater.js';
 import type { Theater } from '../theater.js';
+import { CIVIL_FIELDS } from './civil.js';
 import { leeuwardenLayout } from '../bases/leeuwarden.js';
 
 export const EUROPE_PROJ = { lat0: 52, lon0: 10, lat1: 47, lat2: 57 };
@@ -62,6 +63,7 @@ export const EUROPE: Theater = {
   nations: { blue: ['nl', 'de', 'be', 'fr', 'uk', 'dk', 'no', 'se', 'pl', 'us'], red: ['ru', 'by'] },
   rawHeight: DEM.rawHeight,
   airbases: DEM.airbases(AB).map((ab) => (ab.id === 'leeuwarden' ? { ...ab, layout: leeuwardenLayout((la, lo) => europeLcc.forward(la, lo)) } : ab)),
+  fields: DEM.fields(CIVIL_FIELDS.europe),
   objectives: DEM.objectives(OBJ),
   // central North Sea, steaming north-east
   carriers: [{ id: 'cvn75', name: 'USS Harry S. Truman (CVN-75)', side: 'blue', ...europeLcc.forward(54.6, 3.6), hdg: 30, speedKt: 15 }],

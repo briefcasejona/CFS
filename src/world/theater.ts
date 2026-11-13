@@ -25,6 +25,8 @@ export interface Airbase {
   extra?: Runway[];
   /** the field's real layout (taxiways, shelters, buildings) where it has been mapped; otherwise a generic one is drawn */
   layout?: BaseLayout;
+  /** set on the fields that are scenery rather than mission airbases (Theater.fields): what stands beside the runway */
+  kind?: 'hub' | 'regional' | 'field' | 'military';
 }
 
 /** A mapped airbase, in game coordinates (x east, z south; sizes in metres, rot = grid rotation of the buildings). */
@@ -93,6 +95,9 @@ export interface Theater {
   /** terrain height without airbase flattening; negative = sea floor */
   rawHeight(x: number, z: number): number;
   airbases: Airbase[];
+  /** the map's other airfields — civilian airports, military fields the missions don't use: drawn, flattened and
+   *  landable, but owned by no side and never used by missions or the campaign */
+  fields?: Airbase[];
   objectives: ObjectiveDef[];
   /** campaign frontline: number of sectors across x and the initial front z per sector */
   sectors: number;
@@ -136,6 +141,30 @@ let current: Theater = VARNIA;
 export let THEATER_HALF = VARNIA.half;
 export let THEATER_NAME = VARNIA.name;
 export let AIRBASES: Airbase[] = VARNIA.airbases;
+/** every runway on the map: the airbases, then the theater's other fields */
+export let ALL_FIELDS: Airbase[] = VARNIA.airbases;
+// which fields can flatten the ground at a point: ALL_FIELDS sorted into 16 km bins (a field reaches ≤ 7 km + its bin)
+const FIELD_BIN = 16000;
+let fieldBins = new Map<number, Airbase[]>();
+function indexFields() {
+  fieldBins = new Map();
+  for (const ab of ALL_FIELDS) {
+    let reach = 0;
+    for (const rw of runwaysOf(ab)) reach = Math.max(reach, Math.hypot(rw.x - ab.x, rw.z - ab.z) + rw.length / 2 + 3200);
+    const i0 = Math.floor((ab.x - reach) / FIELD_BIN), i1 = Math.floor((ab.x + reach) / FIELD_BIN), j0 = Math.floor((ab.z - reach) / FIELD_BIN), j1 = Math.floor((ab.z + reach) / FIELD_BIN);
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const k = i * 4096 + j;
+      let a = fieldBins.get(k);
+      if (!a) fieldBins.set(k, a = []);
+      a.push(ab);
+    }
+  }
+}
+const NO_FIELDS: Airbase[] = [];
+/** the fields whose runways can be within ~3 km of x, z */
+export function fieldsNear(x: number, z: number): Airbase[] {
+  return fieldBins.get(Math.floor(x / FIELD_BIN) * 4096 + Math.floor(z / FIELD_BIN)) ?? NO_FIELDS;
+}
 export let OBJECTIVES: ObjectiveDef[] = VARNIA.objectives;
 /** Frontline: z position per sector (sector i spans x from -half + i*width). */
 export let SECTORS = VARNIA.sectors;
@@ -144,7 +173,7 @@ export let INITIAL_FRONT: number[] = VARNIA.initialFront;
 export let theaterVersion = 0;
 
 export function registerTheater(t: Theater) {
-  for (const ab of t.airbases) ab.elev = Math.max(5, t.rawHeight(ab.x, ab.z));
+  for (const ab of [...t.airbases, ...(t.fields ?? [])]) ab.elev = Math.max(5, t.rawHeight(ab.x, ab.z));
   REGISTRY.set(t.id, t);
 }
 export function listTheaters(): Theater[] { return [...REGISTRY.values()]; }
@@ -159,6 +188,8 @@ export function setTheater(id: string | undefined): Theater {
   THEATER_HALF = t.half;
   THEATER_NAME = t.name;
   AIRBASES = t.airbases;
+  ALL_FIELDS = t.fields?.length ? [...t.airbases, ...t.fields] : t.airbases;
+  indexFields();
   OBJECTIVES = t.objectives;
   SECTORS = t.sectors;
   INITIAL_FRONT = t.initialFront;
@@ -169,6 +200,7 @@ export function setTheater(id: string | undefined): Theater {
 registerTheater(VARNIA);
 registerTheater(EUROPE);
 registerTheater(GULF);
+indexFields();
 
 /** Load a theater's data if needed (DEM download) — resolves when it can be flown. */
 export async function ensureTheater(id: string | undefined): Promise<Theater> {
@@ -182,9 +214,9 @@ export const sectorX = (i: number) => -THEATER_HALF + (i + 0.5) * (2 * THEATER_H
 /** Terrain height (m) at world x,z. Airbase areas are flattened. Sea floor is negative. */
 export function terrainHeight(x: number, z: number): number {
   let h = current.rawHeight(x, z);
-  for (let i = 0; i < AIRBASES.length; i++) {
-    const ab = AIRBASES[i];
-    if (Math.abs(x - ab.x) > 7000 || Math.abs(z - ab.z) > 7000) continue;
+  const near = fieldsNear(x, z);
+  for (let i = 0; i < near.length; i++) {
+    const ab = near[i];
     // flatten around every runway of the field (the main one carries the taxiway, apron and buildings)
     let d = Infinity;
     for (const rw of runwaysOf(ab)) {

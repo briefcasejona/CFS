@@ -9,3 +9,4 @@ desktop-build/
 smoke-*.png
 3D models/
 .cache/
+scripts/terrain/__pycache__/

@@ -4,6 +4,7 @@
 // Bahrain and a carrier in the northern Gulf against Iraq (RED), which occupies Kuwait. Positions are approximate.
 import { DemGrid, type AbRow, type ObjRow } from '../demTheater.js';
 import type { Theater } from '../theater.js';
+import { CIVIL_FIELDS } from './civil.js';
 
 const DEM = new DemGrid({ proj: { lat0: 29.5, lon0: 47.5, lat1: 26, lat2: 33 }, half: 600000, res: 1000, asset: 'gulf', cover: 500 });
 export const gulfLcc = DEM.lcc;
@@ -49,6 +50,7 @@ export const GULF: Theater = {
   nations: { blue: ['us', 'sa', 'uk', 'fr', 'kw'], red: ['iq'] },
   rawHeight: DEM.rawHeight,
   airbases: DEM.airbases(AB),
+  fields: DEM.fields(CIVIL_FIELDS.gulf),
   objectives: DEM.objectives(OBJ),
   // northern Gulf, steaming up the Gulf
   carriers: [{ id: 'cvn71', name: 'USS Theodore Roosevelt (CVN-71)', side: 'blue', ...gulfLcc.forward(27.9, 49.9), hdg: 310, speedKt: 15 }],
