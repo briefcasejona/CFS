@@ -41,7 +41,14 @@ export interface HdSpec {
   /** moving parts (control surfaces, gear legs, doors), each turning about a hinge line given in the game body frame
    *  (metres, at the reference sweep for parts on a swing wing); see Mover */
   movers?: Mover[];
+  /** landing gear modelled as one "gear down" set: the legs, wheels and doors are told apart at bake time and given
+   *  hinges (see rigGear). Which way the nose and main legs swing up — forward, aft, or (mains) in towards the
+   *  centreline — and optionally by how many degrees (default: until the wheels are level with the hinge) and how far the main legs
+   *  are drawn up into the well (m) */
+  gearRig?: GearRig;
 }
+
+export interface GearRig { nose: 'fwd' | 'aft'; main: 'fwd' | 'aft' | 'in'; noseDeg?: number; mainDeg?: number; mainLift?: number }
 
 /**
  * A part that turns about a hinge line a→b. Horizontal hinges are taken pointing +x (whichever order they are given in)
@@ -65,6 +72,10 @@ export interface Mover {
   cut?: { poly: Array<[number, number]>; y?: [number, number]; x?: [number, number]; side?: boolean; shells?: boolean };
   elev?: number; ail?: number; rud?: number;
   flap?: number; brake?: number; gear?: number;
+  /** the part of the retraction (0 = down .. 1 = up) over which the gear drive turns this part (default: all of it) */
+  gearPhase?: [number, number];
+  /** metres the part is drawn up into its well over the same travel */
+  lift?: number;
   spoiler?: { deg: number; side: 1 | -1; maxSweep?: number };
 }
 
@@ -79,11 +90,14 @@ export interface HdControls {
 
 const BOHMERANG = { author: 'bohmerang', license: 'CC BY-NC-SA 4.0' };
 const BOH_PARTS = { gearDown: /landingOn/i, gearUp: /landingOff/i, cockpit: /cockpit|hud/i, hudGlass: true };
+const rigOf = (nose: GearRig['nose'], main: GearRig['main'], more: Partial<GearRig> = {}): GearRig => ({ nose, main, ...more });
 const NEVER = /(?!)/;
+const RAD = Math.PI / 180;
 
 // bohmerang's F-14A: the wings are part of the one airframe mesh, so they are cut out of it at bake time
 const BOH_F14: HdSpec = {
   url: 'assets/models/cc-by-nc-sa/f14.glb', title: 'F-14 Tomcat - Fighter Jet - Free', ...BOHMERANG,
+  gearRig: rigOf('fwd', 'fwd', { mainDeg: 70, mainLift: 0 }),
   // flaps (cut out of the swinging wing pieces), stabilators, rudders; the spoilers stay painted on
   movers: [
     { parts: /airframe/, cut: { poly: [[3.7, 2], [9.1, 2.6], [9.1, 3.2], [3.7, 2.9]] }, flap: 35 },
@@ -108,6 +122,7 @@ const BOH_F14: HdSpec = {
 
 const BOH_F16: HdSpec = {
   url: 'assets/models/cc-by-nc-sa/f16.glb', title: 'F-16 Fighting Falcon - Fighter Jet - Free', ...BOHMERANG,
+  gearRig: rigOf('aft', 'fwd'),
   nozzles: [{ x: 0, y: 0.242, z: 6.963, r: 0.39 }],
   movers: [
     // flaperons (roll, and down as flaps), all-moving stabilators (pitch plus differential roll), rudder
@@ -179,6 +194,7 @@ export const HD_SPECS: Record<string, HdSpec> = {
     source: 'https://sketchfab.com/3d-models/grumman-f-14d-super-tomcat-74be89a104a34caabacb25a705708097', license: 'CC BY 4.0',
     axes: 'zfwd',
     gearDown: /vehicle#(gear|wheel)_/i, gearUp: NEVER,
+    gearRig: rigOf('fwd', 'fwd'),
     cockpit: /MFD Display|DISPLAY|\/HUD\/|cockpit|Meshpart|RIO|\/Glass\//i,
     hud: /\/HUD\//,
     wings: { parts: /vehicle#(wing_[lr]_|slat_[lr]_|flap\w*?_[lr]_|aileron_interceptor_[lr]_)/i, pivot: { x: 2.72, z: 0.32 }, refSweep: 20 },
@@ -205,6 +221,7 @@ export const HD_SPECS: Record<string, HdSpec> = {
   },
   'JAS 39': {
     url: 'assets/models/cc-by-nc-sa/gripen.glb', title: 'Saab JAS 39 Gripen - Fighter Jet - Free', ...BOHMERANG,
+    gearRig: rigOf('aft', 'fwd'),
     movers: [
       // inboard and outboard elevons (pitch and roll), all-moving canards, rudder
       { parts: /airframe/, cut: { poly: [[1, 3.75], [2.44, 3.8], [2.44, 4.65], [1, 4.7]], y: [-0.4, 0.8] }, elev: -0.8, ail: -0.5 },
@@ -236,6 +253,7 @@ export const HD_SPECS: Record<string, HdSpec> = {
     source: 'https://sketchfab.com/3d-models/general-dynamics-f-16d-block-60-ea8edb08d79e4eafa9c794c581f88cf3', license: 'CC BY 4.0',
     // single-primitive nodes load as the mesh itself, named after the node with '.' dropped (Object_9.001 → Object_9001)
     axes: 'game', gearDown: /\/Object_(9|11)\/$/, gearUp: NEVER, hide: /\/Object_21\/$/,
+    gearRig: rigOf('aft', 'fwd'),
     cockpit: /\/Object_(1[023456]|2|3|20|22|9001|11001)\/$/,
     // nose and main gear doors are part of the lower fuselage mesh
     eye: { y: 1.27, z: -3.1 },
@@ -252,6 +270,7 @@ export const HD_SPECS: Record<string, HdSpec> = {
   // the Super Hornet model only: the legacy F/A-18C has a different (smaller) airframe and keeps the procedural model
   fa18e: {
     url: 'assets/models/cc-by-nc-sa/fa18f.glb', title: 'Boeing F/A-18F Super Hornet - Free', ...BOHMERANG,
+    gearRig: rigOf('fwd', 'aft'),
     movers: [
       // trailing-edge flaps and ailerons (flaps droop the ailerons too), leading-edge flaps, stabilators, rudders
       { parts: /airframe/, cut: { poly: [[1.2, 2.85], [4.36, 2.85], [4.36, 4.5], [1.2, 4.5]], shells: true }, flap: 30 },
@@ -277,6 +296,7 @@ export const HD_SPECS: Record<string, HdSpec> = {
   // the F-15E only: its conformal tanks and two-seat canopy don't fit the F-15C/D
   f15e: {
     url: 'assets/models/cc-by-nc-sa/f15e.glb', title: 'F-15E Strike Eagle - Fighter Jet - Free', ...BOHMERANG,
+    gearRig: rigOf('fwd', 'fwd'),
     movers: [
       // plain flaps, ailerons, all-moving stabilators, rudders
       { parts: /airframe/, cut: { poly: [[2.05, 4.38], [3.93, 4.38], [3.93, 5.32], [2.05, 5.32]], y: [-0.3, 1.2] }, flap: 30 },
@@ -297,6 +317,8 @@ export const HD_SPECS: Record<string, HdSpec> = {
   },
   mig29a: {
     url: 'assets/models/cc-by-nc-sa/mig29.glb', title: 'MiG-29 - Fighter Jet - Free', ...BOHMERANG,
+    // the real wheels turn flat into the thin wing root: ours stop short of level so they stay under the skin
+    gearRig: rigOf('aft', 'fwd', { mainDeg: 53, mainLift: 0 }),
     movers: [
       // flaps, ailerons, all-moving stabilators, rudders
       { parts: /airframe/, cut: { poly: [[1.7, 3.4], [3.55, 3.4], [3.55, 4.65], [1.7, 4.65]], shells: true }, flap: 25 },
@@ -317,6 +339,7 @@ export const HD_SPECS: Record<string, HdSpec> = {
   },
   f4e: {
     url: 'assets/models/cc-by-nc-sa/f4.glb', title: 'F-4 Phantom II - Fighter Jet - Free', ...BOHMERANG,
+    gearRig: rigOf('aft', 'in'),
     movers: [
       // inboard flaps, ailerons, the anhedral all-moving stabilator, rudder
       { parts: /airframe/, cut: { poly: [[1.27, 2.78], [2.64, 3.18], [2.64, 4.15], [1.27, 3.9]], y: [-0.3, 1.0] }, flap: 30 },
@@ -434,6 +457,9 @@ export function bake(scene: THREE.Object3D, spec: HdSpec, def: AircraftDef): THR
     root.userData.pivot = { x: Math.abs(pv.x), z: pv.z };
   }
   for (const p of parts) p.geo.applyMatrix4(fix);
+  const movers: Mover[] = [...(spec.movers ?? [])];
+  if (spec.gearRig) rigGear(parts, isGearDown, spec.gearRig, movers, spec.url);
+  root.userData.movers = movers;
   const trim = spec.wings && !spec.wings.split ? gloveOutline(parts, root.userData.pivot) : null;
   const split = spec.wings?.split;
   if (split) {
@@ -446,7 +472,7 @@ export function bake(scene: THREE.Object3D, spec: HdSpec, def: AircraftDef): THR
     }
   }
   // control surfaces and doors modelled into one-piece meshes: cut them out by outline
-  spec.movers?.forEach((mv, mi) => {
+  movers.forEach((mv, mi) => {
     const c = mv.cut;
     if (!c) return;
     for (const p of [...parts]) {
@@ -461,14 +487,14 @@ export function bake(scene: THREE.Object3D, spec: HdSpec, def: AircraftDef): THR
         const within = (b: THREE.Box3) => c.side ? b.min.z >= u0 && b.max.z <= u1 && b.min.y >= w0 && b.max.y <= w1
           : b.min.x >= u0 && b.max.x <= u1 && b.min.z >= w0 && b.max.z <= w1;
         [rest, piece] = cutShells(p.geo, (b) => within(b) && inside(b.getCenter(new THREE.Vector3())));
-      } else [rest, piece] = cutTriangles(p.geo, inside);
+      } else [rest, piece] = cutSurface(p.geo, inside);
       if (!piece) continue;
       p.geo = rest;
       parts.push({ ...p, geo: piece, mover: mi });
     }
   });
   // hinge lines: given, or fitted to the parts' edges
-  root.userData.hinges = spec.movers?.map((mv, mi) => mv.hinge ?? fitHinge(parts.filter((p) => p.mover === mi).map((p) => p.geo), mv.auto ?? 'le'));
+  root.userData.hinges = movers.map((mv, mi) => mv.hinge ?? fitHinge(parts.filter((p) => p.mover === mi).map((p) => p.geo), mv.auto ?? 'le'));
   // merge parts that share role, wing side, material and attribute layout
   const groups = new Map<string, { role: string; wing: number; mover: number; mat: THREE.Material; geos: THREE.BufferGeometry[]; name: string; hud: boolean }>();
   for (const p of parts) {
@@ -643,9 +669,8 @@ export function cutTriangles(g: THREE.BufferGeometry, pick: (c: THREE.Vector3, f
   return [take(0) ?? new THREE.BufferGeometry(), take(1)];
 }
 
-/** Split a geometry by connected shells (vertices welded by position): [rest, picked] for the shells `pick` accepts. */
-export function cutShells(g: THREE.BufferGeometry, pick: (box: THREE.Box3) => boolean): [THREE.BufferGeometry, THREE.BufferGeometry | null] {
-  const src = g.index ? g.toNonIndexed() : g;
+/** Connected shells of a non-indexed geometry (vertices welded by position): the shell id of every triangle. */
+function shellOfTriangles(src: THREE.BufferGeometry): Int32Array {
   const pos = src.getAttribute('position'), n = pos.count;
   const ids = new Map<string, number>(), vid = new Int32Array(n);
   for (let i = 0; i < n; i++) {
@@ -657,11 +682,214 @@ export function cutShells(g: THREE.BufferGeometry, pick: (box: THREE.Box3) => bo
   const par = new Int32Array(ids.size).map((_, i) => i);
   const find = (a: number) => { while (par[a] !== a) a = par[a] = par[par[a]]; return a; };
   for (let t = 0; t < n / 3; t++) { const a = find(vid[3 * t]); for (let k = 1; k < 3; k++) { const b = find(vid[3 * t + k]); if (a !== b) par[b] = a; } }
+  const out = new Int32Array(n / 3);
+  for (let t = 0; t < out.length; t++) out[t] = find(vid[3 * t]);
+  return out;
+}
+
+/** Split a geometry by connected shells (vertices welded by position): [rest, picked] for the shells `pick` accepts. */
+export function cutShells(g: THREE.BufferGeometry, pick: (box: THREE.Box3) => boolean): [THREE.BufferGeometry, THREE.BufferGeometry | null] {
+  const src = g.index ? g.toNonIndexed() : g;
+  const pos = src.getAttribute('position');
+  const shell = shellOfTriangles(src);
   const boxes = new Map<number, THREE.Box3>(), v = new THREE.Vector3();
-  for (let i = 0; i < n; i++) { const r = find(vid[i]); let b = boxes.get(r); if (!b) boxes.set(r, b = new THREE.Box3()); b.expandByPoint(v.fromBufferAttribute(pos, i)); }
+  for (let i = 0; i < pos.count; i++) { const r = shell[Math.floor(i / 3)]; let b = boxes.get(r); if (!b) boxes.set(r, b = new THREE.Box3()); b.expandByPoint(v.fromBufferAttribute(pos, i)); }
   const chosen = new Set<number>();
   for (const [r, b] of boxes) if (pick(b)) chosen.add(r);
-  return cutTriangles(src, (_c, _f, t) => chosen.has(find(vid[3 * t])));
+  return cutTriangles(src, (_c, _f, t) => chosen.has(shell[t]));
+}
+
+/**
+ * Cut a control surface out of a one-piece mesh by outline, without the neighbours the outline clips: the triangles
+ * inside the outline are grouped by the connected shell they come from, and only those of the surface itself are
+ * taken — the shell with the most area inside the outline, shells that lie (almost) wholly inside it (static wicks,
+ * hinge fairings) and shells with a comparable share inside (a surface built from separate skins). A sliver of some
+ * other part that reaches into the outline (a fuselage shelf, a tail boom, a pylon or missile rail) stays put.
+ */
+export function cutSurface(g: THREE.BufferGeometry, inside: (c: THREE.Vector3) => boolean): [THREE.BufferGeometry, THREE.BufferGeometry | null] {
+  const src = g.index ? g.toNonIndexed() : g;
+  const pos = src.getAttribute('position');
+  const shell = shellOfTriangles(src);
+  const nT = shell.length;
+  const sel = new Uint8Array(nT);
+  const total = new Map<number, number>(), cut = new Map<number, number>();
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), m = new THREE.Vector3();
+  for (let t = 0; t < nT; t++) {
+    a.fromBufferAttribute(pos, 3 * t); b.fromBufferAttribute(pos, 3 * t + 1); c.fromBufferAttribute(pos, 3 * t + 2);
+    m.copy(a).add(b).add(c).divideScalar(3);
+    const area = b.sub(a).cross(c.sub(a)).length() / 2;
+    total.set(shell[t], (total.get(shell[t]) ?? 0) + area);
+    if (inside(m)) { sel[t] = 1; cut.set(shell[t], (cut.get(shell[t]) ?? 0) + area); }
+  }
+  let main = 0;
+  for (const v of cut.values()) main = Math.max(main, v);
+  const keep = new Set<number>();
+  for (const [r, v] of cut) if (v === main || v >= 0.9 * total.get(r)! || v >= 0.35 * main) keep.add(r);
+  return cutTriangles(src, (_c, _f, t) => sel[t] === 1 && keep.has(shell[t]));
+}
+
+/** eigenvectors of a symmetric 3×3 matrix (Jacobi), sorted by falling eigenvalue: [values, vectors] */
+function eigenSym3(m: number[][]): [number[], THREE.Vector3[]] {
+  const a = m.map((r) => [...r]), v = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  for (let sweep = 0; sweep < 24; sweep++) {
+    let p = 0, q = 1;
+    if (Math.abs(a[0][2]) > Math.abs(a[p][q])) { p = 0; q = 2; }
+    if (Math.abs(a[1][2]) > Math.abs(a[p][q])) { p = 1; q = 2; }
+    if (Math.abs(a[p][q]) < 1e-12) break;
+    const th = 0.5 * Math.atan2(2 * a[p][q], a[q][q] - a[p][p]), c = Math.cos(th), s = Math.sin(th);
+    for (let k = 0; k < 3; k++) { const akp = a[k][p], akq = a[k][q]; a[k][p] = c * akp - s * akq; a[k][q] = s * akp + c * akq; }
+    for (let k = 0; k < 3; k++) { const apk = a[p][k], aqk = a[q][k]; a[p][k] = c * apk - s * aqk; a[q][k] = s * apk + c * aqk; }
+    for (let k = 0; k < 3; k++) { const vkp = v[k][p], vkq = v[k][q]; v[k][p] = c * vkp - s * vkq; v[k][q] = s * vkp + c * vkq; }
+  }
+  const order = [0, 1, 2].sort((i, j) => a[j][j] - a[i][i]);
+  return [order.map((i) => Math.max(0, a[i][i])), order.map((i) => new THREE.Vector3(v[0][i], v[1][i], v[2][i]))];
+}
+
+/**
+ * Rig a landing gear that the model only has as one "gear down" set. Its connected shells are sorted into the nose
+ * leg and the two main legs (by where the wheels stand), and within each into the leg with its wheels (whatever
+ * reaches down), the doors (thin plates hanging from the edge of the well) and the well itself (stays put). Each leg
+ * gets a hinge across its top and swings up the way the real one does; each door gets a hinge along its upper edge
+ * and closes towards the well once the leg is in. The movers are appended to `movers` and the parts split to match.
+ */
+export function rigGear(parts: { name: string; geo: THREE.BufferGeometry; mat: THREE.Material; wing: number; mover: number }[],
+  isGear: (name: string) => boolean, rig: GearRig, movers: Mover[], label = '') {
+  interface Shell { part: number; id: number; box: THREE.Box3; c: THREE.Vector3; area: number; plate: boolean; normal: THREE.Vector3; long: THREE.Vector3; leg: number; kind: 'leg' | 'door' | 'well' }
+  const shells: Shell[] = [];
+  const srcs = new Map<number, { geo: THREE.BufferGeometry; shell: Int32Array }>();
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), m = new THREE.Vector3();
+  parts.forEach((p, pi) => {
+    if (p.mover >= 0 || !isGear(p.name)) return;
+    const geo = p.geo.index ? p.geo.toNonIndexed() : p.geo;
+    const pos = geo.getAttribute('position');
+    if (!pos || pos.count < 3) return;
+    const shell = shellOfTriangles(geo);
+    srcs.set(pi, { geo, shell });
+    const acc = new Map<number, { box: THREE.Box3; c: THREE.Vector3; area: number; tris: number[] }>();
+    for (let t = 0; t < shell.length; t++) {
+      a.fromBufferAttribute(pos, 3 * t); b.fromBufferAttribute(pos, 3 * t + 1); c.fromBufferAttribute(pos, 3 * t + 2);
+      let s = acc.get(shell[t]);
+      if (!s) acc.set(shell[t], s = { box: new THREE.Box3(), c: new THREE.Vector3(), area: 0, tris: [] });
+      s.box.expandByPoint(a).expandByPoint(b).expandByPoint(c);
+      m.copy(a).add(b).add(c).divideScalar(3);
+      const area = b.clone().sub(a).cross(c.clone().sub(a)).length() / 2 + 1e-9;
+      s.c.addScaledVector(m, area); s.area += area; s.tris.push(t);
+    }
+    for (const [id, s] of acc) {
+      s.c.divideScalar(s.area);
+      // area-weighted spread of the shell about its centre: a plate has one direction with (almost) none
+      const cov = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+      for (const t of s.tris) {
+        a.fromBufferAttribute(pos, 3 * t); b.fromBufferAttribute(pos, 3 * t + 1); c.fromBufferAttribute(pos, 3 * t + 2);
+        const w = b.clone().sub(a).cross(c.clone().sub(a)).length() / 6 + 1e-9;
+        for (const v of [a, b, c]) { const d = [v.x - s.c.x, v.y - s.c.y, v.z - s.c.z]; for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) cov[i][j] += w * d[i] * d[j]; }
+      }
+      const [val, vec] = eigenSym3(cov.map((r) => r.map((x) => x / s.area)));
+      const e = val.map(Math.sqrt);
+      shells.push({ part: pi, id, box: s.box, c: s.c, area: s.area, plate: e[2] < 0.22 * e[1] && e[1] > 0.04, normal: vec[2], long: vec[0], leg: -1, kind: 'well' });
+    }
+  });
+  if (!shells.length) return;
+  // nose leg forward, main legs aft: split at the widest gap along the gear that leaves a real share of it on both
+  // sides; anything else the model files under "gear" far from both (an arrestor hook, say) is left alone
+  const byZ = [...shells].sort((p, q) => p.c.z - q.c.z);
+  const totalArea = byZ.reduce((n, s) => n + s.area, 0);
+  let zSplit = (byZ[0].c.z + byZ[byZ.length - 1].c.z) / 2, gap = 0, before = 0;
+  for (let i = 0; i + 1 < byZ.length; i++) {
+    before += byZ[i].area;
+    const g = byZ[i + 1].c.z - byZ[i].c.z;
+    if (g > gap && before > 0.1 * totalArea && before < 0.9 * totalArea) { gap = g; zSplit = (byZ[i].c.z + byZ[i + 1].c.z) / 2; }
+  }
+  const median = (list: Shell[]) => list.map((s) => s.c.z).sort((p, q) => p - q)[Math.floor(list.length / 2)] ?? 0;
+  const zNose = median(shells.filter((s) => s.c.z < zSplit)), zMain = median(shells.filter((s) => s.c.z >= zSplit));
+  for (const s of shells) s.leg = Math.abs(s.c.z - (s.c.z < zSplit ? zNose : zMain)) > 3 ? -1 : s.c.z < zSplit ? 0 : s.c.x < 0 ? 1 : 2;
+  const split = new Map<number, Map<number, number>>();   // part → shell → mover
+  for (let leg = 0; leg < 3; leg++) {
+    const mine = shells.filter((s) => s.leg === leg);
+    if (!mine.length) continue;
+    const top = Math.max(...mine.map((s) => s.box.max.y)), bot = Math.min(...mine.map((s) => s.box.min.y)), H = top - bot;
+    if (H < 0.3) continue;
+    for (const s of mine) {
+      const hangs = s.box.max.y > top - 0.35 * H && s.box.min.y > bot + 0.22 * H;
+      if (s.plate && hangs && s.area > 0.04) s.kind = 'door';
+      else if (s.box.min.y < bot + 0.5 * H || (s.box.min.y + s.box.max.y) / 2 < top - 0.4 * H) s.kind = 'leg';
+    }
+    const legs = mine.filter((s) => s.kind === 'leg');
+    if (!legs.length) continue;
+    // the leg's hinge: across the top of the strut (the tallest part of the leg above the wheels)
+    const wheels = legs.filter((s) => s.box.min.y < bot + 0.12);
+    const tall = (s: Shell) => s.box.max.y - s.box.min.y;
+    const strut = [...(legs.some((s) => !wheels.includes(s)) ? legs.filter((s) => !wheels.includes(s)) : legs)].sort((p, q) => tall(q) - tall(p))[0];
+    const legTop = strut.box.max.y;
+    const P = new THREE.Vector3((strut.box.min.x + strut.box.max.x) / 2, legTop, (strut.box.min.z + strut.box.max.z) / 2);
+    {
+      // centre of the strut's top end
+      const { geo, shell } = srcs.get(strut.part)!;
+      const pos = geo.getAttribute('position');
+      const sum = new THREE.Vector3(); let n = 0;
+      for (let t = 0; t < shell.length; t++) if (shell[t] === strut.id) for (let k = 0; k < 3; k++) { a.fromBufferAttribute(pos, 3 * t + k); if (a.y > legTop - 0.08) { sum.add(a); n++; } }
+      if (n) P.copy(sum.divideScalar(n));
+    }
+    // how far it swings: until the wheels (the lowest shells) are level with the hinge
+    const W = new THREE.Vector3(); let wa = 0;
+    for (const s of wheels) { W.addScaledVector(s.c, s.area); wa += s.area; }
+    W.divideScalar(wa || 1);
+    const d = W.sub(P);
+    const dir = leg === 0 ? rig.nose : rig.main;
+    const lead = dir === 'in' ? Math.atan2(-Math.sign(P.x || 1) * d.x, -d.y) : Math.atan2(dir === 'fwd' ? -d.z : d.z, -d.y);
+    const deg = (leg === 0 ? rig.noseDeg : rig.mainDeg) ?? Math.max(55, Math.min(130, 90 - lead / RAD));
+    const lift = leg === 0 ? 0.12 : rig.mainLift ?? 0.12;
+    const legMover: Mover = dir === 'in'
+      ? { parts: NEVER, hinge: [[P.x, P.y, P.z], [P.x, P.y, P.z + 1]], gear: P.x > 0 ? -deg : deg, gearPhase: [0, 0.72], lift }
+      : { parts: NEVER, hinge: [[P.x - 0.5, P.y, P.z], [P.x + 0.5, P.y, P.z]], gear: dir === 'fwd' ? deg : -deg, gearPhase: [0, 0.72], lift };
+    movers.push(legMover);
+    if ((globalThis as { CFS_GEAR_DEBUG?: boolean }).CFS_GEAR_DEBUG) console.log('GEAR', label.split('/').pop(), 'leg', leg, 'W', W.clone().add(P).toArray().map((v) => v.toFixed(2)).join(','), 'shells', mine.length, 'legs', legs.length, 'doors', mine.filter((s) => s.kind === 'door').length, 'top', top.toFixed(2), 'bot', bot.toFixed(2), 'deg', deg.toFixed(0), 'P', P.toArray().map((v) => v.toFixed(2)).join(','), 'strut', strut.box.min.toArray().map((v) => v.toFixed(2)).join(','), strut.box.max.toArray().map((v) => v.toFixed(2)).join(','), 'zSplit', zSplit.toFixed(2));
+    const legIdx = movers.length - 1;
+    for (const s of legs) { let mp = split.get(s.part); if (!mp) split.set(s.part, mp = new Map()); mp.set(s.id, legIdx); }
+    // doors: hinged along their upper edge, closing towards the well
+    for (const s of mine) {
+      if (s.kind !== 'door') continue;
+      const { geo, shell } = srcs.get(s.part)!;
+      const pos = geo.getAttribute('position');
+      const h = s.box.max.y - s.box.min.y;
+      const sum = new THREE.Vector3(); let n = 0;
+      for (let t = 0; t < shell.length; t++) if (shell[t] === s.id) for (let k = 0; k < 3; k++) { a.fromBufferAttribute(pos, 3 * t + k); if (a.y > s.box.max.y - Math.max(0.03, 0.12 * h)) { sum.add(a); n++; } }
+      if (!n) continue;
+      const hp = sum.divideScalar(n);
+      // hinge axis: the door's long direction, laid flat
+      const ax = s.long.clone(); ax.y = 0;
+      if (ax.lengthSq() < 0.2) continue;
+      ax.normalize();
+      // (the same convention instantiateHd applies: horizontal hinges point +x, else as given)
+      if (ax.x < 0) ax.negate();
+      // angle that lays the door's face flat; the sense that brings its centre towards the well
+      const nrm = s.normal.clone().addScaledVector(ax, -s.normal.dot(ax));
+      if (nrm.lengthSq() < 1e-6) continue;
+      nrm.normalize();
+      const tilt = Math.acos(Math.min(1, Math.abs(nrm.y)));   // 0 = already flat
+      if (tilt < 0.26) continue;
+      const rel = s.c.clone().sub(hp);
+      const dist = (ang: number) => rel.clone().applyAxisAngle(ax, ang).add(hp).distanceTo(P);
+      const sense = dist(tilt) < dist(-tilt) ? 1 : -1;
+      movers.push({ parts: NEVER, hinge: [[hp.x, hp.y, hp.z], [hp.x + ax.x, hp.y, hp.z + ax.z]], gear: sense * tilt / RAD, gearPhase: [0.62, 0.99] });
+      let mp = split.get(s.part); if (!mp) split.set(s.part, mp = new Map());
+      mp.set(s.id, movers.length - 1);
+    }
+  }
+  // split the parts: one piece per mover, the wells stay
+  for (const [pi, mp] of split) {
+    const p = parts[pi], { geo, shell } = srcs.get(pi)!;
+    let rest: THREE.BufferGeometry = geo;
+    let restShell = shell;
+    for (const mi of new Set(mp.values())) {
+      const sh = restShell;
+      const keepT: number[] = [];
+      const [r, piece] = cutTriangles(rest, (_c, _f, t) => { const hit = mp.get(sh[t]) === mi; if (!hit) keepT.push(sh[t]); return hit; });
+      rest = r; restShell = Int32Array.from(keepT);
+      if (piece) parts.push({ ...p, geo: piece, mover: mi });
+    }
+    p.geo = rest;
+  }
 }
 
 /** Cut the wing triangles out of a fused airframe geometry (game frame): [rest, left wing, right wing]. */
@@ -694,12 +922,14 @@ export interface HdInstance {
   /** pilot eye in the body frame */
   eye: THREE.Vector3;
   /** hinged parts: one group per mover, sitting on its hinge */
-  movers: Array<{ group: THREE.Group; axis: THREE.Vector3; spec: Mover }>;
+  movers: Array<{ group: THREE.Group; axis: THREE.Vector3; spec: Mover; base: THREE.Vector3 }>;
+  /** the gear is rigged (legs and doors travel): the whole gear-down set shows until the gear is up and locked */
+  rigged: boolean;
 }
 
 export function instantiateHd(t: { root: THREE.Group; spec: HdSpec }): HdInstance {
   const root = new THREE.Group();
-  const inst: HdInstance = { root, wings: null, gearDown: [], gearUp: [], cockpit: [], glass: [], eye: new THREE.Vector3(), movers: [] };
+  const inst: HdInstance = { root, wings: null, gearDown: [], gearUp: [], cockpit: [], glass: [], eye: new THREE.Vector3(), movers: [], rigged: !!t.spec.gearRig };
   const pivot = t.root.userData.pivot as { x: number; z: number } | undefined;
   if (t.spec.wings && pivot) {
     const left = new THREE.Group(), right = new THREE.Group();
@@ -709,7 +939,7 @@ export function instantiateHd(t: { root: THREE.Group; spec: HdSpec }): HdInstanc
     inst.wings = { left, right, refSweep: t.spec.wings.refSweep };
   }
   const hudBox = new THREE.Box3();
-  const moverGroups = new Map<number, { group: THREE.Group; axis: THREE.Vector3; spec: Mover; a: THREE.Vector3 }>();
+  const moverGroups = new Map<number, HdInstance['movers'][number] & { a: THREE.Vector3 }>();
   for (const src of t.root.children as THREE.Mesh[]) {
     const role = src.userData.role as string;
     if (role === 'hidden') continue;
@@ -725,18 +955,19 @@ export function instantiateHd(t: { root: THREE.Group; spec: HdSpec }): HdInstanc
     const w = src.userData.wing as number;
     const wingGrp = inst.wings && w ? (w < 0 ? inst.wings.left : inst.wings.right) : null;
     const mi = src.userData.mover as number ?? -1;
-    if (mi >= 0 && t.spec.movers) {
+    const movers = (t.root.userData.movers as Mover[] | undefined) ?? t.spec.movers;
+    if (mi >= 0 && movers) {
       // a hinged part: its group sits on the hinge (inside the wing group for a part on a swing wing)
       let mv = moverGroups.get(mi);
       if (!mv) {
-        const ms = t.spec.movers[mi];
+        const ms = movers[mi];
         const h = (t.root.userData.hinges as Mover['hinge'][] | undefined)?.[mi] ?? ms.hinge ?? [[0, 0, 0], [1, 0, 0]];
         const a = new THREE.Vector3(...h[0]), axis = new THREE.Vector3(...h[1]).sub(a).normalize();
         if (Math.abs(axis.y) > 0.7 ? axis.y < 0 : axis.x < 0) axis.negate();
         const group = new THREE.Group();
         group.position.copy(a);
         if (wingGrp) { group.position.sub(wingGrp.position); wingGrp.add(group); } else root.add(group);
-        mv = { group, axis, spec: ms, a };
+        mv = { group, axis, spec: ms, a, base: group.position.clone() };
         moverGroups.set(mi, mv);
         inst.movers.push(mv);
       }
@@ -776,16 +1007,19 @@ export function hdCredits() {
 /** sweep (deg) → wing group rotation (rad) relative to the sweep the model was built at */
 export function wingRotation(sweepDeg: number, refSweep: number) { return (sweepDeg - refSweep) * Math.PI / 180; }
 
-const RAD = Math.PI / 180;
-
 export function updateHdInstance(inst: HdInstance, gearPos: number, sweepDeg: number, ctl?: HdControls) {
   const down = gearPos > 0.5;
-  // gear legs with a hinge stay out while they travel; the rest of the gear swaps at half travel
-  for (const g of inst.gearDown) g.visible = g.userData.hinged ? gearPos > 0.01 : down;
-  for (const g of inst.gearUp) g.visible = !down;
+  // gear legs with a hinge stay out while they travel; the rest of the gear swaps at half travel (a rigged gear
+  // shows all of it, wells and doors too, until it is up and the closed doors take over)
+  for (const g of inst.gearDown) g.visible = g.userData.hinged || inst.rigged ? gearPos > 0.01 : down;
+  for (const g of inst.gearUp) g.visible = inst.rigged ? gearPos <= 0.01 : !down;
+  const up = 1 - gearPos;
   for (const mv of inst.movers) {
     const m = mv.spec;
-    let a = (m.gear ?? 0) * (1 - gearPos) * RAD;
+    let k = up;
+    if (m.gearPhase) { k = Math.max(0, Math.min(1, (up - m.gearPhase[0]) / (m.gearPhase[1] - m.gearPhase[0]))); k = k * k * (3 - 2 * k); }
+    let a = (m.gear ?? 0) * k * RAD;
+    if (m.lift) mv.group.position.set(mv.base.x, mv.base.y + m.lift * k, mv.base.z);
     if (ctl) {
       a += (m.elev ?? 0) * ctl.elev + (m.ail ?? 0) * ctl.ail + (m.rud ?? 0) * ctl.rud
         + ((m.flap ?? 0) * ctl.flap + (m.brake ?? 0) * ctl.brake) * RAD;
