@@ -14,7 +14,8 @@
 // (T² + 1) into the data that follows. Per cell a run of polylines:
 //   u8 class (0 motorway 1 trunk 2 primary 3 secondary 4 tertiary 5 unclassified 6 residential 10 railway)
 //   u8 flags (1 bridge, 2 slip road, 4 minor rail), u16 point count n,
-//   i32 x, z of the first point, 0.25 m steps from the block origin, then n−1 × i16 dx, dz in 0.25 m steps.
+//   u16 x, z of the first point, 0.5 m steps from one cell west and north of the cell's corner, then n−1 × i16
+//   dx, dz in 0.5 m steps.
 // A polyline sits in the cell of its middle point and is no longer than a cell.
 //
 // usage: npm run build && node scripts/terrain/bake-transport.mjs <europe|gulf>
@@ -28,8 +29,8 @@ const lcc = mod[`${ID}Lcc`];
 const meta = JSON.parse(readFileSync(`assets/theaters/${ID}/meta.json`, 'utf8'));
 const patches = JSON.parse(readFileSync(`assets/theaters/${ID}/patches.json`, 'utf8')).patches.map((p) => ({ id: p.id, x0: p.x0, z0: p.z0, size: (p.n - 1) * p.res }));
 const SRC = '.cache/transport', OUT = `assets/theaters/${ID}/roads`;
-const HALF = meta.half, BLOCK = 64000, CELL = 8000, LCELL = 2000, Q = 4;   // Q steps per metre
-const TOL = (cls) => cls === 10 ? 1.2 : cls <= 1 ? 1.5 : cls <= 4 ? 2 : 2.5;
+const HALF = meta.half, BLOCK = 64000, CELL = 8000, LCELL = 2000, Q = 2;   // Q steps per metre
+const TOL = (cls) => cls === 10 ? 1.5 : cls <= 1 ? 2 : cls === 2 ? 2.5 : cls === 3 ? 3.5 : cls === 4 ? 4.5 : 2.5;
 const D2R = Math.PI / 180;
 
 // ---- read, project, sort into blocks / patches
@@ -68,12 +69,12 @@ for (const f of readdirSync(SRC)) {
 console.log(`${nIn} segments in ${groups.size} groups`);
 
 // ---- merge chains: two segments of one class meeting end to end (and nothing else of that class there) become one
-function merge(list) {
+function merge(list, inside) {
   const key = (pl, end) => { const i = end ? pl.pts.length - 2 : 0; return `${pl.cls},${pl.fl},${Math.round(pl.pts[i] * 10)},${Math.round(pl.pts[i + 1] * 10)}`; };
   const at = new Map();
   for (const pl of list) for (const e of [0, 1]) { const k = key(pl, e); let a = at.get(k); if (!a) at.set(k, a = []); a.push([pl, e]); }
   const used = new Set(), out = [];
-  const other = (pl, e) => { const a = at.get(key(pl, e)); if (a.length !== 2) return null; const o = a[0][0] === pl ? a[1] : a[0]; return o[0] === pl || used.has(o[0]) ? null : o; };
+  const other = (pl, e) => { const i = e ? pl.pts.length - 2 : 0; if (!inside(pl.pts[i], pl.pts[i + 1])) return null; const a = at.get(key(pl, e)); if (a.length !== 2) return null; const o = a[0][0] === pl ? a[1] : a[0]; return o[0] === pl || used.has(o[0]) ? null : o; };
   for (const start of list) {
     if (used.has(start)) continue;
     used.add(start);
@@ -123,7 +124,7 @@ function chop(pts, maxLen) {
   const out = []; let cur = [pts[0], pts[1]], run = 0;
   for (let i = 1; i < pts.length / 2; i++) {
     let ax = pts[i * 2 - 2], az = pts[i * 2 - 1];
-    const bx = pts[i * 2], bz = pts[i * 2 + 1], d = Math.hypot(bx - ax, bz - az), steps = Math.max(1, Math.ceil(d / Math.min(maxLen, 8000)));
+    const bx = pts[i * 2], bz = pts[i * 2 + 1], d = Math.hypot(bx - ax, bz - az), steps = Math.max(1, Math.ceil(d / Math.min(maxLen, 16000)));
     for (let s = 1; s <= steps; s++) {
       const x = pts[i * 2 - 2] + (bx - pts[i * 2 - 2]) * s / steps, z = pts[i * 2 - 1] + (bz - pts[i * 2 - 1]) * s / steps;
       cur.push(x, z); run += Math.hypot(x - ax, z - az); ax = x; az = z;
@@ -134,20 +135,25 @@ function chop(pts, maxLen) {
   return out;
 }
 
+let dropped = 0;
 function writeBlock(file, list, x0, z0, T, cell) {
   const cells = Array.from({ length: T * T }, () => []);
   let bytes = 0, nPl = 0, nPt = 0;
-  for (const pl of merge(list)) {
-    for (const piece of chop(simplify(pl.pts, TOL(pl.cls)), cell)) {
+  const span = T * cell;
+  for (const pl of merge(list, (x, z) => x >= x0 && z >= z0 && x < x0 + span && z < z0 + span)) {
+    for (const piece of chop(simplify(pl.pts, TOL(pl.cls)), cell * 0.9)) {
       const n = piece.length / 2, m = n >> 1;
       const ci = Math.min(T - 1, Math.max(0, Math.floor((piece[m * 2] - x0) / cell))), cj = Math.min(T - 1, Math.max(0, Math.floor((piece[m * 2 + 1] - z0) / cell)));
-      const rec = Buffer.alloc(12 + (n - 1) * 4);
+      // the first point is stored from one cell west and north of the piece's own cell (a piece is at most a cell long)
+      const cx0 = x0 + (ci - 1) * cell, cz0 = z0 + (cj - 1) * cell;
+      const rec = Buffer.alloc(8 + (n - 1) * 4);
       rec[0] = pl.cls; rec[1] = pl.fl; rec.writeUInt16LE(n, 2);
-      let qx = Math.round((piece[0] - x0) * Q), qz = Math.round((piece[1] - z0) * Q);
-      rec.writeInt32LE(qx, 4); rec.writeInt32LE(qz, 8);
+      let qx = Math.round((piece[0] - cx0) * Q), qz = Math.round((piece[1] - cz0) * Q);
+      if (qx < 0 || qz < 0 || qx > 65535 || qz > 65535) { dropped++; continue; }   // a very long straight reaching far outside its block
+      rec.writeUInt16LE(qx, 4); rec.writeUInt16LE(qz, 6);
       for (let i = 1; i < n; i++) {
-        const nx = Math.round((piece[i * 2] - x0) * Q), nz = Math.round((piece[i * 2 + 1] - z0) * Q);
-        rec.writeInt16LE(nx - qx, 12 + (i - 1) * 4); rec.writeInt16LE(nz - qz, 14 + (i - 1) * 4);
+        const nx = Math.round((piece[i * 2] - cx0) * Q), nz = Math.round((piece[i * 2 + 1] - cz0) * Q);
+        rec.writeInt16LE(nx - qx, 8 + (i - 1) * 4); rec.writeInt16LE(nz - qz, 10 + (i - 1) * 4);
         qx = nx; qz = nz;
       }
       cells[cj * T + ci].push(rec); bytes += rec.length; nPl++; nPt += n;
@@ -235,4 +241,4 @@ writeFileSync(`${OUT}/index.json`, JSON.stringify({
   attribution: '© OpenStreetMap contributors, Overture Maps Foundation (ODbL)', release: '2026-10-21.0',
   half: HALF, block: BLOCK, cell: CELL, blocks, local: locals, localCell: LCELL,
 }));
-console.log(`${stations.length} stations`);
+console.log(`${stations.length} stations, ${dropped} pieces dropped`);

@@ -25,13 +25,15 @@ export function cellPolylines(b: RoadBlock, ci: number, cj: number): Polyline[] 
   const end = b.offs[cj * b.T + ci + 1];
   while (o < end) {
     const cls = dv.getUint8(o), flags = dv.getUint8(o + 1), n = dv.getUint16(o + 2, true);
-    let qx = dv.getInt32(o + 4, true), qz = dv.getInt32(o + 8, true);
+    // from one cell west and north of this cell's corner, 0.5 m steps
+    const bx = b.x0 + (ci - 1) * b.cell, bz = b.z0 + (cj - 1) * b.cell;
+    let qx = dv.getUint16(o + 4, true), qz = dv.getUint16(o + 6, true);
     const pts = new Float64Array(n * 2);
-    pts[0] = b.x0 + qx / 4; pts[1] = b.z0 + qz / 4;
-    o += 12;
+    pts[0] = bx + qx / 2; pts[1] = bz + qz / 2;
+    o += 8;
     for (let i = 1; i < n; i++, o += 4) {
       qx += dv.getInt16(o, true); qz += dv.getInt16(o + 2, true);
-      pts[i * 2] = b.x0 + qx / 4; pts[i * 2 + 1] = b.z0 + qz / 4;
+      pts[i * 2] = bx + qx / 2; pts[i * 2 + 1] = bz + qz / 2;
     }
     out.push({ cls, flags, pts });
   }

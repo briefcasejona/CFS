@@ -507,6 +507,7 @@ export class SceneRenderer {
     // haze sits in the lower atmosphere: looking out from altitude the air is clearer
     (this.scene.fog as THREE.FogExp2).density = this.baseFog * (0.45 + 0.55 * Math.exp(-Math.max(0, cp.y) / 5000));
     this.terrain.update(cp, this.viewDist);
+    this.terrain.roads.setView(this.camera.fov * Math.PI / 180, this.renderer.domElement.height);
     this.terrain.updateTrees(cp);
     (this.scenery.userData.updateFields as ((c: THREE.Vector3) => void) | undefined)?.(cp);
     // PAPI lights of the nearest field show red/white for the viewer's glidepath
