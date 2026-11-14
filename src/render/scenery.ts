@@ -167,7 +167,7 @@ export class FarScenery {
         const r = 8 + hsh * 6, ht = 14 + hash2(ci, cj + 1) * 9;
         mats.push(m.compose(p.set(x, h - 1, z), q.identity(), s.set(r, ht, r)).clone());
         const v = hash2(ci - 11, cj + 4);
-        cols.push(col.setRGB(0.14 + v * 0.06, 0.23 + v * 0.07, 0.12 + v * 0.03).clone());
+        cols.push(col.setRGB(0.06 + v * 0.04, 0.12 + v * 0.045, 0.045 + v * 0.015).clone());
       }
       if (mats.length) meshes.push(this.instanced(this.clumpGeo, this.clumpMat, mats, cols, 'clump'));
     }

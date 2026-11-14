@@ -68,7 +68,8 @@ function roadMaterial(uniforms: { uPix: { value: number } }) {
           }
           c = mix(c, vec3(0.82, 0.82, 0.78), mark * lines);
         }
-        diffuseColor.rgb = c;
+        // (the sky's fill light is strong and blue on a flat surface: asphalt is darker and warmer than its albedo says)
+        diffuseColor.rgb = c * vec3(0.6, 0.53, 0.46);
         // feathered edge; a road thinner than a pixel fades instead of flickering
         diffuseColor.a = vRoad.z * (1.0 - smoothstep(1.0 - fu * 1.5, 1.0, au * vRoad.z + (1.0 - vRoad.z)));
       }
@@ -86,6 +87,8 @@ export class Roads {
   private blocks = new Map<string, RoadBlock | 'loading' | 'none'>();
   private cells = new Map<string, CellMesh>();
   private frame = 0;
+  /** milliseconds a frame may spend building road meshes */
+  budgetMs = 3.5;
   private uniforms = { uPix: { value: 0.001 } };
   private mat = roadMaterial(this.uniforms);
   private stations: Station[] = [];
@@ -138,7 +141,7 @@ export class Roads {
     this.group.visible = !!ix;
     if (!ix) return;
     this.frame++;
-    const t0 = performance.now(), budget = 3.5;
+    const t0 = performance.now(), budget = this.budgetMs;
     // nearest first: [distance, key, block file, cell i, j, level]
     const want: Array<[number, string, string, number, number, number]> = [];
     const ring = (reach: number, size: number, fn: (i: number, j: number, d: number, x0: number, z0: number) => void, ox: number, oz: number) => {

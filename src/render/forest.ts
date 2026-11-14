@@ -142,7 +142,7 @@ export class Forest {
         q.setFromAxisAngle(up, data[o + 4]);
         m.compose(p.set(data[o] - x0, data[o + 1] - 0.4, data[o + 2] - z0), q, s.set(sc * (0.9 + v * 0.25), sc, sc * (0.9 + v * 0.25)));
         im.setMatrixAt(c, m);
-        im.setColorAt(c, kind === 0 ? col.setRGB(0.13 + v * 0.07, 0.24 + v * 0.09, 0.12 + v * 0.03) : col.setRGB(0.19 + v * 0.13, 0.33 + v * 0.11, 0.11 + v * 0.06));
+        im.setColorAt(c, kind === 0 ? col.setRGB(0.05 + v * 0.03, 0.105 + v * 0.04, 0.045 + v * 0.012) : col.setRGB(0.075 + v * 0.05, 0.14 + v * 0.05, 0.04 + v * 0.02));
         c++;
       }
       im.position.set(x0, 0, z0);
