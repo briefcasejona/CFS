@@ -160,7 +160,10 @@ describe('HD models', () => {
     expect(box.max.z - box.min.z).toBeCloseTo(def.length, 2);            // length along game Z
     expect(box.max.x - box.min.x).toBeCloseTo(80 * def.length / 150, 2); // span along game X
     expect((box.max.z + box.min.z) / 2).toBeCloseTo(0, 2);               // centred fore-aft
-    const gb = new THREE.Box3().setFromObject(root.children.find((c) => c.userData.role === 'gearDown')!);
+    // (the gear is rigged at bake time: the leg is now a piece of its own, on its hinge)
+    const gb = new THREE.Box3();
+    root.updateMatrixWorld(true);
+    root.traverse((c) => { const m = c as THREE.Mesh; if (m.isMesh && c.userData.role === 'gearDown' && m.geometry.getAttribute('position')?.count) gb.expandByObject(c); });
     expect(gb.min.y).toBeCloseTo(-def.gear.height, 2);                     // wheels at the gear height
   });
 

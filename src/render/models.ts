@@ -33,6 +33,7 @@ function finSurface(points: P2[], thickness: number, mat: THREE.Material): THREE
 import { HD_RANGE, hdModelsEnabled, hdSpecFor, requestHdModel, updateHdInstance, type HdInstance } from './hdModels.js';
 import { createBurner, setBurnerTime, type Burner } from './afterburner.js';
 import { attachHdStore, hdStoreVersion, storeSpecFor } from './hdStores.js';
+import { buildUnderside, hangPoint, type Underside } from './underside.js';
 
 export interface AircraftModel {
   root: THREE.Group;
@@ -65,10 +66,15 @@ const storeMats = {
 };
 
 /** length and body radius (m) of a missile: the HD model's real length when there is one */
+/** real lengths (m) of the missiles drawn without a model of their own */
+const MISSILE_LENGTH: Record<string, number> = {
+  aim7m: 3.66, aim9x: 3.02, aim9m: 2.87, meteor: 3.65, iris_t: 2.94, mica_ir: 3.1, mica_em: 3.1, magic2: 2.72, asraam: 2.9, s530d: 3.8, r27r: 4.08, r27er: 4.78, r73: 2.93,
+  r77: 3.6, agm65d: 2.49, agm88: 4.17, kh29t: 3.9, kh31p: 4.7,
+};
 export function missileDims(id: string) {
   const w = WEAPONS[id];
   const r = Math.min(0.35, 0.08 + (w?.mass ?? 100) / 4000);
-  return { len: storeSpecFor(id)?.length ?? Math.min(5, 1.5 + (w?.mass ?? 100) / 70), r };
+  return { len: storeSpecFor(id)?.length ?? MISSILE_LENGTH[id] ?? Math.min(5, 1.5 + (w?.mass ?? 100) / 70), r };
 }
 
 export function storeMesh(id: string): THREE.Object3D {
@@ -277,28 +283,72 @@ export function syncStores(model: AircraftModel, ac: Aircraft, stationOffset: (i
   }
   // once the HD airframe is in, hang every store right under the surface above its station
   // (again whenever an HD missile model has loaded since, as it changes the store's size)
-  if (model.hd && model.storesSnapped !== hdStoreVersion()) { snapStores(model, stationOffset); model.storesSnapped = hdStoreVersion(); }
+  if (model.hd && model.storesSnapped !== hdStoreVersion()) { snapStores(model, ac, stationOffset); model.storesSnapped = hdStoreVersion(); }
 }
 
-const snapRay = new THREE.Raycaster();
-/** raise/lower each store so its top touches the airframe (wing, pylon or fuselage) directly above its station */
-function snapStores(model: AircraftModel, stationOffset: (i: number) => THREE.Vector3) {
+const undersides = new Map<string, Underside>();
+const pylonMat = new THREE.MeshStandardMaterial({ color: 0x858a8f, roughness: 0.55, metalness: 0.3 });
+/** a plain swept pylon (top at y = 0, `drop` m deep, `len` m long) for a heavy store on a station the model has none on */
+function pylonMesh(len: number, drop: number) {
+  const up = 0.14;   // buried in the skin above
+  const sh = new THREE.Shape();
+  sh.moveTo(-0.5 * len, up); sh.lineTo(0.5 * len, up); sh.lineTo(0.5 * len, -0.25 * drop); sh.lineTo(0.36 * len, -drop);
+  sh.lineTo(-0.3 * len, -drop); sh.lineTo(-0.5 * len, -0.1 * drop); sh.closePath();
+  const g = new THREE.ExtrudeGeometry(sh, { depth: 0.07, bevelEnabled: true, bevelSize: 0.02, bevelThickness: 0.02, bevelSegments: 2 });
+  g.translate(0, 0, -0.035); g.rotateY(-Math.PI / 2);
+  const m = new THREE.Mesh(g, pylonMat);
+  m.name = 'pylon'; m.castShadow = true;
+  return m;
+}
+
+/**
+ * Hang each store from the airframe at its station: on the pylon or rail the model has there (at the rail's height
+ * and fore/aft position), else against the skin, with a pylon of its own for tanks, bombs and the like. Everything
+ * is measured in the body frame, so it comes out the same whatever attitude the jet has when its model arrives.
+ */
+function snapStores(model: AircraftModel, ac: Aircraft, stationOffset: (i: number) => THREE.Vector3) {
   const hd = model.hd!;
-  const targets: THREE.Object3D[] = [];
-  hd.root.traverse((o) => { if ((o as THREE.Mesh).isMesh && o.userData.role === 'body' && !hd.glass.includes(o)) targets.push(o); });
   model.root.updateMatrixWorld(true);
-  const up = new THREE.Vector3(0, 1, 0).transformDirection(model.body.matrixWorld);
+  let under = undersides.get(ac.def.id);
+  if (!under) {
+    const targets: THREE.Mesh[] = [];
+    hd.root.traverse((o) => { if ((o as THREE.Mesh).isMesh && o.userData.role === 'body' && !hd.glass.includes(o)) targets.push(o as THREE.Mesh); });
+    undersides.set(ac.def.id, under = buildUnderside(targets, model.body));
+  }
+  const inv = new THREE.Matrix4(), box = new THREE.Box3(), part = new THREE.Box3();
   model.stores.forEach((m, i) => {
     if (!m) return;
+    const old = m.getObjectByName('pylon');
+    if (old) m.remove(old);
     const st = stationOffset(i);
-    const box = new THREE.Box3().setFromObject(m, true);
-    const top = box.max.y - m.getWorldPosition(new THREE.Vector3()).y;   // store top above its origin (≈ radius)
-    snapRay.set(model.body.localToWorld(new THREE.Vector3(st.x, st.y - 4, st.z)), up);
-    snapRay.far = 8;
-    const hit = snapRay.intersectObjects(targets, false)[0];
-    if (!hit) return;
-    const local = model.body.worldToLocal(hit.point.clone());
-    m.position.set(st.x, local.y - top - 0.04, st.z);   // a hand's width of pylon/rail between store and skin
+    // the store's own extent about its origin (it hangs unrotated in the body frame)
+    inv.copy(m.matrixWorld).invert();
+    box.makeEmpty();
+    m.traverse((o) => {
+      const g = (o as THREE.Mesh).geometry;
+      if (!(o as THREE.Mesh).isMesh || !g) return;
+      if (!g.boundingBox) g.computeBoundingBox();
+      box.union(part.copy(g.boundingBox!).applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld)));
+    });
+    if (box.isEmpty()) return;
+    const w = WEAPONS[ac.stores[i]];
+    const missile = !!w && w.kind !== 'tank' && w.kind !== 'bomb' && w.kind !== 'lgb';
+    const len = box.max.z - box.min.z, mid = (box.max.z + box.min.z) / 2;
+    // a missile hangs by its body: its fins reach up past the rail
+    const top = missile ? Math.min(box.max.y, missileDims(ac.stores[i]).r) : box.max.y;
+    let x = st.x, hang = hangPoint(under!, x, st.z, len, missile);
+    // a station just beyond the wingtip: use the tip itself
+    for (let k = 1; k <= 8 && !Number.isFinite(hang.y); k++) { x = st.x - Math.sign(st.x) * 0.06 * k; hang = hangPoint(under!, x, st.z, len, missile); }
+    if (!Number.isFinite(hang.y)) return;
+    const own = !hang.rail && !missile;   // nothing on the model carries it: give it a pylon
+    const gap = own ? (Math.abs(st.x) > 0.5 ? 0.2 : 0.1) : hang.rail ? 0.01 : 0.03;
+    m.position.set(st.x, hang.y - top - gap, hang.z - mid);
+    m.rotation.x = -Math.atan(hang.slope);
+    if (own) {
+      const py = pylonMesh(Math.min(2.2, 0.55 * len), gap + 0.03);
+      py.position.set(0, top + gap, mid);
+      m.add(py);
+    }
   });
 }
 
