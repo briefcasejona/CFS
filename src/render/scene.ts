@@ -154,8 +154,8 @@ export class SceneRenderer {
     {
       // the dome: deep blue overhead by day, a narrow pale band where the haze lies on the horizon
       const u = this.sky.material.uniforms;
-      (u.uZenith.value as THREE.Color).setRGB(0.002, 0.004, 0.012).lerp(new THREE.Color().setRGB(0.022, 0.075, 0.27), day);
-      (u.uHorizon.value as THREE.Color).setRGB(0.006, 0.008, 0.014).lerp(new THREE.Color().setRGB(0.16, 0.36, 0.74), day).lerp(new THREE.Color(0xe09060), dusk * 0.5);
+      (u.uZenith.value as THREE.Color).setRGB(0.002, 0.004, 0.012).lerp(new THREE.Color().setRGB(0.022, 0.075, 0.27), clamp(elev * 3 + 0.3, 0, 1));
+      (u.uHorizon.value as THREE.Color).setRGB(0.006, 0.008, 0.014).lerp(new THREE.Color().setRGB(0.16, 0.36, 0.74), day).lerp(new THREE.Color(0xe09060), dusk * 0.35);
       (u.uHaze.value as THREE.Color).copy(horizon);
       u.uSunDir.value.copy(this.sunDir);
       (u.uSunCol.value as THREE.Color).setRGB(1, 0.9 + 0.1 * day, 0.75 + 0.25 * day).multiplyScalar(elev > -0.05 ? 1 : 0);
@@ -187,7 +187,7 @@ export class SceneRenderer {
     const fog = this.scene.fog as THREE.FogExp2;
     fog.color.copy(horizon);
     // (visibility = where 2 % of the contrast is left: exp(−(d·density)²) = 0.02 at d·density ≈ 2)
-    fog.density = 2.0 / (Math.max(5, w.visibilityKm) * 1000);
+    fog.density = 2.6 / (Math.max(5, w.visibilityKm) * 1000);
     this.baseFog = fog.density;
     this.viewDist = Math.min(260000, w.visibilityKm * 1000 * 2.2);
     this.cloudsOn = w.clouds !== 'clear';
@@ -531,7 +531,7 @@ export class SceneRenderer {
     if (this.vrActive) this.renderer.render(this.scene, this.camera);
     else {
       this.cloudPass.enabled = this.cloudsOn;
-      if (this.cloudsOn) this.cloudPass.update(this.sunDir, this.sun, this.hemi.color.clone().multiplyScalar(this.hemi.intensity * 0.9), this.scene.fog as THREE.FogExp2, performance.now() / 1000);
+      if (this.cloudsOn) this.cloudPass.update(this.sunDir, this.sun, new THREE.Color().setRGB(0.5, 0.62, 0.85).multiplyScalar(this.hemi.intensity * 0.75), this.scene.fog as THREE.FogExp2, performance.now() / 1000);
       this.composer.render();
     }
   }
