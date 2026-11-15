@@ -11,6 +11,7 @@ import {
 import { F16_CONTROLS, F16_GAUGES, F16_LIGHTS } from './panels.js';
 import { FaultList, Flcs } from './flcs.js';
 import { F16Avionics, type IcpKey } from './avionics.js';
+import { F16_PIT } from './pitLayout.js';
 
 const LB = 0.45359237;
 const KT = 0.514444;
@@ -75,6 +76,7 @@ export class F16Systems implements AircraftSystems {
   readonly faults = new FaultList();
   readonly flcs = new Flcs();
   readonly avionics = new F16Avionics(this.faults);
+  readonly cockpit = F16_PIT;
   private caution = { ack: new Set<string>(), master: false, cautionT: -1, warnT: -1, warnSaid: new Set<string>() };
   private auto = { wait: 0 };
 

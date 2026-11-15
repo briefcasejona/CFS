@@ -95,9 +95,18 @@ export class FlightSession {
     this.mfds = new Mfds(ui.mfdL, ui.mfdR);
     window.addEventListener('resize', () => this.resize());
     ui.hud.addEventListener('contextmenu', (e) => e.preventDefault());
-    ui.hud.addEventListener('mousedown', (e) => { this.mouse = { down: true, button: e.button, x: e.clientX, y: e.clientY }; });
+    ui.hud.addEventListener('mousedown', (e) => {
+      // a click on a cockpit control works the control; anywhere else it turns the pilot's head
+      if (this.clickCockpit(e.clientX, e.clientY, e.button === 2 ? -1 : 1)) { e.preventDefault(); return; }
+      this.mouse = { down: true, button: e.button, x: e.clientX, y: e.clientY };
+    });
+    ui.hud.addEventListener('mousemove', (e) => { this.pointer = { x: e.clientX, y: e.clientY, moved: true }; });
+    ui.hud.addEventListener('mouseleave', () => { this.pointer.x = -1; this.pointer.moved = true; });
+    this.tipEl = document.createElement('div');
+    this.tipEl.style.cssText = 'position:absolute;z-index:6;display:none;max-width:340px;padding:5px 9px;background:rgba(8,10,12,.9);border:1px solid #58636a;border-radius:4px;font:12px/1.35 system-ui,sans-serif;color:#e6ecef;pointer-events:none';
+    ui.root.append(this.tipEl);
     ui.map.addEventListener('mousedown', (e) => { this.mouse = { down: true, button: 9, x: e.clientX, y: e.clientY }; });
-    window.addEventListener('mouseup', () => { this.mouse.down = false; });
+    window.addEventListener('mouseup', () => { this.mouse.down = false; const sys = this.built?.player.systems; if (sys) this.scene.pit?.release(sys); });
     window.addEventListener('mousemove', (e) => this.onMouseMove(e));
     this.commsEl = document.createElement('div');
     this.commsEl.className = 'comms-menu';
@@ -123,6 +132,41 @@ export class FlightSession {
       else this.built?.world.radio(`Voice: didn't catch "${alts[0] ?? ''}" — try e.g. "request picture", "flight rejoin".`, '#9fd8ff');
     };
     ui.map.addEventListener('wheel', (e) => { this.mapView.mpp = clamp(this.mapView.mpp * (e.deltaY > 0 ? 1.2 : 1 / 1.2), 3, 1200); e.preventDefault(); }, { passive: false });
+  }
+
+  private pointer = { x: -1, y: 0, moved: false };
+  private tipEl!: HTMLElement;
+  private ndc(x: number, y: number): [number, number] {
+    const r = this.ui.canvas3d.getBoundingClientRect();
+    return [(x - r.left) / r.width * 2 - 1, 1 - (y - r.top) / r.height * 2];
+  }
+  /** Work the cockpit control under the pointer, if there is one. `dir`: +1 left button / wheel up, −1 right / down. */
+  private clickCockpit(x: number, y: number, dir: 1 | -1, hold = true): boolean {
+    const sys = this.built?.player.systems, pit = this.scene.pit;
+    if (!this.running || this.paused || this.mapOpen || !sys || !pit) return false;
+    const hit = this.scene.pickCockpit(...this.ndc(x, y));
+    if (!hit) return false;
+    // the wheel only turns rotary knobs
+    if (!hold && !(hit.kind === 'control' && hit.def.positions.length >= 4)) return false;
+    const why = pit.press(hit, dir, sys, hold);
+    if (why) this.built.world.radio(why, '#fc8');
+    this.audio.click();
+    this.pointer.moved = true;
+    return true;
+  }
+  /** the legend that follows the pointer over the cockpit */
+  private updateTip() {
+    const sys = this.built?.player.systems, pit = this.scene.pit;
+    if (!this.pointer.moved && this.tipEl.style.display === 'none') return;
+    this.pointer.moved = false;
+    const hit = sys && pit && this.pointer.x >= 0 && !this.mouse.down && !this.mapOpen && !this.paused ? this.scene.pickCockpit(...this.ndc(this.pointer.x, this.pointer.y)) : null;
+    if (!hit || !sys || !pit) { this.tipEl.style.display = 'none'; this.ui.hud.style.cursor = ''; return; }
+    this.tipEl.textContent = pit.describe(hit, sys);
+    this.tipEl.style.display = 'block';
+    this.tipEl.style.left = `${Math.min(window.innerWidth - 350, this.pointer.x + 16)}px`;
+    this.tipEl.style.top = `${this.pointer.y + 18}px`;
+    this.ui.hud.style.cursor = hit.kind === 'info' ? 'help' : 'pointer';
+    this.pointer.moved = true;   // values change while the pointer rests
   }
 
   private onMouseMove(e: MouseEvent) {
@@ -293,6 +337,7 @@ export class FlightSession {
     }, dt);
     this.mfds.draw(world, dt);
     this.sysPanel.update(dt);
+    this.updateTip();
     if (this.mapOpen) this.drawMap();
     this.updateAudio(dt);
   }
@@ -456,7 +501,8 @@ export class FlightSession {
     const av = this.built.player.systems?.avionics;
     if (i.pressed('mfdLeft')) { if (av) av.mfdNext(0); else this.mfds.cycle('left'); }
     if (i.pressed('mfdRight')) { if (av) av.mfdNext(1); else this.mfds.cycle('right'); }
-    if (i.mouseWheel !== 0) {
+    if (i.mouseWheel !== 0 && !this.mapOpen && this.pointer.x >= 0 && this.clickCockpit(this.pointer.x, this.pointer.y, i.mouseWheel > 0 ? -1 : 1, false)) { /* a knob was turned */ }
+    else if (i.mouseWheel !== 0) {
       if (!this.mapOpen) {
         if (this.scene.view === 'cockpit') this.scene.zoom = clamp(this.scene.zoom * (i.mouseWheel > 0 ? 1 / 1.15 : 1.15), 1, 5);
         else this.scene.chaseDist = clamp(this.scene.chaseDist * (i.mouseWheel > 0 ? 1.15 : 1 / 1.15), 8, 800);

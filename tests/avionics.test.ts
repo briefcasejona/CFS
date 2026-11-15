@@ -9,6 +9,8 @@ import { KT, FT, NM } from '../src/sim/atmosphere.js';
 import { rampPlan, routeProgress, GENERIC } from '../src/game/ramp.js';
 import { AIRBASES, apronSide, setTheater } from '../src/world/theater.js';
 import { osbAt, osbPos } from '../src/ui/mfd.js';
+import { flowPlate } from '../src/systems/pitLayout.js';
+import { F16_PIT } from '../src/systems/f16/pitLayout.js';
 
 const flat: FlightEnv = { groundHeight: () => 0, isWater: () => false, wind: new THREE.Vector3() };
 const DT = 1 / 60;
@@ -248,5 +250,29 @@ describe('ramp parking', () => {
     expect(Math.hypot(a.spot.x - b.spot.x, a.spot.z - b.spot.z)).toBeGreaterThan(30);
     expect(GENERIC.spotOff).toBeGreaterThan(GENERIC.apronNear);
     expect(GENERIC.spotOff).toBeLessThan(GENERIC.apronFar);
+  });
+});
+
+describe('clickable cockpit layout', () => {
+  it('every control, light, gauge and display of the F-16 has exactly one place in the cockpit, and nothing is squeezed', () => {
+    const { sys } = jet('ground');
+    const seen = new Map<string, number>();
+    for (const p of F16_PIT.plates) {
+      const f = flowPlate(p, sys);
+      expect(f.missing.join(','), p.id).toBe('');
+      expect(f.scale, p.id).toBeGreaterThan(0.8);
+      for (const it of f.items) {
+        if (it.kind === 'title') continue;
+        const k = `${it.kind}:${it.def.id}`;
+        seen.set(k, (seen.get(k) ?? 0) + 1);
+        expect(it.x >= -1e-9 && it.y >= -1e-9 && it.x + it.w <= p.w + 1e-9 && it.y + it.h <= p.h + 1e-9, `${p.id} ${k}`).toBe(true);
+        expect(it.w, `${p.id} ${k} width`).toBeGreaterThan(it.kind === 'control' && it.style !== 'key' ? 0.03 : 0.018);
+      }
+    }
+    for (const c of sys.controls) expect(seen.get(`control:${c.id}`), `control ${c.id}`).toBe(1);
+    for (const l of sys.lights) expect(seen.get(`light:${l.id}`), `light ${l.id}`).toBe(1);
+    for (const g of sys.gauges) expect(seen.get(`gauge:${g.id}`), `gauge ${g.id}`).toBe(1);
+    for (const d of sys.avionics.displays) expect(seen.get(`display:${d.id}`), `display ${d.id}`).toBe(1);
+    expect(F16_PIT.mfds.length).toBe(sys.avionics.mfdCount);
   });
 });

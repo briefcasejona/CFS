@@ -13,6 +13,8 @@
 //      move, how much hydraulic power do the flight controls have, and so on.
 
 /** A switch, knob, handle or button in the cockpit. */
+import type { PitLayout } from './pitLayout.js';
+
 export interface ControlDef {
   id: string;
   label: string;
@@ -303,4 +305,6 @@ export interface AircraftSystems {
   autoStart: boolean;
   /** avionics suite, when the aircraft has its own */
   readonly avionics?: Avionics;
+  /** where everything sits in the 3D cockpit, when the type has a clickable one */
+  readonly cockpit?: PitLayout;
 }

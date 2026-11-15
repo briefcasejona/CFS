@@ -95,6 +95,20 @@ export class AudioSystem {
     this.warnGain.gain.setTargetAtTime(warnOn ? 0.04 : 0, t, 0.01);
   }
 
+  /** the snap of a switch */
+  click() {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const buf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.03), ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 6);
+    const s = ctx.createBufferSource(); s.buffer = buf;
+    const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 2400;
+    const g = ctx.createGain(); g.gain.value = 0.35;
+    s.connect(f).connect(g).connect(this.master);
+    s.start();
+  }
+
   boom(distance: number) {
     if (!this.ctx) return;
     const ctx = this.ctx;
