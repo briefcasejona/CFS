@@ -77,7 +77,8 @@ export class FarScenery {
     this.group.name = 'far-scenery';
     // block: walls lit by the instance colour, roof (top face) a darker tile/slate
     this.blockGeo = paint(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0).toNonIndexed(), (_y, ny) => ny > 0.5 ? [0.55, 0.42, 0.38] : [0.85, 0.82, 0.78]);
-    const cone = new THREE.ConeGeometry(1, 1, 6).translate(0, 0.5, 0).toNonIndexed();
+    // (open: the base sits on the ground and is never seen — half the triangles of a closed cone)
+    const cone = new THREE.ConeGeometry(1, 1, 6, 1, true).translate(0, 0.5, 0).toNonIndexed();
     cone.deleteAttribute('uv');
     this.clumpGeo = mergeGeometries([paint(cone, () => [1, 1, 1])])!;
     this.blockMat = ringMaterial(new THREE.MeshLambertMaterial({ vertexColors: true }), NEAR_SCENERY, FAR_HOUSES);
