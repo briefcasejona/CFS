@@ -15,6 +15,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { AircraftDef } from '../aircraft/types.js';
+import type { SwitchBinding } from './modelSwitches.js';
 
 export interface CockpitModelSpec {
   url: string;
@@ -33,7 +34,7 @@ export interface CockpitModelSpec {
   /** nodes not to draw (e.g. a pilot body or a canopy that duplicates the exterior's) */
   hide?: RegExp;
   /** node name → control id in the aircraft's systems (systems/<type>/panels.ts), for switches modelled in the file */
-  switches?: Record<string, string>;
+  switches?: Record<string, SwitchBinding>;
 }
 
 /** the F-16 cockpit's source airframe is 14.0 m long, the flight model's 15.06 m */
@@ -56,6 +57,20 @@ export const COCKPIT_MODELS: Record<string, CockpitModelSpec> = {
       { c: k3(-0.0692, 2.183, -4.1882), w: 0.04 * K16, h: 0.062 * K16, n: [0, 0.574, 0.819], screen: 0 },
       { c: k3(0.0698, 2.183, -4.1882), w: 0.04 * K16, h: 0.062 * K16, n: [0, 0.574, 0.819], screen: 1 },
     ],
+    // the model's own switches (parts split out by scripts/models/split-cockpit.mjs), matched to the controls by the
+    // legends painted on the model's panels. The model's layout is the modeller's: where a control has no part of
+    // its own here, it stays on the overlay plates.
+    switches: {
+      part_9_25: { id: 'lgHandle', throw: 18 },                 // LG handle (wheel-shaped knob), left auxiliary console
+      part_9_40: { id: 'lgHandle', follow: 'part_9_25' },
+      part_5_36: 'mainPwr',                                     // ELEC: MAIN PWR
+      part_4_140: { id: 'jfs', angles: [0, -25, 25] },          // JET FUEL START: START 1 / OFF / START 2
+      part_9_17: 'fuelMaster',                                  // FUEL: MASTER
+      part_9_15: 'airRefuel',                                   // FUEL: AIR REFUEL
+      part_4_10: 'mmc', part_4_7: 'stSta', part_4_6: 'mfd', part_4_2: 'ufc',   // AVIONICS POWER
+      part_4_123: 'dbu',                                        // FLT CONTROL: DIGITAL BACKUP
+      part_4_121: 'altFlaps',                                   // FLT CONTROL: ALT FLAPS
+    },
   },
 };
 

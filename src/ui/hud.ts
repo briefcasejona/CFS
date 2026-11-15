@@ -6,6 +6,7 @@ import { WEAPONS } from '../weapons/stores.js';
 import { DEG, RAD, clamp, wrap360 } from '../core/math.js';
 import { FT, KT, NM, G0 } from '../sim/atmosphere.js';
 import { surfaceHeight } from '../world/theater.js';
+import { drawF16Hud } from './hudF16.js';
 
 export interface HudState {
   autopilot: boolean;
@@ -123,7 +124,37 @@ export class Hud {
     return scene.project(far, this.w, this.h);
   }
 
+  /** The F-16's own HUD (hudF16.ts, to the Dash-34), with the weapon symbology and warnings over it. */
+  private drawF16(world: World, scene: SceneRenderer, p: Aircraft, st: HudState): boolean {
+    const c = this.ctx, col = st.color;
+    const wid = p.selWeapon, kind = wid && wid !== 'gun' ? WEAPONS[wid]?.kind : null;
+    const masterMode = wid === 'gun' ? 'GUN' : !kind ? 'NAV' : ['ir', 'sarh', 'arh'].includes(kind) ? 'AAM' : kind === 'arm' ? 'HTS' : 'CCRP';
+    const bull = (p.systems?.avionics as { stpts?: Array<{ x: number; z: number } | undefined> } | undefined)?.stpts?.[24];
+    const f = drawF16Hud({
+      ctx: c, col, p, proj: (d) => this.projDir(scene, d), steerpoint: st.steerpoint, steerName: st.steerName,
+      eye: scene.viewCam.position, masterMode, bullseye: bull ? new THREE.Vector3(bull.x, 0, bull.z) : null, time: world.time,
+    });
+    if (!f) return false;
+    c.save();
+    c.strokeStyle = col; c.fillStyle = col; c.lineWidth = 1.6; c.shadowColor = col; c.shadowBlur = 3;
+    c.beginPath(); c.rect(f.clip.x0, f.clip.y0, f.clip.x1 - f.clip.x0, f.clip.y1 - f.clip.y0); c.clip();
+    this.drawTargeting(world, scene, p, st, f.bore, f.fpm, f.k, { hx0: f.clip.x0, hx1: f.clip.x1, hy0: f.clip.y0, hy1: f.clip.y1 });
+    const warns = this.warnings(p);
+    const mid = f.at(0, 125);
+    if (warns.length && this.flash % 0.8 < 0.55) {
+      const red = warns[0] === 'PULL UP' || warns[0] === 'MISSILE';
+      this.text(warns[0], mid.x, mid.y - 20 * f.k, red ? '#ff4040' : col, 9 * f.k, 'center');
+    }
+    const cue = this.world?.refuel.cue();
+    if (cue) this.text(cue, mid.x, mid.y + 10 * f.k, col, 7 * f.k, 'center');
+    if (this.world) this.drawCarrierCues(this.world, p, mid.x, mid.y, f.clip.x1, f.k, col);
+    c.restore();
+    c.shadowBlur = 0;
+    return true;
+  }
+
   private drawHud(world: World, scene: SceneRenderer, p: Aircraft, st: HudState) {
+    if (p.def.family === 'F-16') { if (!this.drawF16(world, scene, p, st)) this.drawDataStrip(world, p, st); return; }
     const c = this.ctx;
     const fm = p.fm;
     const col = st.color;

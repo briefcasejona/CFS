@@ -15,6 +15,7 @@ import { hdSpecFor } from './hdModels.js';
 import { buildCockpit, type Cockpit } from './cockpit.js';
 import { Cockpit3D, type PitHit } from './cockpit3d.js';
 import { cockpitSpecFor, disposeTree, loadCockpitModel, type CockpitModelSpec } from './cockpitModels.js';
+import { ModelSwitches } from './modelSwitches.js';
 
 type Source = 'model' | 'hd' | 'procedural';
 type Screen = { c: [number, number, number]; w: number; h: number; n: [number, number, number]; screen: 0 | 1 };
@@ -35,6 +36,8 @@ export class CockpitView {
   private screenTex: THREE.CanvasTexture[] = [];
   private body: THREE.Object3D | null = null;
   private hdHidden: THREE.Object3D[] = [];
+  /** the cockpit model's own switches, bound to the systems (null unless the model is in use) */
+  private switches: ModelSwitches | null = null;
 
   constructor(private mfdCanvases: () => HTMLCanvasElement[]) {}
 
@@ -135,9 +138,16 @@ export class CockpitView {
   private updatePit(m: AircraftModel, ac: Aircraft, eye: THREE.Vector3, dt: number) {
     const sys = ac.systems, layout = sys?.cockpit;
     if (!sys || !layout) return;
-    if (!this.pit || this.pit.sys !== sys) {
+    const want = this.source === 'model' && this.modelSpec?.switches ? this.modelSpec.switches : null;
+    if (want && !this.switches) {
+      m.body.updateWorldMatrix(true, true);
+      this.switches = new ModelSwitches(this.model!, want, sys, m.body.localToWorld(eye.clone()));
+      if (this.switches.unmatched.length) console.warn('cockpit model: switches not found', this.switches.unmatched);
+    }
+    const sw = this.source === 'model' ? this.switches : null;
+    if (!this.pit || this.pit.sys !== sys || this.pit.model !== sw) {
       if (this.pit) disposeTree(this.pit.group);
-      this.pit = new Cockpit3D(sys, layout);
+      this.pit = new Cockpit3D(sys, layout, sw);
     }
     const pit = this.pit;
     if (pit.group.parent !== m.body) m.body.add(pit.group);
@@ -175,6 +185,7 @@ export class CockpitView {
   unload(m: AircraftModel | null = null) {
     this.dropDrawn(m);
     if (this.model) { disposeTree(this.model); this.model = null; }
+    this.switches = null;
     if (this.pit) { disposeTree(this.pit.group); this.pit = null; }
     this.modelSpec = null;
     this.loading = false;
