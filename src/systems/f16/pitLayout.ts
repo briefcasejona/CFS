@@ -75,19 +75,19 @@ export const F16_PIT: PitLayout = {
       ],
     },
     {
-      id: 'eyebrowLeft', c: [-0.165, -0.28, -0.766], n: [0, 0.3, 0.954], up: [0, 0.954, -0.3], w: 0.13, h: 0.034, fit: 0.2,
+      id: 'eyebrowLeft', c: [-0.19, -0.28, -0.766], n: [0, 0.3, 0.954], up: [0, 0.954, -0.3], w: 0.13, h: 0.034, fit: 0.2,
       rows: [['c:masterCaution', 'l:masterCaution', 'c:fAck', 'l:nws']],
     },
     {
-      id: 'eyebrowRight', c: [0.165, -0.237, -0.775], n: [0, 0.3, 0.954], up: [0, 0.954, -0.3], w: 0.13, h: 0.034, fit: 0.2,
+      id: 'eyebrowRight', c: [0.19, -0.237, -0.775], n: [0, 0.3, 0.954], up: [0, 0.954, -0.3], w: 0.13, h: 0.034, fit: 0.2,
       rows: [['l:engine', 'l:hydOil', 'l:flcsWarn'], ['l:dbuOn', 'l:toLdgConfig', '']],
     },
     {
-      id: 'ded', c: [0.165, -0.282, -0.785], n: [0, 0.3, 0.954], up: [0, 0.954, -0.3], w: 0.13, h: 0.052, fit: 0.2,
+      id: 'ded', c: [0.19, -0.282, -0.785], n: [0, 0.3, 0.954], up: [0, 0.954, -0.3], w: 0.13, h: 0.052, fit: 0.2,
       rows: [['d:ded']],
     },
     {
-      id: 'icp', c: [0, -0.225, -0.69], n: [0, 0.35, 0.937], up: [0, 0.937, -0.35], w: 0.15, h: 0.072, fit: 0.12,
+      id: 'icp', c: [0, -0.259, -0.677], n: [0, 0.35, 0.937], up: [0, 0.937, -0.35], w: 0.15, h: 0.088, fit: 0.12,
       rows: [
         ['c:icpCOM1', 'c:icpCOM2', 'c:icpIFF', 'c:icpLIST', 'c:icpAA', 'c:icpAG', 'c:icpWARN'],
         ['c:icpINC', 'c:icp1', 'c:icp2', 'c:icp3', 'c:icpRCL', 'c:icpUP'],
