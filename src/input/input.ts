@@ -37,6 +37,9 @@ export const ACTIONS: ActionDef[] = [
   { id: 'nozzleUp', label: 'Nozzles aft (Harrier)', type: 'button', group: 'Systems' },
   { id: 'nozzleDown', label: 'Nozzles down (Harrier)', type: 'button', group: 'Systems' },
   { id: 'autopilot', label: 'Autopilot (alt/hdg hold)', type: 'button', group: 'Systems' },
+  { id: 'systemsPanel', label: 'Cockpit systems panel (switches, lights, checklist)', type: 'button', group: 'Systems' },
+  { id: 'autoStart', label: 'Auto-start (crew chief runs the start-up)', type: 'button', group: 'Systems' },
+  { id: 'masterCaution', label: 'Master caution reset', type: 'button', group: 'Systems' },
   { id: 'jettison', label: 'Emergency jettison', type: 'button', group: 'Systems' },
   { id: 'eject', label: 'Eject', type: 'button', group: 'Systems' },
   { id: 'fire', label: 'Fire selected weapon (smart)', type: 'button', group: 'Weapons' },
@@ -108,6 +111,7 @@ export function defaultKeyboard(): BindingMap {
     gear: [K('KeyG')], hook: [K('KeyH')], catLaunch: [K('KeyC')], commsMenu: [K('Backslash')], voicePtt: [K('Backquote')], flaps: [K('KeyF')], speedbrake: [K('KeyB')], wheelBrake: [K('KeyW')],
     // note: Ctrl+W / Ctrl+T cannot be intercepted by a web page (they close/open browser tabs)
     nozzleUp: [K('KeyM')], nozzleDown: [K('KeyN')], autopilot: [K('KeyA')], jettison: [K('KeyW', { shift: true })], eject: [K('KeyE', { shift: true })],
+    systemsPanel: [K('KeyK')], autoStart: [K('KeyK', { shift: true })], masterCaution: [K('KeyJ')],
     fire: [K('Space')], weaponNext: [K('KeyD')], weaponPrev: [K('KeyD', { shift: true })],
     modeAA: [K('Digit2')], modeDogfight: [K('Digit3')], modeGun: [K('Digit4')], modeAG: [K('Digit6')],
     radarLock: [K('Enter'), K('NumpadEnter')], radarUnlock: [K('Backspace')], targetNext: [K('Tab')], radarMode: [K('KeyR')],

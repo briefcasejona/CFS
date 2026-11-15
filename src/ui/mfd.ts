@@ -4,6 +4,22 @@ import { WEAPONS } from '../weapons/stores.js';
 import { RANGE_SCALES_NM } from '../avionics/radar.js';
 import { RAD, clamp, wrap360 } from '../core/math.js';
 import { FT, NM } from '../sim/atmosphere.js';
+import type { Avionics, MfdView } from '../systems/types.js';
+
+/** Centre of option-select button n (1–20, clockwise from the top left) on a display of size s, as a fraction. */
+export function osbPos(n: number): { u: number; v: number; edge: 'top' | 'right' | 'bottom' | 'left' } {
+  const k = (n - 1) % 5, f = 0.2 + k * 0.15;
+  if (n <= 5) return { u: f, v: 0.035, edge: 'top' };
+  if (n <= 10) return { u: 0.965, v: f, edge: 'right' };
+  if (n <= 15) return { u: 1 - f, v: 0.965, edge: 'bottom' };
+  return { u: 0.035, v: 1 - f, edge: 'left' };
+}
+/** The button a click at (u, v) on the display face belongs to, or 0. */
+export function osbAt(u: number, v: number): number {
+  let best = 0, bd = 0.11;
+  for (let n = 1; n <= 20; n++) { const p = osbPos(n); const d = Math.hypot(p.u - u, p.v - v); if (d < bd) { bd = d; best = n; } }
+  return best;
+}
 
 export type MfdPage = 'FCR' | 'HSD' | 'RWR' | 'SMS' | 'ENG';
 const LEFT_PAGES: MfdPage[] = ['FCR', 'HSD', 'ENG'];
@@ -23,9 +39,16 @@ export class Mfds {
   constructor(left: HTMLCanvasElement, right: HTMLCanvasElement) {
     this.left = left; this.right = right;
     for (const c of [left, right]) { c.width = 300; c.height = 300; }
-    left.addEventListener('click', () => this.cycle('left'));
-    right.addEventListener('click', () => this.cycle('right'));
+    [left, right].forEach((cv, k) => cv.addEventListener('click', (e) => {
+      if (!this.avionics) { this.cycle(k ? 'right' : 'left'); return; }
+      const r = cv.getBoundingClientRect();
+      const n = osbAt((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+      if (n) this.onPress?.(k, n);
+    }));
   }
+  /** a jet with its own avionics draws its own formats; a click on a button label presses that button */
+  private avionics: Avionics | null = null;
+  onPress: ((side: number, osb: number) => void) | null = null;
   cycle(side: 'left' | 'right') {
     if (side === 'left') this.leftPage = LEFT_PAGES[(LEFT_PAGES.indexOf(this.leftPage) + 1) % LEFT_PAGES.length];
     else this.rightPage = RIGHT_PAGES[(RIGHT_PAGES.indexOf(this.rightPage) + 1) % RIGHT_PAGES.length];
@@ -38,12 +61,14 @@ export class Mfds {
     this.timer = 1 / 20;
     const p = world.player;
     this.world = world;
+    this.avionics = p?.alive ? p.systems?.avionics ?? null : null;
+    if (p && this.avionics) { [this.left, this.right].forEach((cv, k) => this.drawView(cv.getContext('2d')!, world, p, this.avionics!.mfd(k))); return; }
     const panels: Array<[HTMLCanvasElement, MfdPage, MfdPage[]]> = [[this.left, this.leftPage, LEFT_PAGES], [this.right, this.rightPage, RIGHT_PAGES]];
     for (const [cv, page, pages] of panels) {
       const c = cv.getContext('2d')!;
       c.fillStyle = '#050a06';
       c.fillRect(0, 0, 300, 300);
-      if (!p || !p.alive) { this.txt(c, 'OFF', 150, 150, DIM, 20, 'center'); continue; }
+      if (!p || !p.alive || (p.systems && !p.systems.powered('mfd'))) { this.txt(c, 'OFF', 150, 150, DIM, 20, 'center'); continue; }
       switch (page) {
         case 'FCR': this.fcr(c, p); break;
         case 'HSD': this.hsd(c, world, p); break;
@@ -54,6 +79,38 @@ export class Mfds {
       pages.forEach((pg, i) => this.txt(c, pg, 60 + i * 90, 290, pg === page ? GREEN : DIM, 12, 'center'));
       c.strokeStyle = DIM; c.lineWidth = 2; c.strokeRect(1, 1, 298, 298);
     }
+  }
+
+  /** One display as the jet's avionics drive it: the format in the middle, the button labels round the edge. */
+  private drawView(c: CanvasRenderingContext2D, world: World, p: Aircraft, v: MfdView) {
+    c.fillStyle = '#050a06';
+    c.fillRect(0, 0, 300, 300);
+    if (v.format === 'OFF') { c.strokeStyle = '#0c1a10'; c.lineWidth = 2; c.strokeRect(1, 1, 298, 298); return; }
+    c.save();
+    c.translate(27, 27); c.scale(0.82, 0.82);
+    switch (v.format) {
+      case 'FCR': this.fcr(c, p); break;
+      case 'HSD': this.hsd(c, world, p, Number(v.data?.rangeNm ?? 80), !!v.data?.cen); break;
+      case 'RWR': this.rwr(c, p); break;
+      case 'SMS': this.sms(c, p); break;
+    }
+    c.restore();
+    for (const l of v.lines ?? []) this.txt(c, l.text, (l.x ?? 0.5) * 300, (l.y ?? 0.5) * 300, l.on ? '#ffe45a' : GREEN, 12 * (l.size ?? 1), l.align ?? 'left');
+    v.osb.forEach((o, k) => {
+      if (!o || !o.text) return;
+      const q = osbPos(k + 1);
+      const x = q.u * 300, y = q.v * 300;
+      const words = q.edge === 'left' || q.edge === 'right' ? o.text.split(' ') : [o.text];
+      const align: CanvasTextAlign = q.edge === 'left' ? 'left' : q.edge === 'right' ? 'right' : 'center';
+      const tx = q.edge === 'left' ? 4 : q.edge === 'right' ? 296 : x;
+      words.forEach((w, n) => {
+        const ty = y + (n - (words.length - 1) / 2) * 11;
+        c.font = '11px Consolas, monospace';
+        const tw = c.measureText(w).width + 4;
+        if (o.on) { c.fillStyle = GREEN; c.fillRect(align === 'left' ? tx - 2 : align === 'right' ? tx - tw + 2 : tx - tw / 2, ty - 6, tw, 12); }
+        this.txt(c, w, tx, ty, o.on ? '#050a06' : GREEN, 11, align);
+      });
+    });
   }
 
   private txt(c: CanvasRenderingContext2D, s: string, x: number, y: number, col: string, size = 12, align: CanvasTextAlign = 'left') {
@@ -127,20 +184,37 @@ export class Mfds {
     }
   }
 
-  private hsd(c: CanvasRenderingContext2D, world: World, p: Aircraft) {
-    const cx = 150, cy = 200;
-    const rangeM = 80 * NM;
-    const px = 170 / rangeM;
+  private hsd(c: CanvasRenderingContext2D, world: World, p: Aircraft, rangeNm = 80, cen = false) {
+    const cx = 150, cy = cen ? 150 : 200;
+    const rangeM = rangeNm * NM;
+    const px = (cen ? 120 : 170) / rangeM;
     const hdg = p.fm.attitude().hdg;
     c.strokeStyle = DIM; c.lineWidth = 1;
-    for (const k of [0.25, 0.5, 1]) { c.beginPath(); c.arc(cx, cy, 170 * k, Math.PI, 2 * Math.PI); c.stroke(); }
-    this.txt(c, 'HSD 80NM', 10, 14, GREEN, 12);
+    for (const k of [0.25, 0.5, 1]) { c.beginPath(); c.arc(cx, cy, (cen ? 120 : 170) * k, cen ? 0 : Math.PI, 2 * Math.PI); c.stroke(); }
+    this.txt(c, `HSD ${Math.round(rangeNm)}NM`, 10, 14, GREEN, 12);
     const toScreen = (x: number, z: number) => {
       const dx = x - p.pos.x, dz = z - p.pos.z;
       const rx = dx * Math.cos(hdg) + dz * Math.sin(hdg);
       const rz = -dx * Math.sin(hdg) + dz * Math.cos(hdg);
       return { x: cx + rx * px, y: cy + rz * px };
     };
+    // the flight plan as the navigation system holds it: nothing until it is loaded and aligned
+    const nav = p.systems?.avionics?.nav();
+    if (nav?.insReady) {
+      const pts = nav.steerpoints.map((s, k) => ({ s, k })).filter((e) => e.s.name && e.k < 24);
+      c.strokeStyle = '#e8e8e8'; c.lineWidth = 1;
+      c.beginPath();
+      pts.forEach((e, n) => { const q = toScreen(e.s.x, e.s.z); if (n) c.lineTo(q.x, q.y); else c.moveTo(q.x, q.y); });
+      c.stroke();
+      for (const e of pts) {
+        const q = toScreen(e.s.x, e.s.z);
+        c.beginPath(); c.arc(q.x, q.y, 4, 0, Math.PI * 2);
+        if (e.k === nav.steer) { c.fillStyle = '#e8e8e8'; c.fill(); } else c.stroke();
+        this.txt(c, `${e.k + 1}`, q.x + 7, q.y - 6, '#e8e8e8', 10);
+      }
+      const b = nav.steerpoints[24];
+      if (b?.name) { const q = toScreen(b.x, b.z); c.strokeStyle = '#4aa0ff'; for (const r of [2, 5, 8]) { c.beginPath(); c.arc(q.x, q.y, r, 0, Math.PI * 2); c.stroke(); } }
+    }
     for (const s of world.sites) {
       if (!s.alive) continue;
       const q = toScreen(s.radar.pos.x, s.radar.pos.z);

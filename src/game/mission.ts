@@ -4,7 +4,8 @@ import { AIRCRAFT_BY_ID, getAircraft } from '../aircraft/defs.js';
 import { Aircraft, GroundUnit, SamSite, type GroundType } from '../sim/entities.js';
 import { World, type WorldOptions } from '../sim/world.js';
 import { AIPilot, type AITask, type Skill } from '../ai/pilot.js';
-import { airbaseById, apronSide, requireAirbase, defaultNation, runwayEnds, setTheater, terrainHeight, theaterById, type SamType } from '../world/theater.js';
+import { airbaseById, apronSide, requireAirbase, defaultNation, runwayEnds, setTheater, terrainHeight, theaterById, type Airbase, type SamType } from '../world/theater.js';
+import { rampPlan, type RampPlan } from './ramp.js';
 import { adaptSpecToTheater } from './theaterAdapt.js';
 import { Carrier, DECK_H, GLIDE_DEG, AIM_S, type CarrierSpec } from '../sim/carrier.js';
 import type { Weather } from '../render/scene.js';
@@ -88,6 +89,8 @@ export interface BuiltMission {
   groupUnits: Map<string, GroundUnit[]>;
   steerpoints: Array<{ pos: THREE.Vector3; name: string }>;
   spec: MissionSpec;
+  /** the player starts parked on the ramp: the stand, the taxi route and the field */
+  ramp?: RampPlan & { base: Airbase };
 }
 
 const weaponKind = (id: string) => WEAPONS[id]?.kind ?? '';
@@ -251,7 +254,9 @@ function spawnGroup(world: World, g: GroupSpec, seed: number): GroundUnit[] {
   return units;
 }
 
-export function buildMission(spec: MissionSpec, opts: WorldOptions): BuiltMission {
+/** `rampStart`: a player who starts at an airbase is parked on the ramp instead of lined up on the runway. */
+export function buildMission(spec: MissionSpec, opts: WorldOptions, rampStart = false): BuiltMission {
+  let ramp: BuiltMission['ramp'];
   setTheater(spec.theaterId);
   const world = new World();
   world.opts = { ...opts };
@@ -318,7 +323,10 @@ export function buildMission(spec: MissionSpec, opts: WorldOptions): BuiltMissio
         const right = new THREE.Vector3(Math.cos(h), 0, Math.sin(h));
         const along = 150 + (Math.floor(i / 2) + (f.runwaySlot ?? 0) * 2) * 250;
         const lat = (i % 2 === 0 ? -1 : 1) * 9;
-        ac.fm.placeOnGround(ends.start.x + ends.dir.x * along + right.x * lat, ends.start.z + ends.dir.z * along + right.z * lat, ab.elev, h);
+        if (rampStart && f.player && i === 0) {
+          ramp = { ...rampPlan(ab, 0), base: ab };
+          ac.fm.placeOnGround(ramp.spot.x, ramp.spot.z, terrainHeight(ramp.spot.x, ramp.spot.z), ramp.spot.hdg);
+        } else ac.fm.placeOnGround(ends.start.x + ends.dir.x * along + right.x * lat, ends.start.z + ends.dir.z * along + right.z * lat, ab.elev, h);
         ac.ctrl.gearDown = true;
         ac.ctrl.throttle = 0;
       }
@@ -359,7 +367,7 @@ export function buildMission(spec: MissionSpec, opts: WorldOptions): BuiltMissio
     }
   }
   if (!player) throw new Error('Mission has no player flight');
-  return { world, player, playerFlight, groupUnits, steerpoints, spec };
+  return { world, player, playerFlight, groupUnits, steerpoints, spec, ramp };
 }
 
 // ------------------------------------------------------------------ evaluation

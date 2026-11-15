@@ -167,8 +167,9 @@ export function buildAirfield(ab: Airbase): Airfield {
     g.add(flat(TWY_W, TWY_OFF - RWY_W / 2, connMat, c.x, c.y, c.z, hr + Math.PI / 2));
   }
   const apronL = len * 0.45;
-  const ap = atS(0, APRON_OFF, y0 + 0.1);
-  g.add(flat(220, apronL, decal(T.apron, 2, [220 / 80, apronL / 80]), ap.x, ap.y, ap.z, hr));
+  // the apron runs from the taxiway's edge outwards, so the stands join the taxiway without a strip of grass
+  const ap = atS(0, APRON_OFF - 15, y0 + 0.1);
+  g.add(flat(250, apronL, decal(T.apron, 2, [250 / 80, apronL / 80]), ap.x, ap.y, ap.z, hr));
 
   // buildings: hangars where the gameplay hangars are, shelters, tower, fuel farm
   const wall = new THREE.MeshLambertMaterial({ color: ab.side === 'blue' ? 0x7d8278 : 0x7a7466 });

@@ -25,6 +25,7 @@ export function hudQuadSize(fovDeg: number, aspect: number, d: number): [number,
 }
 import { surfaceHeight, theaterVersion } from '../world/theater.js';
 import { buildCockpit, type Cockpit } from './cockpit.js';
+import { Cockpit3D, type PitHit } from './cockpit3d.js';
 import { clamp } from '../core/math.js';
 
 export type ViewMode = 'cockpit' | 'chase' | 'flyby' | 'target' | 'weapon' | 'enemy';
@@ -82,6 +83,9 @@ export class SceneRenderer {
   mfdCanvases: HTMLCanvasElement[] = [];
   private cockpit: Cockpit | null = null;
   private cockpitDef = '';
+  /** the clickable cockpit of a jet with its own systems */
+  pit: Cockpit3D | null = null;
+  private pitDt = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true, powerPreference: 'high-performance' });
@@ -289,6 +293,40 @@ export class SceneRenderer {
     }
     // HD cockpits: live MFD pages on the model's own screens
     if (m.hd) this.updateHdMfds(m, ac, inside && useHdPit);
+    this.updatePit(m, ac, inside, useHdPit);
+  }
+
+  /** The clickable switches, lights, gauges and displays, seated on whichever cockpit is in use. */
+  private updatePit(m: AircraftModel, ac: Aircraft, inside: boolean, useHdPit: boolean) {
+    const sys = ac.systems, layout = sys?.cockpit;
+    if (!sys || !layout || !inside) { if (this.pit) this.pit.group.visible = false; return; }
+    if (!this.pit || this.pit.sys !== sys) {
+      this.pit?.group.parent?.remove(this.pit.group);
+      this.pit = new Cockpit3D(sys, layout);
+    }
+    const pit = this.pit;
+    if (pit.group.parent !== m.body) m.body.add(pit.group);
+    const eye = this.eyeOffset(ac);
+    pit.group.position.copy(eye);
+    pit.group.visible = true;
+    const key = `${ac.id}:${useHdPit ? 'hd' : 'proc'}`;
+    if (pit.fitted !== key) {
+      m.body.updateWorldMatrix(true, true);
+      pit.fit(useHdPit ? m.hd!.cockpit : this.cockpit ? [this.cockpit.group] : [], key);
+      const spec = useHdPit ? hdSpecFor(ac.def) : null;
+      if (spec?.mfds) for (const d of spec.mfds) {
+        const n = new THREE.Vector3(...d.n).normalize();
+        pit.placeMfd(d.screen, new THREE.Vector3(...d.c).sub(eye).addScaledVector(n, 0.002), n, d.w, d.h);
+      } else layout.mfds.forEach((d, i) => pit.placeMfd(i, new THREE.Vector3(...d.c), new THREE.Vector3(...d.n), d.w, d.h));
+    }
+    pit.update(sys, this.pitDt);
+  }
+
+  /** What in the cockpit is under a screen position (normalised device coordinates), if anything. */
+  pickCockpit(ndcX: number, ndcY: number): PitHit | null {
+    if (this.view !== 'cockpit' || !this.pit) return null;
+    this.viewCam.updateMatrixWorld();
+    return this.pit.pick(this.viewCam, ndcX, ndcY);
   }
 
   private hdMfdTextures: THREE.CanvasTexture[] = [];
@@ -486,6 +524,7 @@ export class SceneRenderer {
   }
 
   render(world: World, dt: number) {
+    this.pitDt = dt;
     this.syncCarriers(world);
     this.syncEntities(world);
     this.fx.update(world, dt);

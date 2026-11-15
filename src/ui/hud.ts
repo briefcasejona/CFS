@@ -63,7 +63,9 @@ export class Hud {
     this.drawMessages(world);
     if (p && st.labels) this.drawLabels(world, scene, p);
     if (!p) return;
-    if (scene.view === 'cockpit' && p.alive) this.drawHud(world, scene, p, st);
+    // a HUD without electrical power shows nothing
+    const hudOn = !p.systems || p.systems.powered('hud');
+    if (scene.view === 'cockpit' && p.alive) { if (hudOn) this.drawHud(world, scene, p, st); }
     else this.drawDataStrip(world, p, st);
     if (p.gLoc > 0.02) {
       const a = clamp(p.gLoc, 0, 1);
@@ -291,10 +293,11 @@ export class Hud {
     }
     if (p.rwr.some((r) => r.kind === 'launch' || r.kind === 'missile')) w.push('MISSILE');
     if (fm.stalled) w.push('STALL');
+    if (p.systems) w.push(...p.systems.hudWarnings());
     if (fm.nz > p.def.limits.gMax * 1.02) w.push('OVER G');
     if (!fm.wow && (fm.alpha * RAD > p.def.limits.aoaMax || fm.alpha * RAD < -(p.def.limits.aoaNeg ?? 10))) w.push('AOA');
     if (fm.totalFuel < p.def.fuelInternal * 0.15) w.push('BINGO');
-    if (fm.damage.engine < 0.6) w.push('ENGINE');
+    if (fm.damage.engine < 0.6 && !w.includes('ENGINE')) w.push('ENGINE');
     if (fm.damage.fuelLeak > 0) w.push('FUEL LEAK');
     if (!fm.wow && fm.gearPos > 0.5 && fm.ias > 290 * KT) w.push('GEAR SPEED');
     return w;
