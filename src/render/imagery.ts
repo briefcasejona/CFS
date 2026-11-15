@@ -274,22 +274,29 @@ uniform float uImgOn;
 uniform sampler2D uImgMask;
 ${ZOOMS.map((_, i) => `uniform sampler2D uImg${i};\nuniform vec3 uImgOrg${i};`).join('\n')}
 varying vec2 vMerc;
-vec3 imgLevel(sampler2D tex, float level, vec3 org, inout float w) {
+// one level: weight 0 outside its window or where its tile isn't loaded, and then nothing is fetched. Derivatives are
+// taken once, outside the branches (vMerc's, scaled per level), so the branches may skip the fetches.
+vec3 imgLevel(sampler2D tex, float level, vec3 org, vec2 dmx, vec2 dmy, out float w) {
   vec2 t = vMerc * org.z;
   vec2 l = t - org.xy;
   vec2 e = min(l, ${N}.0 - l);
+  w = clamp(min(e.x, e.y) * 1.2, 0.0, 1.0);
+  if (w <= 0.0) return vec3(0.0);
   vec2 uv = t / ${N}.0;
   vec2 f = fract(uv);
-  float m = texture2D(uImgMask, vec2(f.x, (min(f.y, 0.9999) + level) / ${ZOOMS.length}.0)).r;
-  w = clamp(min(e.x, e.y) * 1.2, 0.0, 1.0) * step(0.5, m);
-  return textureGrad(tex, fract(uv), dFdx(uv), dFdy(uv)).rgb;
+  float m = textureLod(uImgMask, vec2(f.x, (min(f.y, 0.9999) + level) / ${ZOOMS.length}.0), 0.0).r;
+  if (m < 0.5) { w = 0.0; return vec3(0.0); }
+  float k = org.z / ${N}.0;
+  return textureGrad(tex, f, dmx * k, dmy * k).rgb;
 }
 vec3 imagery(vec3 base, out float cov) {
   cov = 0.0;
   if (uImgOn < 0.5) return base;
-  vec3 c = base;
-  float w;
-${ZOOMS.map((_, i) => `  { vec3 s = imgLevel(uImg${i}, ${i}.0, uImgOrg${i}, w); c = mix(c, s * ${GAIN[i].toFixed(2)}, w); cov = max(cov, w); }`).join('\n')}
-  return c;
+  vec2 dmx = dFdx(vMerc), dmy = dFdy(vMerc);
+  // finest level first; each coarser one only fills what the finer ones left (stops once the ground is covered)
+  vec3 acc = vec3(0.0);
+  float rem = 1.0, w;
+${ZOOMS.map((_, i) => i).reverse().map((i) => `  if (rem > 0.004) { vec3 s = imgLevel(uImg${i}, ${i}.0, uImgOrg${i}, dmx, dmy, w); acc += s * ${GAIN[i].toFixed(2)} * w * rem; rem *= 1.0 - w; cov = max(cov, w); }`).join('\n')}
+  return acc + base * rem;
 }
 `;
