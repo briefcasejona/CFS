@@ -3,8 +3,9 @@ import type { AircraftDef, Side } from '../aircraft/types.js';
 import { FlightModel, defaultControls, type Controls } from './flightModel.js';
 import { WEAPONS, type WeaponDef } from '../weapons/stores.js';
 import type { SamType } from '../world/theater.js';
-import type { AircraftSystems, StartState, SystemsEnv } from '../systems/types.js';
+import type { AircraftSystems, FireControl, StartState, SystemsEnv } from '../systems/types.js';
 import { createSystems } from '../systems/registry.js';
+import { RANGE_SCALES_NM } from '../avionics/radar.js';
 
 let NEXT_ID = 1;
 export const newId = () => NEXT_ID++;
@@ -115,6 +116,22 @@ export class Aircraft {
       damage: fm.damage, fuel: fm.fuel, extFuel: fm.extFuel,
       extTanks: this.stores.filter((s) => s === 'tank').length,
       unlimitedFuel: !!opts.unlimitedFuel,
+      alpha: fm.alpha, qbar: fm.qbar, agl: fm.agl, x: fm.pos.x, z: fm.pos.z,
+      gs: Math.hypot(fm.vel.x, fm.vel.z), hdg: fm.attitude().hdg,
+      fc: this.fireControl(),
+    };
+  }
+
+  /** Radar and stores as the fire-control displays show them. */
+  private fireControl(): FireControl {
+    const r = this.radar;
+    const counts = new Map<string, number>();
+    for (const st of this.stores) if (st && st !== 'tank') counts.set(st, (counts.get(st) ?? 0) + 1);
+    return {
+      radarMode: r?.mode ?? 'OFF', radarRangeNm: r ? RANGE_SCALES_NM[r.rangeIdx] : 40, radarAz: r?.azScan ?? 60, radarOn: !!r && r.mode !== 'OFF',
+      selWeapon: this.selWeapon ?? '',
+      weapons: [...counts].map(([id, n]) => ({ id, n, name: WEAPONS[id]?.name ?? id, kind: WEAPONS[id]?.kind ?? '' })),
+      gunRounds: this.gunRounds, chaff: this.chaff, flares: this.flares,
     };
   }
 

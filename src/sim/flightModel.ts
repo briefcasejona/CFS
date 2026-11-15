@@ -324,7 +324,8 @@ export class FlightModel {
 
     // --- lift coefficient: linear, smooth quadratic roll-off to CLmax, then post-stall flat plate
     const CLa = A.CLa * table1(CLA_MACH, M);
-    const CLmax = A.CLmax * table1(CLMAX_MACH, M) * clmaxMul + A.flapCL * this.flapPos * 0.6;
+    // (leading-edge flaps that have stopped following their schedule cost lift at high AoA)
+    const CLmax = A.CLmax * table1(CLMAX_MACH, M) * clmaxMul * (1 - (this.sys?.flcs?.liftLoss ?? 0)) + A.flapCL * this.flapPos * 0.6;
     const sgn = alpha >= 0 ? 1 : -1;
     const negScale = alpha >= 0 ? 1 : 0.75;
     const clm = CLmax * negScale;
@@ -531,8 +532,10 @@ export class FlightModel {
     // below corner speed the G per inch of stick is geared down with the speed, so an inch of stick gives about the
     // same pitch rate at 250 kt as at 450 kt (a pure G command doubles the pitch rate per inch as the speed halves, and
     // the pilot ends up chasing the nose); full stick still reaches the AoA limiter
+    const fh0 = this.sys?.flcs ?? null;
+    const gMaxL0 = Math.min(L.gMax, fh0?.gMax ?? 99), gMinL0 = fh0?.gMin ?? L.gMin;
     const kV = Math.min(1, (Vs + 30) / (F16_CORNER + 30));
-    const nTarget = pitchIn >= 0 ? 1 + shape(pitchIn) * kV * (0.96 * L.gMax - 1) : 1 + shape(-pitchIn) * kV * (0.96 * L.gMin - 1);
+    const nTarget = pitchIn >= 0 ? 1 + shape(pitchIn) * kV * (0.96 * gMaxL0 - 1) : 1 + shape(-pitchIn) * kV * (0.96 * gMinL0 - 1);
     // stick prefilter (≈0.08 s) and the measured load factor through a light filter, so the law never chases noise
     st.n += (nTarget - st.n) * Math.min(1, dt / 0.08);
     st.nzF += (this.nz - st.nzF) * Math.min(1, dt / 0.03);
@@ -545,11 +548,14 @@ export class FlightModel {
     // the G command becomes an AoA command through the lift curve, rounded top included (the flaps' share
     // subtracted); a load the wing cannot make sends the jet to the AoA limiter
     // the real FLCS limits AoA to ~25°: short of the stall and its pitch-up, where the stabilator can still stop the nose
-    const aoaMax = Math.min(L.aoaMax, F16_AOA_LIMIT) * DEG, aoaNeg = (L.aoaNeg ?? 10) * DEG;
+    // the flight-control computer's own state (gains, digital backup, CAT III, manual pitch override) narrows these
+    const fh = this.sys?.flcs ?? null;
+    const gMaxL = Math.min(L.gMax, fh?.gMax ?? 99), gMinL = fh?.gMin ?? L.gMin;
+    const aoaMax = Math.min(L.aoaMax, F16_AOA_LIMIT, fh?.aoaMax ?? 99) * DEG, aoaNeg = (fh?.mpo ? 25 : L.aoaNeg ?? 10) * DEG;
     let aCmd = this.aoaForCl((nCmd * W) / qS - A.flapCL * this.flapPos, an.CLa, an.CLmax, aoaMax, aoaNeg);
     // hard G limit with look-ahead on the load-factor rate
     const nzLead = st.nzF + 0.12 * this.nzDot;
-    const gOver = nCmd >= 1 ? Math.max(0, nzLead - Math.min(nCmd, L.gMax)) : Math.min(0, nzLead - Math.max(nCmd, L.gMin));
+    const gOver = nCmd >= 1 ? Math.max(0, nzLead - Math.min(nCmd, gMaxL)) : Math.min(0, nzLead - Math.max(nCmd, gMinL));
     aCmd -= (0.6 * gOver * W) / qS / an.CLa;
     // integral trims out the steady G error once the load has settled
     const settle = 1 - smoothstep(0.4, 1.5, Math.abs(nCmd - st.nzF));
@@ -567,7 +573,9 @@ export class FlightModel {
     // a slow, low-q jet for a 5 rad/s response drives the stabilator into its 60°/s rate limit, and the lag of a
     // rate-limited surface turns into a nose that bobs, worst with a pilot chasing it
     const authority = (qS * cbar * A.Cmde * an.superCtrl * eMax) / Iyy;
-    const WN = clamp(1.6 * Math.sqrt(authority), 2.8, 5), ZETA = 1.4, QMAX = 0.45;
+    // standby gains: the response is right at one airspeed only: sluggish below it, sharp and poorly damped above
+    const gk = fh?.gain ?? 1;
+    const WN = clamp(1.6 * Math.sqrt(authority), 2.8, 5) * Math.sqrt(gk), ZETA = 1.4 / Math.max(1, gk), QMAX = 0.45 * Math.min(1, 0.35 + 0.65 * gk);
     const qDem = clamp((WN / (2 * ZETA)) * (aCmd - alpha), -QMAX, QMAX);
     const qdotDes = 2 * ZETA * WN * (qDem - (q - qRef));
     // moment that acceleration needs, less the inertial pitch-up of rolling while yawing, (Izz − Ixx)·p·r
@@ -577,7 +585,8 @@ export class FlightModel {
 
     // ================= roll and yaw: stability-axis roll rate + sideslip command, solved together
     // roll-rate limit: the jet's 300°/s at speed, less at low dynamic pressure and as the AoA builds
-    const pMax = L.rollRate * DEG * (1 - 0.7 * smoothstep(10 * DEG, 30 * DEG, absA)) * clamp(qbar / 6000, 0.25, 1);
+    const pSched = L.rollRate * DEG * (1 - 0.7 * smoothstep(10 * DEG, 30 * DEG, absA)) * (fh?.rollScale ?? 1);
+    const pMax = (fh?.rollRate ? Math.min(fh.rollRate * DEG, L.rollRate * DEG) : pSched) * clamp(qbar / 6000, 0.25, 1) * Math.min(1, 0.3 + 0.7 * gk);
     const psTarget = shape(rollIn) * pMax * st.rollAuth;
     st.ps += (psTarget - st.ps) * Math.min(1, dt / 0.06);
     // the pedals command sideslip at low AoA; past ~20° AoA they fade out (the FLCS turns them into roll coordination),

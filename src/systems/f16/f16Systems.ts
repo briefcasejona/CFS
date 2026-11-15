@@ -9,6 +9,8 @@ import {
   defaultHooks, type AircraftSystems, type ChecklistStep, type Consumer, type FmHooks, type StartState, type SystemsEnv,
 } from '../types.js';
 import { F16_CONTROLS, F16_GAUGES, F16_LIGHTS } from './panels.js';
+import { FaultList, Flcs } from './flcs.js';
+import { F16Avionics, type IcpKey } from './avionics.js';
 
 const LB = 0.45359237;
 const KT = 0.514444;
@@ -69,6 +71,10 @@ export class F16Systems implements AircraftSystems {
   fuelSys = { lastInt: 0, lastExt: 0, tanks: -1, fwdTransfer: false, trapped: 0, pressurized: false };
   gear = { altUsed: false, hornSilenced: false, horn: false, flapCmd: 0 };
   ecs = { cabinAlt: 0, hot: 0 };
+  /** flight control computer, pilot fault list and avionics suite */
+  readonly faults = new FaultList();
+  readonly flcs = new Flcs();
+  readonly avionics = new F16Avionics(this.faults);
   private caution = { ack: new Set<string>(), master: false, cautionT: -1, warnT: -1, warnSaid: new Set<string>() };
   private auto = { wait: 0 };
 
@@ -106,7 +112,12 @@ export class F16Systems implements AircraftSystems {
     this.syncFuel(env);
     this.ecs.cabinAlt = this.cabinTarget(env);
     this.autoStart = false;
+    this.faults.reset();
+    this.flcs.init(cold);
+    this.avionics.init(cold);
     this.computeBuses();
+    if (!cold) this.stepFlcsAvionics(0, env);
+    this.faults.fresh = [];
     this.updateHooks(0, env);
     this.updateLights(0, env);
     // a jet that starts with everything running has nothing to announce
@@ -119,14 +130,15 @@ export class F16Systems implements AircraftSystems {
   }
 
   // ------------------------------------------------------------------ controls
-  get(id: string) { return this.sw[id] ?? 0; }
+  get(id: string) { return id === 'flcsBit' ? this.flcs.bitSwitch : this.sw[id] ?? 0; }
 
   set(id: string, pos: number): string | null {
     const c = this.controls.find((x) => x.id === id);
     if (!c) return `No such control: ${id}`;
     pos = clamp(Math.round(pos), 0, c.positions.length - 1);
-    const was = this.sw[id];
+    const was = this.get(id);
     if (pos === was) return null;
+    if (id.startsWith('icp')) { if (pos === 1) this.avionics.key(id.slice(3) as IcpKey); this.sw[id] = pos; return null; }
     const env = this.env;
     switch (id) {
       case 'lgHandle':
@@ -155,6 +167,14 @@ export class F16Systems implements AircraftSystems {
           this.gear.altUsed = true;
           this.say('Alternate gear extension: pneumatic bottle discharged. No nosewheel steering.', 'caution');
         }
+        break;
+      case 'flcsBit':
+        if (pos === 1) { const why = this.flcs.startBit(this.flcsInput(0, env)); if (why) return why; }
+        else { if (this.flcs.bit.state === 'run') this.flcs.bit.state = 'off'; this.flcs.bitSwitch = 0; }
+        break;
+      case 'fAck': if (pos === 1) this.faults.ack(); break;
+      case 'apPitch':
+        if (pos !== 1 && !this.flcs.apAvail) return 'The autopilot will not engage: gear down, AoA over 15°, air-refuel door open, digital backup or standby gains.';
         break;
       case 'hornSilencer': if (pos === 1) this.gear.hornSilenced = true; break;
       case 'masterCaution':
@@ -205,6 +225,7 @@ export class F16Systems implements AircraftSystems {
     this.stepFuel(dt, env);
     this.stepGear(dt, env);
     this.stepEcs(dt, env);
+    this.stepFlcsAvionics(dt, env);
     this.updateHooks(dt, env);
     this.updateLights(dt, env);
     this.stepAlerts(dt, env);
@@ -496,6 +517,44 @@ export class F16Systems implements AircraftSystems {
     this.ecs.hot = noCooling ? this.ecs.hot + dt : 0;
   }
 
+  // ------------------------------------------------------------------ flight controls and avionics
+  private flcsInput(dt: number, env: SystemsEnv) {
+    const s = this.sw;
+    return {
+      dt, time: this.time, powered: this.bus.flcs, wow: env.wow,
+      kias: env.ias / KT, altFt: env.alt / FT, aoa: (env.alpha ?? 0) * 180 / Math.PI, qbar: env.qbar ?? 0.5 * 1.225 * env.ias * env.ias, gs: env.gs ?? env.tas,
+      lgDown: s.lgHandle === 1, altFlaps: s.altFlaps === 1, airRefuelOpen: s.airRefuel === 1,
+      hydA: this.hyd.a >= 1000, hydB: this.hyd.b >= 1000, mmc: s.mmc === 1 && this.bus.ess,
+      probeHeat: s.probeHeat === 1 && this.bus.emerg, oat: 15 - 6.5 * env.alt / 1000,
+      controlsDamage: env.damage.controls ?? 1,
+      sw: { bit: this.flcs.bitSwitch, dbu: s.dbu, mpo: s.mpo, storesConfig: s.storesConfig, leFlaps: s.leFlaps, reset: s.flcsReset },
+    };
+  }
+
+  private stepFlcsAvionics(dt: number, env: SystemsEnv) {
+    const s = this.sw, b = this.bus, t = this.tank;
+    this.flcs.step(this.flcsInput(dt, env), this.faults, (text, level) => this.say(text, level));
+    // the autopilot switch is solenoid-held: it drops out when the FLCS will not have it (17.13)
+    if (s.apPitch !== 1 && (!this.flcs.apAvail || !b.flcs)) { s.apPitch = 1; if (!env.wow) this.say('Autopilot disengaged.', 'caution'); }
+    // engine faults the DEEC reports (34-1-1, 7.1.4)
+    this.faults.report('abFail', b.emerg && this.eng.running && env.damage.engine < 0.8 && env.damage.engine > 0.02, this.time);
+    const mmc = s.mmc === 1 && b.ess;
+    this.avionics.step({
+      dt, time: this.time, wow: env.wow,
+      x: env.x ?? 0, z: env.z ?? 0, alt: env.alt, agl: env.agl ?? env.alt, gs: env.gs ?? env.tas, hdg: env.hdg ?? 0, vs: env.vs,
+      fuelLb: (this.sum(INTERNAL) + this.sum(EXTERNAL)) / LB, fuselageLb: (t.f + t.a + t.fr + t.ar) / LB,
+      fuelFlowPph: env.fuelFlow * PPH, fuelSelNorm: s.fuelQtySel === 1, gearDown: s.lgHandle === 1,
+      ufc: s.ufc === 1 && b.emerg, mmc, mfd: s.mfd === 1 && b.ess, egiPower: b.emerg || b.ess, gps: s.gps === 1 && b.ess, rdrAlt: s.rdrAlt === 2 && b.ess,
+      egiKnob: s.egi, masterArm: s.masterArm, fc: env.fc ?? null,
+    });
+    for (const m of this.avionics.drainMessages()) this.say(m.text, m.level);
+    // a new fault retriggers MASTER CAUTION and the voice message (17.9, 17.11)
+    if (this.faults.fresh.length) {
+      for (const f of this.faults.fresh) { this.caution.ack.delete(f.sys === 'FLCS' ? 'flcsFault' : f.sys === 'ENG' ? 'engineFault' : 'avionicsFault'); if (f.level === 'warning') this.caution.warnSaid.delete('flcsWarn'); }
+      this.faults.fresh = [];
+    }
+  }
+
   // ------------------------------------------------------------------ outputs
   private updateHooks(dt: number, env: SystemsEnv) {
     const h = this.hooks, e = this.eng, hy = this.hyd;
@@ -524,8 +583,11 @@ export class F16Systems implements AircraftSystems {
     h.parkingBrake = this.sw.antiSkid === 2 && env.wow && this.bus.batt && (bOk || this.jfs.accum[1] > 0.02);
     h.nws = bOk && this.bus.emerg && !this.gear.altUsed;
     const mission = this.sw.mmc === 1 && this.sw.stSta === 1 && this.bus.ess;
-    h.weaponsAvail = mission;
-    h.gunAvail = mission && bOk;
+    // nothing is released unless MASTER ARM is in MASTER ARM (34-1-1, 2.1.1.18)
+    h.weaponsAvail = mission && this.sw.masterArm === 2;
+    h.flcs = this.bus.flcs ? this.flcs.hooks : null;
+    h.autopilotAvail = this.bus.flcs && this.flcs.apAvail && this.sw.apPitch !== 1;
+    h.gunAvail = mission && bOk && this.sw.masterArm === 2;
     void dt;
   }
 
@@ -588,6 +650,15 @@ export class F16Systems implements AircraftSystems {
     L.cabinPress = b.emerg && this.ecs.cabinAlt > 27000;   // 5.7
     L.antiSkid = b.emerg && this.sw.lgHandle === 1 && this.sw.antiSkid === 0;   // 12.6
     L.seatNotArmed = b.emerg && this.sw.seatArm === 0;
+    // ---- flight controls and the fault lights (17.8–17.12, 19.6)
+    const f = this.flcs, fl = this.faults;
+    L.flcsWarn = batt && b.flcs && fl.warning();
+    L.dbuOn = batt && b.flcs && f.dbu;
+    L.flcsFault = b.emerg && fl.caution('FLCS');
+    L.engineFault = b.emerg && fl.caution('ENG');
+    L.avionicsFault = b.emerg && fl.caution('AV');
+    L.bitRun = b.flcs && f.bit.state === 'run';
+    L.bitFail = b.flcs && f.bit.state === 'fail';
     // MAL & IND LTS lights everything (19.5)
     if (this.sw.malIndTest === 1 && batt) for (const l of this.lights) L[l.id] = true;
     else {
@@ -659,12 +730,14 @@ export class F16Systems implements AircraftSystems {
   hudWarnings(): string[] {
     const w: string[] = [];
     const L = this.lit;
+    if (L.flcsWarn && !this.env.wow) w.push('FLCS');
     if (L.engine && !this.env.wow) w.push('ENGINE');
     if (L.hydOil && !this.env.wow) w.push('HYD/OIL');
     if (this.gear.horn) w.push('GEAR');
     else if (L.toLdgConfig) w.push('CONFIG');
     if (this.fuelSys.trapped > 30) w.push('TRP FUEL');
     if (L.fwdFuelLow || L.aftFuelLow) w.push('FUEL LOW');
+    if (this.avionics.bingo.warn) w.push('FUEL');
     return w;
   }
 
@@ -677,6 +750,7 @@ export class F16Systems implements AircraftSystems {
     const s = this.sw, e = this.eng, el = this.elec;
     const set = (id: string, pos: number) => () => { this.set(id, pos); };
     const started = e.running;
+    const av = this.avionics, fb = this.flcs.bit.state;
     return [
       { text: 'MAIN PWR switch: MAIN PWR', done: s.mainPwr === 2, act: set('mainPwr', 2), note: 'Check FLCS RLY, MAIN GEN and STBY GEN lights on.' },
       { text: 'FUEL MASTER switch: MASTER', done: s.fuelMaster === 1, act: set('fuelMaster', 1) },
@@ -690,11 +764,17 @@ export class F16Systems implements AircraftSystems {
       { text: 'RPM at idle; JFS off at 50 %; HYD/OIL PRESS light off', done: started && !this.lit.hydOil, note: `RPM ${e.n2.toFixed(0)} %` },
       { text: 'STBY GEN and MAIN GEN lights off', done: el.mainGen, note: 'The main generator follows the standby generator after about 10 s.' },
       { text: 'EPU switch: NORM', done: started && s.epu >= 1, act: set('epu', 1), wait: 1 },
-      { text: 'Avionics power: MMC, ST STA, MFD, UFC', done: s.mmc + s.stSta + s.mfd + s.ufc === 4, act: () => { for (const id of ['mmc', 'stSta', 'mfd', 'ufc']) this.set(id, 1); }, wait: 1 },
+      { text: 'Avionics power: MMC, ST STA, MFD, UFC, GPS, DL', done: s.mmc + s.stSta + s.mfd + s.ufc + s.gps + s.dl === 6, act: () => { for (const id of ['mmc', 'stSta', 'mfd', 'ufc', 'gps', 'dl']) this.set(id, 1); }, wait: 1 },
+      { text: 'EGI knob: NORM (the inertial set aligns; do not move the jet)', done: s.egi >= 2 || av.egi.ready, act: set('egi', 2), wait: 1 },
+      { text: 'DTE page on an MFD: LOAD', done: av.dteLoaded, act: () => av.loadCartridge(), note: 'Loads the flight plan, bingo and radio aids from the cartridge.' },
       { text: 'Sensor power: FCR, THREAT WARN', done: s.fcr + s.rwr === 2, act: () => { this.set('fcr', 1); this.set('rwr', 1); }, wait: 1 },
       { text: 'PROBE HEAT switch: PROBE HEAT', done: s.probeHeat === 1, act: set('probeHeat', 1) },
       { text: 'Ejection safety lever: ARMED', done: s.seatArm === 1, act: set('seatArm', 1) },
+      { text: 'FLCS BIT switch: BIT, about 45 s', done: fb === 'pass', act: fb === 'run' ? undefined : set('flcsBit', 1), wait: 1, note: fb === 'run' ? `BIT running, ${Math.round(this.flcs.bit.t)} s` : fb === 'fail' ? 'BIT failed: run it again, stationary, with both hydraulic systems.' : undefined },
+      { text: 'SNSR PWR: RDR ALT on', done: s.rdrAlt === 2, act: set('rdrAlt', 2) },
+      { text: 'INS aligned (RDY flashing on the DED INS page), EGI knob: NAV', done: s.egi === 3 && av.egi.ready, act: av.egi.cep <= 0.81 ? set('egi', 3) : undefined, wait: 1, note: `Alignment ${(av.egi.t / 60).toFixed(1)} min, status ${av.egi.cep.toFixed(1)}. Usable from 5.6, complete at 0.8 (4 min).` },
       { text: 'ELEC CAUTION RESET and MASTER CAUTION: reset', done: !this.lit.masterCaution && !this.lit.elecSys, act: () => { this.set('elecReset', 1); this.set('elecReset', 0); this.set('masterCaution', 1); this.set('masterCaution', 0); } },
+      { text: 'MASTER ARM switch: MASTER ARM (when cleared hot)', done: s.masterArm === 2, act: set('masterArm', 2) },
       { text: 'Parking brake: release when ready to taxi (ANTI-SKID)', done: s.antiSkid !== 2, act: set('antiSkid', 1), wait: 1 },
     ];
   }

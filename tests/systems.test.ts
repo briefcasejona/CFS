@@ -139,8 +139,9 @@ describe('F-16 start-up (TO 1F-16CM/AM-1 sections 2 and 6)', () => {
   it('auto-start works the same checklist to the end and the jet can then taxi', () => {
     const { ac, sys } = jet('f16c', 'cold');
     sys.autoStart = true;
-    const t = run(ac, 240, () => !sys.autoStart);
-    expect(t).toBeLessThan(150);
+    // the inertial alignment alone takes four minutes (34-1-1, 2.2.3.3.1)
+    const t = run(ac, 600, () => !sys.autoStart);
+    expect(t).toBeLessThan(420);
     expect(sys.checklist().every((s) => s.done)).toBe(true);
     expect(sys.hooks.engineOn && sys.elec.mainGen && sys.get('epu') === 1).toBe(true);
     expect(sys.light('masterCaution') || sys.light('elecSys') || sys.light('epuRun')).toBe(false);
