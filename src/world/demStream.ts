@@ -8,18 +8,17 @@
 // it has arrived (one cell per frame at most: ~100k projections), and cells far behind the camera are dropped again.
 // `version` counts the changes; `changedSince` says which squares of the ground changed, so the terrain renderer can
 // rebuild the chunks that lie on them.
+//
+// In a browser the tiles are fetched, decoded and resampled in a Web Worker (demWorker.ts), so a cell arriving costs
+// the frame only the copy into the map; where workers can't start it all runs here, one cell per frame.
 import type { Lcc } from './lcc.js';
+import { CELL, RES, NS, fetchTile as fetchTerrarium, resampleCell, tilesOf } from './demCell.js';
+export { CELL, RES } from './demCell.js';
 
-export const CELL = 8000;          // m
-export const RES = 25;             // m between samples
-const NS = CELL / RES + 1;         // samples per side (both edges)
-const Z = 12;                      // Terrarium zoom
-const WORLD = 256 * 2 ** Z;        // Terrarium pixels around the world at Z
 const LOAD_R = 26000;              // m: cells within this of the camera (or of where it will be in 20 s) are wanted
 const DROP_R = 48000;              // m: cells further than this are dropped
 const MAX_INFLIGHT = 6;
 const MAX_TILES = 220;             // decoded tiles kept (256 KB each)
-const URL = (x: number, y: number) => `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${Z}/${x}/${y}.png`;
 
 let enabled = true;
 /** Settings → Detailed terrain (off: nothing is downloaded, the 1 km grid and the airfield patches are used) */
@@ -46,6 +45,10 @@ export class DemStream {
   private wantList: Array<[number, number, number]> = [];
   private changes: Array<{ v: number; x0: number; z0: number; x1: number; z1: number }> = [];
   version = 0;
+  /** the worker (null: not started yet or not available; false: failed, everything runs here) */
+  private worker: Worker | null | false = null;
+  /** the want list last sent to the worker */
+  private sentWant = '';
 
   /**
    * @param lcc the theater's projection
@@ -61,6 +64,23 @@ export class DemStream {
     if (this.cells.size) this.bump(-this.half, -this.half, this.half, this.half);
     this.cells.clear();
     this.tiles.clear(); this.tileUsed.clear(); this.pending.clear();
+    if (this.worker) { this.worker.postMessage({ type: 'init', proj: this.lcc.p }); this.sentWant = ''; }
+  }
+
+  private startWorker(): Worker | false {
+    if (typeof Worker === 'undefined') return false;
+    try {
+      const w = new Worker(new URL('./demWorker.js', import.meta.url), { type: 'module' });
+      w.onmessage = (e: MessageEvent) => {
+        const m = e.data;
+        this.ok = Math.max(this.ok, m.ok); this.errors = Math.max(this.errors, m.errors);
+        if (m.type === 'cell') this.insert(m.ci, m.cj, m.data, m.missing);
+      };
+      // (e.g. a desktop build served from file://): fall back to building here
+      w.onerror = () => { console.warn('Detailed terrain worker failed; building cells on the main thread.'); w.terminate(); this.worker = false; this.sentWant = ''; };
+      w.postMessage({ type: 'init', proj: this.lcc.p });
+      return w;
+    } catch { return false; }
   }
 
   /** streaming here at all: switched on, in a browser, and the tile service reachable */
@@ -90,16 +110,26 @@ export class DemStream {
       }
       this.wantList.sort((a, b) => a[0] - b[0]);
       // drop the cells far behind
+      const dropped: Array<[number, number]> = [];
       for (const [k, c] of this.cells) {
         const mx = (c.ci + 0.5) * CELL, mz = (c.cj + 0.5) * CELL;
         if (Math.min(Math.hypot(mx - x, mz - z), Math.hypot(mx - px, mz - pz)) > DROP_R) {
           this.cells.delete(k);
+          dropped.push([c.ci, c.cj]);
           this.reweight(c.ci, c.cj);
           this.bump(c.ci * CELL - CELL, c.cj * CELL - CELL, (c.ci + 2) * CELL, (c.cj + 2) * CELL);
         }
       }
       this.trimTiles();
+      if (this.worker === null) this.worker = this.startWorker();
+      if (this.worker) {
+        if (dropped.length) this.worker.postMessage({ type: 'drop', cells: dropped });
+        const lack = this.wantList.filter(([, ci, cj]) => !this.cells.has(key(ci, cj))).map(([, ci, cj]) => [ci, cj]);
+        const sig = lack.join(';');
+        if (sig !== this.sentWant) { this.sentWant = sig; this.worker.postMessage({ type: 'want', cells: lack }); }
+      }
     }
+    if (this.worker) return;
     // tiles for the nearest unloaded cells; build the first cell whose tiles are all here
     let built = false;
     for (const [, ci, cj] of this.wantList) {
@@ -150,85 +180,44 @@ export class DemStream {
     if (this.changes.length > 400) this.changes.splice(0, this.changes.length - 400);
   }
 
-  private merc(lat: number, lon: number) {
-    const f = lat * Math.PI / 180;
-    return { x: ((lon + 180) / 360) * WORLD, y: ((1 - Math.log(Math.tan(f) + 1 / Math.cos(f)) / Math.PI) / 2) * WORLD };
-  }
-
-  /** the Terrarium tiles a cell's samples (and their bilinear neighbours) fall in */
-  private tilesOf(ci: number, cj: number): string[] {
-    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-    for (let b = 0; b <= 2; b++) for (let a = 0; a <= 2; a++) {
-      const ll = this.lcc.inverse((ci + a / 2) * CELL, (cj + b / 2) * CELL);
-      const p = this.merc(ll.lat, ll.lon);
-      x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y);
-    }
-    const out: string[] = [];
-    for (let ty = Math.floor((y0 - 2) / 256); ty <= Math.floor((y1 + 2) / 256); ty++) {
-      for (let tx = Math.floor((x0 - 2) / 256); tx <= Math.floor((x1 + 2) / 256); tx++) out.push(`${tx}/${ty}`);
-    }
-    return out;
-  }
+  private tilesOf(ci: number, cj: number) { return tilesOf(this.lcc, ci, cj); }
 
   private fetchTile(t: string) {
     this.pending.add(t);
     this.inflight++;
-    const [x, y] = t.split('/').map(Number);
-    const done = (h: Float32Array | null) => { this.inflight--; this.pending.delete(t); this.tiles.set(t, h); };
-    fetch(URL(x, y), { mode: 'cors', referrerPolicy: 'no-referrer' })
-      .then((r) => {
-        if (r.status === 404 || r.status === 403) return null;
-        if (!r.ok) throw new Error(String(r.status));
-        return r.blob();
-      })
-      .then(async (b) => {
-        if (!b) { done(null); return; }
-        const bmp = await createImageBitmap(b, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
-        const cv = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(256, 256) : Object.assign(document.createElement('canvas'), { width: 256, height: 256 });
-        const cx = cv.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
-        cx.drawImage(bmp, 0, 0);
-        bmp.close?.();
-        const px = cx.getImageData(0, 0, 256, 256).data;
-        const h = new Float32Array(256 * 256);
-        for (let k = 0; k < 256 * 256; k++) h[k] = px[k * 4] * 256 + px[k * 4 + 1] + px[k * 4 + 2] / 256 - 32768;
-        this.ok++;
-        done(h);
-      })
+    fetchTerrarium(t)
+      .then((h) => { this.ok++; this.tiles.set(t, h); })
       .catch(() => {
         this.errors++;
         if (this.errors === 13 && this.ok === 0) console.warn('Detailed terrain unavailable (elevation-tiles-prod); using the 1 km grid.');
         // a failed tile is retried after a while; meanwhile its cells wait (the coarse ground shows)
-        this.inflight--; this.pending.delete(t);
         this.tiles.set(t, null);
         setTimeout(() => { if (this.tiles.get(t) === null) this.tiles.delete(t); }, 20000);
-      });
+      })
+      .finally(() => { this.inflight--; this.pending.delete(t); });
   }
 
+  /** build a cell here (no worker) */
   private build(ci: number, cj: number, need: string[]) {
     const data = new Float32Array(NS * NS);
     const tl = new Map<string, Float32Array | null>();
     for (const t of need) tl.set(t, this.tiles.get(t) ?? null);
-    let missing = 0;
-    const at = (px: number, py: number) => {
-      const tx = Math.floor(px / 256), ty = Math.floor(py / 256);
-      const t = tl.get(`${tx}/${ty}`);
-      if (!t) { missing++; return NaN; }
-      return t[(py - ty * 256) * 256 + (px - tx * 256)];
-    };
+    const missing = resampleCell(this.lcc, ci, cj, (t) => tl.get(t), data);
+    this.insert(ci, cj, data, missing);
+  }
+
+  /** put a resampled cell into the map: the gaps and the land below sea level fixed from the 1 km grid */
+  private insert(ci: number, cj: number, data: Float32Array, missing: number) {
     const x0 = ci * CELL, z0 = cj * CELL;
-    for (let j = 0; j < NS; j++) {
-      for (let i = 0; i < NS; i++) {
+    for (let j = 0, k = 0; j < NS; j++) {
+      for (let i = 0; i < NS; i++, k++) {
+        const h = data[k];
+        if (h > 0.5) continue;
         const x = x0 + i * RES, z = z0 + j * RES;
-        const ll = this.lcc.inverse(x, z);
-        const p = this.merc(ll.lat, ll.lon);
-        // bilinear between pixel centres
-        const fx = p.x - 0.5, fy = p.y - 0.5, ix = Math.floor(fx), iy = Math.floor(fy), ax = fx - ix, ay = fy - iy;
-        let h = (at(ix, iy) * (1 - ax) + at(ix + 1, iy) * ax) * (1 - ay) + (at(ix, iy + 1) * (1 - ax) + at(ix + 1, iy + 1) * ax) * ay;
-        if (Number.isNaN(h)) h = this.coarseLand(x, z) ? 1 : -20;
-        // land below sea level (polders, the Salton Sea basin is above water anyway) stays dry where the 1 km grid
-        // (corrected by the Natural Earth land mask) says land; the sea floor is kept a little below the surface
-        else if (h <= 0.5 && this.coarseLand(x, z)) h = Math.max(0.6, h);
-        data[j * NS + i] = h;
+        if (Number.isNaN(h)) data[k] = this.coarseLand(x, z) ? 1 : -20;
+        // land below sea level (polders) stays dry where the 1 km grid (corrected by the Natural Earth land mask)
+        // says land; the sea floor is kept a little below the surface
+        else if (this.coarseLand(x, z)) data[k] = Math.max(0.6, h);
       }
     }
     const c: FineCell = { ci, cj, data, w: new Float32Array(4) };

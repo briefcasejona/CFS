@@ -165,11 +165,14 @@ ${IMAGERY_GLSL}
 }
 
 interface ChunkEntry { mesh: THREE.Mesh; lod: number; used: number; stale?: boolean }
+/** a chunk being rebuilt over several frames (its old mesh shows meanwhile); dirty: the ground under it changed again */
+interface ChunkJob { lod: number; it: Generator<void, THREE.Mesh>; dirty: boolean }
 
 /** Chunked LOD terrain with skirts. Geometry is generated lazily and cached. */
 export class TerrainRenderer {
   group = new THREE.Group();
   private chunks = new Map<string, ChunkEntry>();
+  private jobs = new Map<string, ChunkJob>();
   readonly imagery = new Imagery();
   private material: THREE.MeshStandardMaterial;
   private frame = 0;
@@ -213,6 +216,7 @@ export class TerrainRenderer {
   clear() {
     for (const e of this.chunks.values()) { this.group.remove(e.mesh); e.mesh.geometry.dispose(); }
     this.chunks.clear();
+    this.jobs.clear();
     this.streamVersion = currentTheater().stream?.version ?? 0;
     this.forest.clear();
     this.roads.clear();
@@ -222,6 +226,13 @@ export class TerrainRenderer {
   }
 
   private buildChunk(ci: number, cj: number, res: number): THREE.Mesh {
+    const it = this.chunkSteps(ci, cj, res);
+    for (;;) { const r = it.next(); if (r.done) return r.value; }
+  }
+
+  /** A chunk's mesh, built in steps of about a millisecond (yields in between), so rebuilding chunks under newly
+   *  arrived elevation is spread over frames instead of stalling one. */
+  private *chunkSteps(ci: number, cj: number, res: number): Generator<void, THREE.Mesh> {
     const x0 = -THEATER_HALF + ci * CHUNK;
     const z0 = -THEATER_HALF + cj * CHUNK;
     const n = res + 1;
@@ -256,7 +267,10 @@ export class TerrainRenderer {
     // then match the neighbour's exactly, so no seam line shows where two chunks meet
     const m = n + 2;
     const hs = new Float32Array(m * m);
-    for (let j = 0; j < m; j++) for (let i = 0; i < m; i++) hs[j * m + i] = terrainHeight(x0 + (i - 1) * step, z0 + (j - 1) * step);
+    for (let j = 0; j < m; j++) {
+      for (let i = 0; i < m; i++) hs[j * m + i] = terrainHeight(x0 + (i - 1) * step, z0 + (j - 1) * step);
+      if ((j & 7) === 7) yield;
+    }
     const H = (i: number, j: number) => hs[(j + 1) * m + i + 1];
     const c = new THREE.Color();
     const pal = terrainPalette();
@@ -278,6 +292,7 @@ export class TerrainRenderer {
         if (geoOf) { merc[v * 2] = lerpG(gm, i, j, 2, 0); merc[v * 2 + 1] = lerpG(gm, i, j, 2, 1); }
         v++;
       }
+      if ((j & 7) === 7) yield;
     }
     // grid triangles, then the skirts' (4 edges × (n − 1) quads, 12 indices each)
     const idx = new Uint32Array(res * res * 6 + 4 * (n - 1) * 12);
@@ -364,18 +379,33 @@ export class TerrainRenderer {
     const entries = [...want.entries()].sort((a, b) => a[1] - b[1]);
     for (const [key, lod] of entries) {
       const ex = this.chunks.get(key);
-      if (ex && ex.lod === lod && !ex.stale) { ex.used = this.frame; ex.mesh.visible = true; continue; }
-      // a chunk that shows something already waits for time left in this frame; a hole is always filled
-      const over = budget <= 0 || (performance.now() - t0 > BUILD_MS && budget < this.buildBudget);
-      if (ex && over) { ex.used = this.frame; ex.mesh.visible = true; continue; }
-      if (!ex && budget <= 0) continue;
-      budget--;
+      if (ex && ex.lod === lod && !ex.stale) { ex.used = this.frame; ex.mesh.visible = true; this.jobs.delete(key); continue; }
       const [ci, cj] = key.split(',').map(Number);
-      const mesh = this.buildChunk(ci, cj, LODS[lod].res);
-      if (ex) { this.group.remove(ex.mesh); ex.mesh.geometry.dispose(); }
-      this.group.add(mesh);
-      this.chunks.set(key, { mesh, lod, used: this.frame });
+      if (!ex) {
+        // a hole is filled at once (up to the budget of chunks a frame)
+        if (budget <= 0) continue;
+        budget--;
+        this.jobs.delete(key);
+        const mesh = this.buildChunk(ci, cj, LODS[lod].res);
+        this.group.add(mesh);
+        this.chunks.set(key, { mesh, lod, used: this.frame });
+        continue;
+      }
+      // a chunk that shows something already is rebuilt in steps, in the time left in this frame
+      ex.used = this.frame; ex.mesh.visible = true;
+      let job = this.jobs.get(key);
+      if (!job || job.lod !== lod) { job = { lod, it: this.chunkSteps(ci, cj, LODS[lod].res), dirty: false }; this.jobs.set(key, job); }
+      while (performance.now() - t0 < BUILD_MS) {
+        const r = job.it.next();
+        if (!r.done) continue;
+        this.jobs.delete(key);
+        this.group.remove(ex.mesh); ex.mesh.geometry.dispose();
+        this.group.add(r.value);
+        this.chunks.set(key, { mesh: r.value, lod, used: this.frame, stale: job.dirty });
+        break;
+      }
     }
+    for (const key of this.jobs.keys()) if (!want.has(key)) this.jobs.delete(key);
     for (const [key, e] of this.chunks) {
       if (!want.has(key)) {
         e.mesh.visible = false;
@@ -402,7 +432,7 @@ export class TerrainRenderer {
         if (e.lod >= FINE_REBUILD) continue;
         const [ci, cj] = key.split(',').map(Number);
         const x0 = -THEATER_HALF + ci * CHUNK, z0 = -THEATER_HALF + cj * CHUNK;
-        if (x0 < c.x1 && x0 + CHUNK > c.x0 && z0 < c.z1 && z0 + CHUNK > c.z0) e.stale = true;
+        if (x0 < c.x1 && x0 + CHUNK > c.x0 && z0 < c.z1 && z0 + CHUNK > c.z0) { e.stale = true; const job = this.jobs.get(key); if (job) job.dirty = true; }
       }
       this.roads.invalidate(c.x0, c.z0, c.x1, c.z1);
       this.forest.invalidate(c.x0, c.z0, c.x1, c.z1);
