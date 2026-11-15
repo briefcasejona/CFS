@@ -26,6 +26,9 @@ const LEFT_PAGES: MfdPage[] = ['FCR', 'HSD', 'ENG'];
 const RIGHT_PAGES: MfdPage[] = ['RWR', 'SMS', 'HSD'];
 
 const GREEN = '#40ff70';
+/** TO 1F-16CM/AM-34-1-1 MFD colours: option labels yellow (inverse when selected), symbology cyan and white */
+const YELLOW = '#f2e83a';
+const CYAN = '#22d4f0';
 const DIM = '#1d6b33';
 
 export class Mfds {
@@ -71,7 +74,7 @@ export class Mfds {
       if (!p || !p.alive || (p.systems && !p.systems.powered('mfd'))) { this.txt(c, 'OFF', 150, 150, DIM, 20, 'center'); continue; }
       switch (page) {
         case 'FCR': this.fcr(c, p); break;
-        case 'HSD': this.hsd(c, world, p); break;
+        case 'HSD': this.hsd(c, world, p, 80, false, true); break;
         case 'RWR': this.rwr(c, p); break;
         case 'SMS': this.sms(c, p); break;
         case 'ENG': this.eng(c, p); break;
@@ -83,7 +86,7 @@ export class Mfds {
 
   /** One display as the jet's avionics drive it: the format in the middle, the button labels round the edge. */
   private drawView(c: CanvasRenderingContext2D, world: World, p: Aircraft, v: MfdView) {
-    c.fillStyle = '#050a06';
+    c.fillStyle = '#000';
     c.fillRect(0, 0, 300, 300);
     if (v.format === 'OFF') { c.strokeStyle = '#0c1a10'; c.lineWidth = 2; c.strokeRect(1, 1, 298, 298); return; }
     c.save();
@@ -95,7 +98,7 @@ export class Mfds {
       case 'SMS': this.sms(c, p); break;
     }
     c.restore();
-    for (const l of v.lines ?? []) this.txt(c, l.text, (l.x ?? 0.5) * 300, (l.y ?? 0.5) * 300, l.on ? '#ffe45a' : GREEN, 12 * (l.size ?? 1), l.align ?? 'left');
+    for (const l of v.lines ?? []) this.txt(c, l.text, (l.x ?? 0.5) * 300, (l.y ?? 0.5) * 300, l.on ? YELLOW : GREEN, 12 * (l.size ?? 1), l.align ?? 'left');
     v.osb.forEach((o, k) => {
       if (!o || !o.text) return;
       const q = osbPos(k + 1);
@@ -107,8 +110,8 @@ export class Mfds {
         const ty = y + (n - (words.length - 1) / 2) * 11;
         c.font = '11px Consolas, monospace';
         const tw = c.measureText(w).width + 4;
-        if (o.on) { c.fillStyle = GREEN; c.fillRect(align === 'left' ? tx - 2 : align === 'right' ? tx - tw + 2 : tx - tw / 2, ty - 6, tw, 12); }
-        this.txt(c, w, tx, ty, o.on ? '#050a06' : GREEN, 11, align);
+        if (o.on) { c.fillStyle = YELLOW; c.fillRect(align === 'left' ? tx - 2 : align === 'right' ? tx - tw + 2 : tx - tw / 2, ty - 6, tw, 12); }
+        this.txt(c, w, tx, ty, o.on ? '#000' : YELLOW, 11, align);
       });
     });
   }
@@ -184,43 +187,78 @@ export class Mfds {
     }
   }
 
-  private hsd(c: CanvasRenderingContext2D, world: World, p: Aircraft, rangeNm = 80, cen = false) {
-    const cx = 150, cy = cen ? 150 : 200;
+  /**
+   * The HSD base page (TO 1F-16CM/AM-34-1-1, 2.1.6.18 and the HSD figure): white range rings (thirds when depressed,
+   * halves when centred), a cyan ownship and radar volume, the white route and steerpoints, the cyan bullseye with the
+   * ownship's bullseye bearing and range at the lower left, magnetic north on the inner ring, and the range between
+   * the arrows of OSB 19/20. Drawn on the display's own 300 px face (not scaled like the other formats).
+   */
+  private hsd(c: CanvasRenderingContext2D, world: World, p: Aircraft, rangeNm = 80, cen = false, full = false) {
+    const S = full ? 1 : 1 / 0.82, o = full ? 0 : -27 / 0.82;   // undo the format scaling: the HSD uses the whole face
+    c.save(); c.translate(o, o); c.scale(S, S);
+    const cx = 150, cy = cen ? 150 : 192;
+    const R = cen ? 118 : 156;
     const rangeM = rangeNm * NM;
-    const px = (cen ? 120 : 170) / rangeM;
+    const px = R / rangeM;
     const hdg = p.fm.attitude().hdg;
-    c.strokeStyle = DIM; c.lineWidth = 1;
-    for (const k of [0.25, 0.5, 1]) { c.beginPath(); c.arc(cx, cy, (cen ? 120 : 170) * k, cen ? 0 : Math.PI, 2 * Math.PI); c.stroke(); }
-    this.txt(c, `HSD ${Math.round(rangeNm)}NM`, 10, 14, GREEN, 12);
+    const W = '#f2f2f2';
+    c.lineWidth = 1.2;
+    c.strokeStyle = W;
+    c.save(); c.beginPath(); c.rect(22, 22, 256, 256); c.clip();
+    const rings = cen ? [0.5, 1] : [1 / 3, 2 / 3, 1];
+    for (const k of rings) { c.beginPath(); c.arc(cx, cy, R * k, 0, 2 * Math.PI); c.stroke(); }
+    // cardinal tics on the inner ring, and magnetic north as a small triangle on it
+    const r1 = R * rings[0];
+    for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) { c.beginPath(); c.moveTo(cx + dx * (r1 - 5), cy + dy * (r1 - 5)); c.lineTo(cx + dx * (r1 + 5), cy + dy * (r1 + 5)); c.stroke(); }
+    const nb = -hdg;
+    const nx = cx + Math.sin(nb) * r1, ny = cy - Math.cos(nb) * r1;
+    c.fillStyle = W; c.beginPath();
+    c.moveTo(nx + Math.sin(nb) * 6, ny - Math.cos(nb) * 6); c.lineTo(nx + Math.cos(nb) * 3, ny + Math.sin(nb) * 3); c.lineTo(nx - Math.cos(nb) * 3, ny - Math.sin(nb) * 3); c.closePath(); c.fill();
     const toScreen = (x: number, z: number) => {
       const dx = x - p.pos.x, dz = z - p.pos.z;
       const rx = dx * Math.cos(hdg) + dz * Math.sin(hdg);
       const rz = -dx * Math.sin(hdg) + dz * Math.cos(hdg);
       return { x: cx + rx * px, y: cy + rz * px };
     };
+    // the radar's scan volume: two lines from the ownship to the range scale at the scan limits, joined by an arc
+    const r = p.radar;
+    if (r && r.mode !== 'OFF') {
+      const az = r.azScan / RAD, rr = Math.min(R * 1.05, r.rangeScale * px);
+      c.strokeStyle = CYAN; c.lineWidth = 1.4;
+      c.beginPath(); c.moveTo(cx, cy);
+      c.lineTo(cx + Math.sin(-az) * rr, cy - Math.cos(-az) * rr);
+      c.arc(cx, cy, rr, -Math.PI / 2 - az, -Math.PI / 2 + az);
+      c.lineTo(cx, cy); c.stroke();
+    }
     // the flight plan as the navigation system holds it: nothing until it is loaded and aligned
     const nav = p.systems?.avionics?.nav();
+    let bull: { x: number; z: number } | null = null;
     if (nav?.insReady) {
       const pts = nav.steerpoints.map((s, k) => ({ s, k })).filter((e) => e.s.name && e.k < 24);
-      c.strokeStyle = '#e8e8e8'; c.lineWidth = 1;
+      c.strokeStyle = W; c.lineWidth = 1;
       c.beginPath();
       pts.forEach((e, n) => { const q = toScreen(e.s.x, e.s.z); if (n) c.lineTo(q.x, q.y); else c.moveTo(q.x, q.y); });
       c.stroke();
       for (const e of pts) {
         const q = toScreen(e.s.x, e.s.z);
-        c.beginPath(); c.arc(q.x, q.y, 4, 0, Math.PI * 2);
-        if (e.k === nav.steer) { c.fillStyle = '#e8e8e8'; c.fill(); } else c.stroke();
-        this.txt(c, `${e.k + 1}`, q.x + 7, q.y - 6, '#e8e8e8', 10);
+        c.beginPath(); c.arc(q.x, q.y, 3.5, 0, Math.PI * 2);
+        c.fillStyle = '#000'; c.fill(); c.stroke();
+        if (e.k === nav.steer) { c.fillStyle = W; c.beginPath(); c.arc(q.x, q.y, 1.6, 0, Math.PI * 2); c.fill(); }
       }
       const b = nav.steerpoints[24];
-      if (b?.name) { const q = toScreen(b.x, b.z); c.strokeStyle = '#4aa0ff'; for (const r of [2, 5, 8]) { c.beginPath(); c.arc(q.x, q.y, r, 0, Math.PI * 2); c.stroke(); } }
+      if (b?.name) {
+        bull = b;
+        const q = toScreen(b.x, b.z);
+        c.strokeStyle = CYAN; c.lineWidth = 1.3;
+        for (const rr of [2, 5, 8]) { c.beginPath(); c.arc(q.x, q.y, rr, 0, Math.PI * 2); c.stroke(); }
+      }
     }
     for (const s of world.sites) {
       if (!s.alive) continue;
       const q = toScreen(s.radar.pos.x, s.radar.pos.z);
       const rng = s.params.isGun ? 3000 : WEAPONS[s.params.weapon].rangeKm * 800;
-      const col = s.side === p.side ? '#4aa0ff' : '#ff5050';
-      c.strokeStyle = col;
+      const col = s.side === p.side ? '#4aa0ff' : '#ff3c3c';
+      c.strokeStyle = col; c.lineWidth = 1;
       c.beginPath(); c.arc(q.x, q.y, rng * px, 0, Math.PI * 2); c.stroke();
       this.txt(c, s.params.symbol, q.x, q.y, col, 10, 'center');
     }
@@ -228,24 +266,44 @@ export class Mfds {
       if (!a.active || a === p) continue;
       if (a.side !== p.side && !p.radar?.contacts.has(a.id)) continue;
       const q = toScreen(a.pos.x, a.pos.z);
-      c.fillStyle = a.side === p.side ? '#4aa0ff' : '#ff5050';
-      c.beginPath(); c.arc(q.x, q.y, 4, 0, Math.PI * 2); c.fill();
+      c.fillStyle = a.side === p.side ? '#3cdc3c' : '#ff3c3c';
+      c.beginPath(); c.arc(q.x, q.y, 3.5, 0, Math.PI * 2); c.fill();
     }
-    // off-board (datalink) tracks: hollow symbols with a heading stub; AWACS tracks marked with a dot
     if (p.def.datalink !== false) {
       for (const t of world.datalink.picture(p.side, p)) {
         const q = toScreen(t.pos.x, t.pos.z);
         const vq = toScreen(t.pos.x + t.vel.x * 30, t.pos.z + t.vel.z * 30);
-        c.strokeStyle = '#ff7a50'; c.lineWidth = 1.5;
+        c.strokeStyle = '#ff3c3c'; c.lineWidth = 1.3;
         c.beginPath(); c.moveTo(q.x, q.y - 6); c.lineTo(q.x + 5, q.y + 4); c.lineTo(q.x - 5, q.y + 4); c.closePath(); c.stroke();
         c.beginPath(); c.moveTo(q.x, q.y); c.lineTo(vq.x, vq.y); c.stroke();
-        if (t.awacs) { c.fillStyle = '#ff7a50'; c.fillRect(q.x - 1, q.y - 1, 2, 2); }
       }
-      this.txt(c, 'L16', 290, 14, DIM, 11, 'right');
     }
-    c.fillStyle = GREEN;
-    c.beginPath(); c.moveTo(cx, cy - 8); c.lineTo(cx + 6, cy + 6); c.lineTo(cx - 6, cy + 6); c.closePath(); c.fill();
-    this.txt(c, wrap360(hdg * RAD).toFixed(0).padStart(3, '0'), cx, 40, GREEN, 13, 'center');
+    // the ownship: a cyan aircraft symbol
+    c.strokeStyle = CYAN; c.lineWidth = 1.6;
+    c.beginPath();
+    c.moveTo(cx, cy - 9); c.lineTo(cx, cy + 9);
+    c.moveTo(cx - 8, cy - 2); c.lineTo(cx + 8, cy - 2);
+    c.moveTo(cx - 4, cy + 6); c.lineTo(cx + 4, cy + 6);
+    c.stroke();
+    c.restore();
+    // the range between the arrows of OSB 20 (up) and 19 (down)
+    this.txt(c, String(Math.round(rangeNm)), 22, 300 * 0.275, YELLOW, 12);
+    // the ownship's bullseye bearing and range: a cyan circle with the bearing (tens of degrees) and a pointer to the
+    // bullseye, the range under it
+    if (bull) {
+      const dx = p.pos.x - bull.x, dz = p.pos.z - bull.z;
+      const brg = wrap360(Math.atan2(dx, -dz) * RAD), rng = Math.hypot(dx, dz) / NM;
+      const bx = 40, by = 232;
+      c.strokeStyle = CYAN; c.lineWidth = 1.3;
+      c.beginPath(); c.arc(bx, by, 10, 0, Math.PI * 2); c.stroke();
+      // the pointer: the bearing from the ownship to the bullseye, relative to the heading
+      const rel = Math.atan2(bull.x - p.pos.x, -(bull.z - p.pos.z)) - hdg;
+      c.fillStyle = CYAN; c.beginPath();
+      c.moveTo(bx + Math.sin(rel) * 15, by - Math.cos(rel) * 15); c.lineTo(bx + Math.sin(rel + 0.35) * 10, by - Math.cos(rel + 0.35) * 10); c.lineTo(bx + Math.sin(rel - 0.35) * 10, by - Math.cos(rel - 0.35) * 10); c.closePath(); c.fill();
+      this.txt(c, String(Math.round(brg / 10) % 36).padStart(2, '0'), bx, by, CYAN, 11, 'center');
+      this.txt(c, String(Math.round(rng)).padStart(3, '0'), bx, by + 18, CYAN, 11, 'center');
+    }
+    c.restore();
   }
 
   private rwr(c: CanvasRenderingContext2D, p: Aircraft) {

@@ -51,7 +51,8 @@ export const COCKPIT_MODELS: Record<string, CockpitModelSpec> = {
     title: 'F-16 pretty cool? (cockpit)', author: 'NORMAL (i_am_dead.)',
     source: 'https://sketchfab.com/3d-models/f-16-pretty-cool-47d5f8e8eab04274928ec3c2b92845a1', license: 'CC BY 4.0',
     axes: 'game', scale: K16,
-    eye: k3(0, 2.55, -3.5),
+    // raised so the boresight crosses the upper part of the HUD combiner, as in the jet
+    eye: k3(0, 2.66, -3.5),
     // the two MFDs either side of the HSI, measured by raycasting the model from the eye point
     mfds: [
       { c: k3(-0.0692, 2.183, -4.1882), w: 0.04 * K16, h: 0.062 * K16, n: [0, 0.574, 0.819], screen: 0 },
