@@ -15,6 +15,7 @@ import { hdStoreCredits } from '../render/hdStores.js';
 import { MENU_THEMES } from './menuBackground.js';
 import { setImageryEnabled, AERIAL } from '../render/imagery.js';
 import { setDemStreamEnabled } from '../world/demStream.js';
+import { setQuality, LEVEL_NAMES } from '../render/quality.js';
 import { SCENERY_CREDITS } from '../render/modelScenery.js';
 
 export interface AppApi {
@@ -386,6 +387,8 @@ export function settingsScreen(app: AppApi): HTMLElement {
           <h3>Graphics</h3>
           <label>Field of view (deg) <input data-n="fov" type="number" min="40" max="110" value="${s.fov}"></label>
           <label>Max visibility (km) <input data-n="visibilityKm" type="number" min="10" max="150" value="${s.visibilityKm}"></label>
+          <label>Graphics quality <select data-q="graphicsQuality">${[['auto', 'Auto (holds 60 fps)'], ...LEVEL_NAMES.map((n, i) => [String(i), n])].map(([v, n]) => `<option value="${v}"${String(s.graphicsQuality) === v ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
+          <p class="muted small">Auto lowers tree range, shadows and render resolution when the frame rate drops below 60 and raises them again when there is room.</p>
           ${chk('hdModels', 'HD aircraft models', 'detailed 3D models where available (F-14, F-16, F/A-18F, F-4, Gripen) and real buildings and trees on the Western Europe map; loaded on demand, ~4–7 MB each')}
           <div class="muted small credits">3D models: ${[...hdCredits(), ...hdStoreCredits()].map((c) => `"${esc(c.title)}" by ${esc(c.author)} (<a href="${c.source}" target="_blank" rel="noopener">Sketchfab</a>), ${c.license}, textures re-encoded`).join(' · ')}</div>
           <div class="muted small credits">Europe buildings and trees: ${SCENERY_CREDITS.map((c) => `"${esc(c.title)}" by ${esc(c.author)} (<a href="${c.source}" target="_blank" rel="noopener">Sketchfab</a>)`).join(' · ')}, CC BY 4.0; split into separate objects, merged and textures re-encoded.</div>
@@ -410,7 +413,9 @@ export function settingsScreen(app: AppApi): HTMLElement {
     e.querySelectorAll<HTMLInputElement>('input[data-k]').forEach((i) => { rec[i.dataset.k!] = i.checked; });
     e.querySelectorAll<HTMLInputElement>('input[data-n]').forEach((i) => { const v = Number(i.value); if (Number.isFinite(v)) rec[i.dataset.n!] = v; });
     e.querySelectorAll<HTMLInputElement>('input[data-c]').forEach((i) => { rec[i.dataset.c!] = i.value; });
+    e.querySelectorAll<HTMLSelectElement>('select[data-q]').forEach((i) => { rec[i.dataset.q!] = i.value === 'auto' ? 'auto' : Number(i.value); });
     saveSettings(app.settings);
+    setQuality(app.settings.graphicsQuality);
     setHdModelsEnabled(app.settings.hdModels);
     setImageryEnabled(app.settings.satImagery);
     setDemStreamEnabled(app.settings.fineTerrain);

@@ -12,6 +12,7 @@ import { ensureTheater } from './world/theater.js';
 import { MenuBackground } from './ui/menuBackground.js';
 import { setImageryEnabled } from './render/imagery.js';
 import { setDemStreamEnabled } from './world/demStream.js';
+import { setQuality } from './render/quality.js';
 
 class App implements AppApi {
   root: HTMLElement;
@@ -28,6 +29,7 @@ class App implements AppApi {
     setHdModelsEnabled(this.settings.hdModels);
     setImageryEnabled(this.settings.satImagery);
     setDemStreamEnabled(this.settings.fineTerrain);
+    setQuality(this.settings.graphicsQuality);
     this.menuBg = new MenuBackground(document.body);
     this.menuBg.setTheme(this.settings.menuTheme, this.settings.menuPhotos);
     this.input.onDeviceConnected = (id, auto) => this.toast(`Controller connected: ${shortDev(id)}${auto ? ' — default HOTAS profile applied (check Controls)' : ''}`);

@@ -8,10 +8,11 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { terrainHeight, runwaysOf, fieldsNear, type TerrainPalette } from '../world/theater.js';
 import { treeAt, type CoverGrid } from '../world/landcover.js';
 import { hash2, NEAR_SCENERY, ringMaterial } from './scenery.js';
+import { quality, workLeft } from './quality.js';
 
 /** spacing (m) of the tree grid: one tree per cell, jittered across it */
 export const TREE_CELL = 8;
-const TILE = 1000, FULL_DIST = 1500, SHADOW_DIST = 700;
+const TILE = 1000;
 /** inner radius of the procedural trees: the model trees' radius while those are shown, else 0 */
 export const treeInner = { value: 0 };
 
@@ -78,13 +79,14 @@ export class Forest {
   }
   /** the ground changed under a square (streamed elevation arrived): its trees are planted again */
   invalidate(x0: number, z0: number, x1: number, z1: number) {
+    this.job = null;
     for (const [k, t] of this.tiles) if (t.x0 < x1 && t.x0 + TILE > x0 && t.z0 < z1 && t.z0 + TILE > z0) { this.drop(t); this.tiles.delete(k); this.version++; }
   }
   private drop(t: Tile) { for (const m of t.meshes) { this.group.remove(m); m.dispose(); } }
 
-  /** show the tiles within reach of the camera, building up to `budget` missing ones */
-  update(cam: THREE.Vector3, cover: CoverGrid, pal: TerrainPalette, on: boolean, budget = 1) {
-    if (cover !== this.cover) { this.clear(); this.cover = cover; }
+  /** show the tiles within reach of the camera, building the missing ones a few steps a frame */
+  update(cam: THREE.Vector3, cover: CoverGrid, pal: TerrainPalette, on: boolean) {
+    if (cover !== this.cover) { this.clear(); this.cover = cover; this.job = null; }
     this.frame++;
     this.group.visible = on;
     if (!on) return;
@@ -96,20 +98,30 @@ export class Forest {
       if (d < reach) want.push([d, i, j]);
     }
     want.sort((a, b) => a[0] - b[0]);
+    // the nearest missing tile is built in steps, in the time this frame has left (at least one step a frame)
+    if (this.job && !want.some(([, i, j]) => `${i},${j}` === this.job!.key)) this.job = null;
+    if (!this.job) {
+      const miss = want.find(([, i, j]) => !this.tiles.has(`${i},${j}`));
+      if (miss) this.job = { key: `${miss[1]},${miss[2]}`, it: this.buildSteps(miss[1], miss[2], cover, pal) };
+    }
+    for (let first = true; this.job && (first || workLeft()); first = false) {
+      const r = this.job.it.next();
+      if (!r.done) continue;
+      for (const m of r.value.meshes) this.group.add(m);
+      this.tiles.set(this.job.key, r.value);
+      this.version++;
+      this.job = null;
+    }
     for (const [d, i, j] of want) {
       const key = `${i},${j}`;
-      let t = this.tiles.get(key);
-      if (!t) {
-        if (budget-- <= 0) continue;
-        t = this.build(i, j, cover, pal);
-        this.tiles.set(key, t);
-        this.version++;
-      }
+      const t = this.tiles.get(key);
+      if (!t) continue;
       t.used = this.frame;
       // full trees close by; a little hysteresis so a tile on the boundary doesn't flip every frame
+      const FULL_DIST = quality.p.forestFull;
       const full = t.full ? d < FULL_DIST * 1.15 : d < FULL_DIST;
       if (full !== t.full) { t.full = full; t.meshes.forEach((m) => { m.geometry = this.geo[m.userData.kind as number][full ? 0 : 1]; }); }
-      for (const m of t.meshes) { m.visible = true; m.castShadow = d < SHADOW_DIST; }
+      for (const m of t.meshes) { m.visible = true; m.castShadow = d < quality.p.forestShadow; }
     }
     for (const [key, t] of this.tiles) {
       if (t.used === this.frame) continue;
@@ -118,7 +130,11 @@ export class Forest {
     }
   }
 
-  private build(ti: number, tj: number, cover: CoverGrid, pal: TerrainPalette): Tile {
+  private job: { key: string; it: Generator<void, Tile> } | null = null;
+  /** a tile is being built */
+  get building() { return !!this.job; }
+
+  private *buildSteps(ti: number, tj: number, cover: CoverGrid, pal: TerrainPalette): Generator<void, Tile> {
     const x0 = ti * TILE, z0 = tj * TILE, n = TILE / TREE_CELL, ci0 = Math.round(x0 / TREE_CELL), cj0 = Math.round(z0 / TREE_CELL);
     const buf = new Float32Array(n * n * STRIDE);
     const count: [number, number] = [0, 0];
@@ -127,6 +143,7 @@ export class Forest {
     let any = false;
     for (let j = 0; j <= 20 && !any; j++) for (let i = 0; i <= 20; i++) if (treeAt(cover, x0 + i * TILE / 20, z0 + j * TILE / 20)) { any = true; break; }
     if (any) for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      if (i === 0 && (j & 15) === 15) yield;
       const ci = ci0 + i, cj = cj0 + j, hsh = hash2(ci, cj);
       const x = (ci + hsh) * TREE_CELL, z = (cj + hash2(cj, ci)) * TREE_CELL;
       if (!treeAt(cover, x, z)) continue;
@@ -160,7 +177,8 @@ export class Forest {
       im.computeBoundingSphere();
       im.receiveShadow = true;
       im.userData.kind = kind;
-      meshes.push(im); this.group.add(im);
+      meshes.push(im);
+      yield;
     }
     return { x0, z0, data, n: count, meshes, full: false, used: this.frame };
   }

@@ -10,6 +10,7 @@ import { hdModelsEnabled } from './hdModels.js';
 import { realBuildings, type Building } from './buildings.js';
 import { Forest, nearRunway, treeInner } from './forest.js';
 import { Roads } from './roads.js';
+import { startWork } from './quality.js';
 
 const CHUNK = 16000; // m
 const COARSE_LODS = [
@@ -626,7 +627,9 @@ export class TerrainRenderer {
     this.update(p, viewDist);
     this.buildBudget = old;
     const pal = terrainPalette(), agl = p.y - Math.max(0, terrainHeight(p.x, p.z));
-    this.forest.update(p, this.syncCover(), pal, agl < 3500 && pal.trees, 400);
+    // (loading: the trees get as much time as they need)
+    startWork(4000);
+    for (let k = 0; k < 400; k++) { const v = this.forest.version; this.forest.update(p, this.syncCover(), pal, agl < 3500 && pal.trees); if (this.forest.version === v && !this.forest.building) break; }
   }
 }
 

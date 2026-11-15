@@ -3,6 +3,7 @@ import type { World } from '../sim/world.js';
 import type { Aircraft, GroundUnit } from '../sim/entities.js';
 import type { Missile } from '../weapons/missile.js';
 import { TerrainRenderer, buildScenery } from './terrainMesh.js';
+import { quality, qualityFrame, startWork } from './quality.js';
 import { buildCarrierMesh } from './carrierMesh.js';
 import { buildAircraftModel, updateAircraftModel, syncStores, groundMesh, storeMesh, missileDims, type AircraftModel } from './models.js';
 import { createBurner, type Burner } from './afterburner.js';
@@ -550,7 +551,30 @@ export class SceneRenderer {
     this.renderEnvironment(pos);
   }
 
+  private qualityVersion = -1;
+  /** follow the graphics quality level (quality.ts): render resolution and the sun's shadow map */
+  private applyQuality() {
+    if (quality.version === this.qualityVersion) return;
+    this.qualityVersion = quality.version;
+    const q = quality.p;
+    const pr = Math.min(window.devicePixelRatio, q.pixelRatio);
+    if (!this.vrActive && Math.abs(pr - this.renderer.getPixelRatio()) > 0.01) {
+      this.renderer.setPixelRatio(pr);
+      const el = this.renderer.domElement;
+      this.resize(el.clientWidth || el.width / pr, el.clientHeight || el.height / pr);
+    }
+    if (this.sun.shadow.mapSize.x !== q.shadowMap) {
+      this.sun.shadow.mapSize.set(q.shadowMap, q.shadowMap);
+      this.sun.shadow.map?.dispose();
+      this.sun.shadow.map = null as unknown as THREE.WebGLRenderTarget;
+    }
+  }
+
   private renderEnvironment(cp: THREE.Vector3) {
+    qualityFrame();
+    this.applyQuality();
+    // scenery building gets a few milliseconds of each frame (the rest waits for the next)
+    startWork(4);
     this.sky.position.copy(cp);
     // haze sits in the lower atmosphere: looking out from altitude the air is clearer
     (this.scene.fog as THREE.FogExp2).density = this.baseFog * (0.45 + 0.55 * Math.exp(-Math.max(0, cp.y) / 5000));
