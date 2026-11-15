@@ -41,7 +41,7 @@ All 16 fly on the same **6-DOF rigid-body flight model**, and each jet supplies 
 
 ## Aircraft systems
 
-Aircraft are being given their own systems and cockpit, one type at a time. The **F-16** is the first: electrical, hydraulic, fuel, engine start (JFS), EPU, landing gear, brakes and the warning and caution lights work as in the real jet, from the flight manual. Press **K** for the cockpit panel (switches, lights, gauges and the checklist), **Shift+K** to have the crew chief start the jet, **J** to reset the master caution. Turn on **Cold start** in Settings to begin ground missions cold and dark. See [docs/SYSTEMS.md](docs/SYSTEMS.md).
+Aircraft are being given their own systems and cockpit, one type at a time. The **F-16** is the first: electrical, hydraulic, fuel, engine start (JFS), EPU, landing gear, brakes and the warning and caution lights work as in the real jet, from the flight manual. Press **K** for the cockpit panel (switches, lights, gauges and the checklist), **Shift+K** to have the crew chief start the jet, **J** to reset the master caution. Turn on **Cold start** in Settings to begin ground missions cold and dark, parked on the ramp. The cockpit is clickable: left click moves a switch up or presses a button, right click moves it down, the wheel turns knobs. The flight control system (gains, BIT, fault list) and the avionics (ICP and DED, INS alignment, MFD formats) follow the manuals too. See [docs/SYSTEMS.md](docs/SYSTEMS.md).
 
 ## Combat
 
