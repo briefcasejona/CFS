@@ -17,6 +17,9 @@ import { VoiceInput } from '../input/voice.js';
 import type { Aircraft } from '../sim/entities.js';
 import type { World } from '../sim/world.js';
 import type { MissionData } from '../systems/types.js';
+import { hasSystems } from '../systems/registry.js';
+import { getAircraft } from '../aircraft/defs.js';
+import { routeProgress } from './ramp.js';
 import { AIRBASES, currentTheater } from '../world/theater.js';
 
 const DT = 1 / 120;
@@ -63,6 +66,8 @@ export class FlightSession {
   private mapView: MapView = { cx: 0, cz: 0, mpp: 300, w: 1, h: 1 };
   private steerIndex = 0;
   private steerVec = new THREE.Vector3();
+  /** taxi from the ramp: 0 parked, 1 cleared to taxi, 2 holding short / cleared for take-off, 3 done */
+  private taxi: { stage: number } | null = null;
   private ejectArm = -99;
   private cmsQueue: Array<{ t: number; kind: 'flare' | 'chaff' }> = [];
   private padlock = false;
@@ -117,7 +122,7 @@ export class FlightSession {
       if (cmd) this.runComms(cmd);
       else this.built?.world.radio(`Voice: didn't catch "${alts[0] ?? ''}" — try e.g. "request picture", "flight rejoin".`, '#9fd8ff');
     };
-    ui.map.addEventListener('wheel', (e) => { this.mapView.mpp = clamp(this.mapView.mpp * (e.deltaY > 0 ? 1.2 : 1 / 1.2), 20, 1200); e.preventDefault(); }, { passive: false });
+    ui.map.addEventListener('wheel', (e) => { this.mapView.mpp = clamp(this.mapView.mpp * (e.deltaY > 0 ? 1.2 : 1 / 1.2), 3, 1200); e.preventDefault(); }, { passive: false });
   }
 
   private onMouseMove(e: MouseEvent) {
@@ -150,7 +155,8 @@ export class FlightSession {
     this.built = buildMission(spec, {
       unlimitedFuel: s.unlimitedFuel, unlimitedWeapons: s.unlimitedWeapons, invulnerable: s.invulnerable,
       gEffects: s.gEffects, abDetent: s.abDetent,
-    });
+    }, s.coldStart && this.rampStart(spec));
+    this.taxi = this.built.ramp ? { stage: 0 } : null;
     this.netHook?.attach(this.built);
     this.scene.reset();
     this.scene.setWeather({ ...spec.weather, visibilityKm: Math.min(spec.weather.visibilityKm, s.visibilityKm) });
@@ -312,9 +318,38 @@ export class FlightSession {
     }
   }
 
+  /** A cold start begins on the ramp when the player's jet has its own systems and starts at an airbase. */
+  private rampStart(spec: MissionSpec) {
+    const f = spec.flights.find((x) => x.player);
+    return !!f && f.start.kind === 'runway' && hasSystems(getAircraft(f.aircraftId));
+  }
+
+  /** Ground and tower calls for a jet that starts on the ramp. */
+  private stepTaxi(p: Aircraft, world: World) {
+    const t = this.taxi, r = this.built.ramp;
+    if (!t || !r || t.stage >= 3) return;
+    const rwy = String(Math.round(((r.base.hdg % 360) + 360) % 360 / 10) || 36).padStart(2, '0');
+    const here = { x: p.pos.x, z: p.pos.z };
+    if (!p.fm.wow) { t.stage = 3; return; }
+    if (t.stage === 0 && p.fm.rpm > 55 && (!p.systems || !p.systems.hooks.parkingBrake || p.fm.tas > 1)) {
+      t.stage = 1;
+      world.radio(`Ground: ${p.callsign}, taxi to runway ${rwy}, ${(r.length / 1000).toFixed(1)} km. Hold short. The route is on the map (F10).`, '#9fd8ff');
+    } else if (t.stage === 1 && Math.hypot(here.x - r.hold.x, here.z - r.hold.z) < 45) {
+      t.stage = 2;
+      world.radio(`Tower: ${p.callsign}, runway ${rwy}, line up, cleared for take-off.`, '#9fd8ff');
+    } else if (t.stage === 2 && routeProgress(r.route, here).left < 40) t.stage = 3;
+  }
+
   /** The steerpoint the HUD steers to: from the jet's own navigation system where it has one. */
   private steering(): { steerpoint: THREE.Vector3 | null; steerName: string } {
     const av = this.built.player.systems?.avionics;
+    // taxiing out from the ramp: the next corner of the route
+    const r = this.built.ramp;
+    if (r && this.taxi && this.taxi.stage > 0 && this.taxi.stage < 3) {
+      const pr = routeProgress(r.route, { x: this.built.player.pos.x, z: this.built.player.pos.z });
+      this.steerVec.set(pr.next.x, this.built.player.pos.y, pr.next.z);
+      return { steerpoint: this.steerVec, steerName: 'TAXI' };
+    }
     if (av) {
       const n = av.nav(), sp = av.steerPoint();
       if (!sp) return { steerpoint: null, steerName: n.align || (n.insReady ? '' : 'INS OFF') };
@@ -380,6 +415,7 @@ export class FlightSession {
     }
     if (i.pressed('masterCaution')) { sys.set('masterCaution', 1); sys.set('masterCaution', 0); }
     this.applyAvionics(p);
+    this.stepTaxi(p, world);
     for (const m of sys.drainMessages()) world.radio(m.text, m.level === 'warning' ? '#ff6a5a' : m.level === 'caution' ? '#ffcf70' : '#ccc');
     // a radar without power stops; it comes back in its search mode when power returns
     if (p.radar) {
@@ -677,8 +713,9 @@ export class FlightSession {
     for (const cv of w.carriers) markers.push({ x: cv.pos.x, z: cv.pos.z, side: cv.side, kind: 'ground', label: cv.name, hdg: cv.hdg });
     const si = p.systems?.avionics ? clamp(p.systems.avionics.nav().steer, 0, Math.max(0, this.built.steerpoints.length - 1)) : this.steerIndex;
     this.built.steerpoints.forEach((s, k) => markers.push({ x: s.pos.x, z: s.pos.z, side: 'neutral', kind: 'waypoint', label: `${k + 1} ${s.name}`, highlight: k === si }));
+    const taxiRoute = this.built.ramp && this.taxi && this.taxi.stage < 3 ? [{ pts: this.built.ramp.route, color: '#ffd24a' }] : [];
     const route = { pts: [{ x: p.pos.x, z: p.pos.z }, ...this.built.steerpoints.slice(si).map((s) => ({ x: s.pos.x, z: s.pos.z }))], color: '#fff', dashed: true };
-    drawTheater(ctx, this.mapView, { markers, routes: [route], showObjectives: false });
+    drawTheater(ctx, this.mapView, { markers, routes: [route, ...taxiRoute], showObjectives: false });
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
     ctx.fillRect(this.mapView.w / 2 - 240, 8, 480, 26);
     ctx.fillStyle = '#fff'; ctx.font = '14px Consolas, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
