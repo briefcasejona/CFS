@@ -10,6 +10,7 @@ import { hdSpecFor } from './hdModels.js';
 import { updatePapi, type Airfield } from './airfield.js';
 import { Effects } from './particles.js';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
+import { SkyDome } from './skyDome.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
@@ -46,7 +47,7 @@ export class SceneRenderer {
   scenery: THREE.Group;
   sun = new THREE.DirectionalLight(0xffffff, 2.2);
   hemi = new THREE.HemisphereLight(0xbfd6ff, 0x4a4436, 1.0);
-  sky: Sky;
+  sky: SkyDome;
   clouds: THREE.Mesh;
   /** HDR pipeline on a monitor (VR renders straight to the headset): MSAA scene → bloom → filmic tone mapping */
   private composer: EffectComposer;
@@ -106,11 +107,9 @@ export class SceneRenderer {
     // into the screen's range
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 0.6;   // three's ACES divides by 0.6: this is unity
-    this.sky = new Sky();
-    skyGain(this.sky); skyGain(this.envSky);
+    this.sky = new SkyDome();
+    skyGain(this.envSky);
     this.sky.scale.setScalar(20000);
-    this.sky.renderOrder = -10;
-    this.sky.frustumCulled = false;
     this.scene.add(this.sky);
     // sun shadows: a 1 km square around the eye (the jet, the ramp, the streets below) at ~25 cm a texel
     this.renderer.shadowMap.enabled = true;
@@ -155,11 +154,22 @@ export class SceneRenderer {
     const day = clamp(elev * 3, 0, 1);
     const dusk = elev > -0.1 ? clamp(1 - Math.abs(elev) * 4, 0, 1) : 0;
     const top = new THREE.Color(0x0a1020).lerp(new THREE.Color(0x3a6fb0), day);
-    const horizon = new THREE.Color(0x151a24).lerp(new THREE.Color(0xb8cde0), day).lerp(new THREE.Color(0xe09060), dusk * 0.6);
-    for (const sk of [this.sky, this.envSky]) {
+    const horizon = new THREE.Color(0x151a24).lerp(new THREE.Color(0xa6c6ea), day).lerp(new THREE.Color(0xe09060), dusk * 0.6);
+    {
+      // the dome: deep blue overhead by day, a narrow pale band where the haze lies on the horizon
+      const u = this.sky.material.uniforms;
+      (u.uZenith.value as THREE.Color).setRGB(0.002, 0.004, 0.012).lerp(new THREE.Color().setRGB(0.022, 0.075, 0.27), clamp(elev * 3 + 0.3, 0, 1));
+      (u.uHorizon.value as THREE.Color).setRGB(0.006, 0.008, 0.014).lerp(new THREE.Color().setRGB(0.16, 0.36, 0.74), day).lerp(new THREE.Color(0xe09060), dusk * 0.35);
+      (u.uHaze.value as THREE.Color).copy(horizon);
+      u.uSunDir.value.copy(this.sunDir);
+      (u.uSunCol.value as THREE.Color).setRGB(1, 0.9 + 0.1 * day, 0.75 + 0.25 * day).multiplyScalar(elev > -0.05 ? 1 : 0);
+      u.uBand.value = clamp(w.visibilityKm / 4, 4, 16);
+    }
+    for (const sk of [this.envSky]) {
       const u = sk.material.uniforms;
       u.sunPosition.value.copy(this.sunDir);
       // hazier on a poor-visibility day
+      // (a clear day is a deep blue down to a narrow pale band at the horizon)
       u.turbidity.value = clamp(14 - w.visibilityKm / 8, 2.2, 12);
       u.rayleigh.value = 1.6 + (1 - day) * 1.2;
       u.mieCoefficient.value = 0.004;
@@ -180,14 +190,13 @@ export class SceneRenderer {
     this.hemi.intensity = 0.25 + 0.75 * day;
     const fog = this.scene.fog as THREE.FogExp2;
     fog.color.copy(horizon);
-    fog.density = 3.0 / (Math.max(5, w.visibilityKm) * 1000);
+    // (visibility = where 2 % of the contrast is left: exp(−(d·density)²) = 0.02 at d·density ≈ 2)
+    fog.density = 2.6 / (Math.max(5, w.visibilityKm) * 1000);
     this.baseFog = fog.density;
     this.viewDist = Math.min(260000, w.visibilityKm * 1000 * 2.2);
     this.cloudsOn = w.clouds !== 'clear';
     // under an overcast the sun is a glow in the deck: the ground gets the sky's diffuse light, little direct sun
     if (w.clouds === 'overcast') { this.sun.intensity *= 0.22; this.hemi.intensity *= 1.15; }
-    // the haze at the horizon is as bright as the sky there
-    fog.color.multiplyScalar(1.25);
     this.cloudPass.setWeather(w.clouds, w.cloudBase);
     const cm = this.clouds.material as THREE.MeshLambertMaterial;
     cm.opacity = w.clouds === 'overcast' ? 0.97 : 0.75;
@@ -561,7 +570,7 @@ export class SceneRenderer {
     if (this.vrActive) this.renderer.render(this.scene, this.camera);
     else {
       this.cloudPass.enabled = this.cloudsOn;
-      if (this.cloudsOn) this.cloudPass.update(this.sunDir, this.sun, this.hemi.color.clone().multiplyScalar(this.hemi.intensity * 0.9), this.scene.fog as THREE.FogExp2, performance.now() / 1000);
+      if (this.cloudsOn) this.cloudPass.update(this.sunDir, this.sun, new THREE.Color().setRGB(0.5, 0.62, 0.85).multiplyScalar(this.hemi.intensity * 0.75), this.scene.fog as THREE.FogExp2, performance.now() / 1000);
       this.composer.render();
     }
   }
@@ -579,7 +588,12 @@ export class SceneRenderer {
 
 /** the sky model is tuned for a darker exposure than our sunlit ground: scale it to match */
 function skyGain(sky: Sky, gain = 0.8) {
-  sky.material.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <tonemapping_fragment>', `gl_FragColor.rgb *= ${gain.toFixed(3)};\n#include <tonemapping_fragment>`); };
+  const uGain = { value: gain };
+  sky.userData.gain = uGain;
+  sky.material.onBeforeCompile = (sh) => {
+    sh.uniforms.uSkyGain = uGain;
+    sh.fragmentShader = 'uniform float uSkyGain;\n' + sh.fragmentShader.replace('#include <tonemapping_fragment>', 'gl_FragColor.rgb *= uSkyGain;\n#include <tonemapping_fragment>');
+  };
 }
 
 function makeCloudTexture(): THREE.CanvasTexture {

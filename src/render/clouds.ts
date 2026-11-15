@@ -88,14 +88,15 @@ float density(vec3 p, bool detail) {
   vec3 q = vec3(p.x + uWind.x, p.y, p.z + uWind.y) * uScale;
   // large-scale weather: where cells may grow at all
   float weather = texture(tNoise, vec3(q.xz * 0.23, 0.37)).r;
-  float cov = clamp(uCover + (weather - 0.5) * 0.6, 0.0, 1.0);
+  float cov = clamp(uCover + (weather - 0.5) * 0.75, 0.0, 1.0);
   float shape = texture(tNoise, q * vec3(1.0, 2.2, 1.0)).r;
   // rounded bottoms flat at the base, tops that taper (cumulus); a deck stays full height when overcast
   float profile = smoothstep(0.0, 0.08, h) * mix(smoothstep(1.0, 0.35, h), smoothstep(1.0, 0.85, h), step(0.9, uCover));
   float d = clamp((shape * profile - (1.0 - cov)) / max(cov, 0.05), 0.0, 1.0);
   if (detail && d > 0.0) {
-    float er = texture(tNoise, q * 5.3 + vec3(0.0, uFrame * 0.0, 0.0)).g;
-    d = clamp(d - (1.0 - er) * 0.45 * (1.0 - h * 0.4), 0.0, 1.0);
+    // (only the rim is eaten into: the body of a cumulus stays solid, its edge soft)
+    float er = texture(tNoise, q * 3.7).g;
+    d = clamp(d - (1.0 - er) * 0.28 * (1.0 - h * 0.4), 0.0, 1.0);
   }
   return d * uDensity;
 }
@@ -139,11 +140,11 @@ void main() {
       if (firstT < 0.0) firstT = t;
       // light march towards the sun through the cloud above this point
       float od = 0.0, ls = (uTop - uBase) * 0.18;
-      for (int j = 1; j <= 4; j++) od += density(p + uSunDir * ls * float(j), false) * ls;
+      for (int j = 1; j <= 4; j++) od += density(p + uSunDir * ls * float(j), false) * ls * 1.5;
       float sunT = exp(-od) ;
       float powder = 1.0 - exp(-d * dt * 2.0);
       float h = (p.y - uBase) / (uTop - uBase);
-      vec3 S = uSunCol * sunT * phase * mix(1.0, powder * 2.0, 0.5) + uSkyCol * (0.5 + 0.5 * h);
+      vec3 S = uSunCol * (0.12 + 0.88 * sunT) * phase * mix(1.0, powder * 2.0, 0.5) * 0.62 + uSkyCol * (0.45 + 0.55 * h);
       float a = exp(-d * dt);
       // energy-conserving integration over the step
       light += trans * S * (1.0 - a);
@@ -184,10 +185,10 @@ export class CloudPass extends Pass {
     this.enabledByWeather = clouds !== 'clear';
     const u = this.uniforms;
     u.uBase.value = base;
-    u.uTop.value = base + (clouds === 'overcast' ? 1400 : 2200);
-    u.uCover.value = clouds === 'overcast' ? 0.92 : 0.3;
-    u.uDensity.value = clouds === 'overcast' ? 0.03 : 0.04;
-    u.uScale.value = clouds === 'overcast' ? 1 / 14000 : 1 / 6000;
+    u.uTop.value = base + (clouds === 'overcast' ? 1400 : 1700);
+    u.uCover.value = clouds === 'overcast' ? 0.92 : 0.22;
+    u.uDensity.value = clouds === 'overcast' ? 0.03 : 0.07;
+    u.uScale.value = clouds === 'overcast' ? 1 / 14000 : 1 / 9000;
   }
 
   /** per frame: camera, sun and sky light, haze and the wind's drift */
