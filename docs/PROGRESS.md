@@ -88,6 +88,7 @@ terrain vertex positions (h -= d²/(2R) relative to the camera) for the horizon;
 Tiles (Mapzen: SRTM/GMTED/ETOPO1 etc.) and OurAirports (public domain). Tests: projection round trip, baked tile sampling, airbases on land.
 
 ## Log
+- 2026-11-15 — Map infrastructure: real roads, railways and stations (Overture/OSM, `assets/theaters/*/roads`, ~90 MB, loaded by 64 km block on demand), 560 civil airfields with terminals (OurAirports), forests at ~10× density (8 m tree cells in 1 km tiles to 5 km, far clumps at 22 m), no made-up street grid where real roads exist; tests/transport.test.ts. Checked in headless software rendering only: frame rate on a real GPU and in VR not measured.
 - 2026-10-11 — Round 2 Phase E: WebXR seated VR (camera rig, XR loop handover, HUD quad at 30 m, viewCam for HUD/projections, recentre); 89 tests; v0.1.16. ROUND 2 COMPLETE. Untested on a real headset — ask the tester.
 - 2026-10-11 — Round 2 Phase D: airfields (markings, taxiways, apron, HAS, tower, lights, PAPI), terrain LOD 83 m within 6 km, detail texture shader, slope AO, altitude haze; 88 tests; v0.1.15. (Shadows / graphics-quality setting not done — perf fine: ~710k tris, 178 calls over the Alps.)
 - 2026-10-11 — Round 2 Phase C: F/A-18F, HD F-16/F/A-18F/F-4, F-14 = articulated KOG F-14D (pivot fitted to real spans), HUD-based eye points, live MFDs in HD cockpits, weapons on real stations; 88 tests; v0.1.14. Notes: F-4 HD texture has JASDF roundels; legacy F/A-18C keeps the procedural model.

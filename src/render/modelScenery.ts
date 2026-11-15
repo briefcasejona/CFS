@@ -7,6 +7,8 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { ringMaterial, hash2 } from './scenery.js';
 
 export const DETAIL_SCENERY = 3000;
+/** the textured model trees reach this far (m); the forest's own trees (forest.ts) carry on from here */
+export const DETAIL_TREES = 900;
 /** inner radius of the procedural houses/trees ring: DETAIL_SCENERY while the models are shown, else 0 */
 export const proceduralInner = { value: 0 };
 const PLACE_R = DETAIL_SCENERY + 1100;   // placed this far, rebuilt every ~1 km of travel
@@ -21,6 +23,7 @@ export const SCENERY_CREDITS = [
 
 interface Variant {
   name: string;
+  tree: boolean;
   size: [number, number, number];
   meshes: THREE.InstancedMesh[];
   n: number;
@@ -60,7 +63,7 @@ export class ModelScenery {
       const meshes: THREE.Mesh[] = [];
       node.traverse((o) => { if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh); });
       const cap = tree ? 30000 : kind === "panel" ? 600 : 8000;
-      const v: Variant = { name, size, meshes: [], n: 0, cap };
+      const v: Variant = { name, tree, size, meshes: [], n: 0, cap };
       for (const m of meshes) {
         const src = m.material as THREE.MeshStandardMaterial;
         // Lambert: thousands of instances, seen from a cockpit — the PBR model costs too much and adds nothing here
@@ -71,7 +74,7 @@ export class ModelScenery {
         const geo = m.geometry.clone();
         m.updateWorldMatrix(true, false);
         geo.applyMatrix4(m.matrixWorld);
-        const im = new THREE.InstancedMesh(geo, ringMaterial(mat, 0, DETAIL_SCENERY), cap);
+        const im = new THREE.InstancedMesh(geo, ringMaterial(mat, 0, tree ? DETAIL_TREES : DETAIL_SCENERY), cap);
         im.count = 0;
         im.frustumCulled = false;
         im.castShadow = true; im.receiveShadow = true;
@@ -91,9 +94,9 @@ export class ModelScenery {
 
   sizeOf(name: string) { return this.variants.get(name)?.size; }
 
-  /** replace all instances with `picks` */
-  set(picks: CellPick[]) {
-    for (const v of this.variants.values()) v.n = 0;
+  /** replace all tree instances, or all building instances, with `picks` */
+  set(picks: CellPick[], trees: boolean) {
+    for (const v of this.variants.values()) if (v.tree === trees) v.n = 0;
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
     for (const c of picks) {
       const v = this.variants.get(c.variant);
@@ -102,7 +105,7 @@ export class ModelScenery {
       for (const im of v.meshes) im.setMatrixAt(v.n, m);
       v.n++;
     }
-    for (const v of this.variants.values()) for (const im of v.meshes) { im.count = v.n; im.instanceMatrix.needsUpdate = true; }
+    for (const v of this.variants.values()) if (v.tree === trees) for (const im of v.meshes) { im.count = v.n; im.instanceMatrix.needsUpdate = true; }
   }
 }
 

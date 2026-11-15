@@ -7,7 +7,7 @@
 // only its large buildings, out to the far scenery range. Facades get floors of windows in the shader.
 import * as THREE from 'three';
 import { gunzip } from '../world/demTheater.js';
-import { terrainHeight, runwaysOf, AIRBASES, currentTheater } from '../world/theater.js';
+import { terrainHeight, runwaysOf, fieldsNear, currentTheater } from '../world/theater.js';
 import { hash2, FAR_HOUSES } from './scenery.js';
 import { proceduralInner } from './modelScenery.js';
 
@@ -124,7 +124,7 @@ uniform float uRingIn;
 
 /** keep the airfields' own buildings: no real ones on the bases the game lays out itself */
 function onAirbase(x: number, z: number) {
-  for (const ab of AIRBASES) for (const rw of runwaysOf(ab)) if (Math.abs(x - rw.x) < rw.length / 2 + 700 && Math.abs(z - rw.z) < rw.length / 2 + 700) return true;
+  for (const ab of fieldsNear(x, z)) for (const rw of runwaysOf(ab)) if (Math.abs(x - rw.x) < rw.length / 2 + 700 && Math.abs(z - rw.z) < rw.length / 2 + 700) return true;
   return false;
 }
 

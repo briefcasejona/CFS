@@ -1,13 +1,15 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { terrainHeight, runwaysOf, AIRBASES, OBJECTIVES, THEATER_HALF, fbm, terrainPalette, currentTheater, type TerrainPalette } from '../world/theater.js';
-import { buildAirfield } from './airfield.js';
-import { coverAt, coverOf, detailNoise, DETAIL_N, PATCH, treeAt, builtAt, type CoverGrid } from '../world/landcover.js';
+import { terrainHeight, AIRBASES, OBJECTIVES, THEATER_HALF, fbm, terrainPalette, currentTheater, type TerrainPalette } from '../world/theater.js';
+import { buildAirfield, type Airfield } from './airfield.js';
+import { coverAt, coverOf, detailNoise, DETAIL_N, PATCH, builtAt, type CoverGrid } from '../world/landcover.js';
 import { FarScenery, hash2, NEAR_SCENERY, ringMaterial } from './scenery.js';
 import { Imagery, IMAGERY_GLSL, mercator } from './imagery.js';
-import { ModelScenery, DETAIL_SCENERY, proceduralInner, pick, type CellPick } from './modelScenery.js';
+import { ModelScenery, DETAIL_SCENERY, DETAIL_TREES, proceduralInner, pick, type CellPick } from './modelScenery.js';
 import { hdModelsEnabled } from './hdModels.js';
 import { realBuildings, type Building } from './buildings.js';
+import { Forest, nearRunway, treeInner } from './forest.js';
+import { Roads } from './roads.js';
 
 const CHUNK = 16000; // m
 const LODS = [
@@ -49,13 +51,7 @@ function terrainColor(h: number, slope: number, x: number, z: number, pal: Terra
 }
 
 // the detailed ring is built 1 km wider than it is drawn (it is rebuilt every km); FarScenery takes over beyond
-const TREE_CELL = 26, TREE_RADIUS = NEAR_SCENERY + 1000, TREE_MAX = 140000;
 const HOUSE_CELL = 42, HOUSE_RADIUS = NEAR_SCENERY + 1000, HOUSE_MAX = 30000;
-/** keep airfields clear of trees and houses */
-function nearRunway(x: number, z: number) {
-  for (const ab of AIRBASES) for (const rw of runwaysOf(ab)) if (Math.abs(x - rw.x) < rw.length / 2 + 1500 && Math.abs(z - rw.z) < rw.length / 2 + 1500) return true;
-  return false;
-}
 
 /** the shared tiling noise (landcover.ts) as a texture: patch shapes far out, soil and grass grain close in */
 function detailTexture() {
@@ -85,7 +81,7 @@ function addGroundShader(mat: THREE.MeshStandardMaterial, uniforms: Record<strin
     Object.assign(sh.uniforms, uniforms);
     sh.vertexShader = `attribute vec2 aCover;\nattribute vec2 aMerc;\nvarying vec2 vCover;\nvarying vec2 vMerc;\nvarying vec3 vWorldPos;\n` + sh.vertexShader.replace('#include <worldpos_vertex>',
       `#include <worldpos_vertex>\n vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\n vCover = aCover;\n vMerc = aMerc;`);
-    sh.fragmentShader = `uniform sampler2D uDetail;\nuniform sampler2D uCover;\nuniform vec3 uCoverGrid;\nvarying vec2 vCover;\nvarying vec3 vWorldPos;
+    sh.fragmentShader = `uniform sampler2D uDetail;\nuniform sampler2D uCover;\nuniform vec3 uCoverGrid;\nuniform float uStreets;\nvarying vec2 vCover;\nvarying vec3 vWorldPos;
 float patchN(vec2 p, float s, float o) {
   float a = texture2D(uDetail, p / s + o).r, b = texture2D(uDetail, p / (s * 0.37) + o * 1.7).r;
   return clamp((a * 0.65 + b * 0.35 - 0.5) * 1.36 + 0.5, 0.0, 1.0);
@@ -124,7 +120,7 @@ ${IMAGERY_GLSL}
         cropC = mix(cropC, vec3(0.42, 0.42, 0.24), smoothstep(9000.0, 30000.0, dist));
         // towns: roofs (grey, red tile) on blocks between streets
         vec2 bc = floor(p / 48.0), bp = fract(p / 48.0);
-        float street = step(0.8, max(bp.x, bp.y));
+        float street = step(0.8, max(bp.x, bp.y)) * uStreets;   // (a made-up street grid only where no real roads are drawn)
         float rh = hash(bc + 7.0);
         vec3 builtC = mix(mix(vec3(0.47, 0.45, 0.42), vec3(0.5, 0.43, 0.39), step(0.5, rh)) * (0.88 + 0.24 * hash(bc)), vec3(0.36, 0.36, 0.37), street);
         builtC = mix(builtC, vec3(0.46, 0.42, 0.39), smoothstep(3000.0, 14000.0, dist));
@@ -166,6 +162,7 @@ export class TerrainRenderer {
     uDetail: { value: detailTexture() },
     uCover: { value: null },
     uCoverGrid: { value: new THREE.Vector3() },  // half, res, n
+    uStreets: { value: 1 },
     ...this.imagery.uniforms,
   };
   private cover: CoverGrid | null = null;
@@ -174,7 +171,7 @@ export class TerrainRenderer {
     this.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.96, metalness: 0 });
     addGroundShader(this.material, this.uniforms);
     this.group.name = 'terrain';
-    this.group.add(this.far.group, this.models.group, realBuildings.group);
+    this.group.add(this.far.group, this.forest.group, this.roads.group, this.models.group, realBuildings.group);
     // once the real-building areas are known, the hash towns inside them go
     realBuildings.onIndex = () => { this.far.clear(); this.houseAt.set(Infinity, Infinity); this.modelAt.set(Infinity, Infinity); };
   }
@@ -195,7 +192,8 @@ export class TerrainRenderer {
   clear() {
     for (const e of this.chunks.values()) { this.group.remove(e.mesh); e.mesh.geometry.dispose(); }
     this.chunks.clear();
-    this.treeAt.set(Infinity, Infinity);
+    this.forest.clear();
+    this.roads.clear();
     this.houseAt.set(Infinity, Infinity);
     this.far.clear();
     this.modelAt.set(Infinity, Infinity);
@@ -281,6 +279,7 @@ export class TerrainRenderer {
     geo.setIndex(idx);
     geo.computeBoundingSphere();
     const mesh = new THREE.Mesh(geo, this.material);
+    mesh.renderOrder = -8;   // the ground first: the roads (roads.ts) are laid on it before anything else is drawn
     mesh.receiveShadow = true;
     mesh.position.set(x0, 0, z0);
     mesh.matrixAutoUpdate = false;
@@ -337,8 +336,9 @@ export class TerrainRenderer {
 
   /** Forest trees and town houses near the camera (instanced), placed on the patches the ground shader paints as
    *  forest and built-up land; each set is rebuilt when the camera has moved ~1 km. */
-  private trees: THREE.InstancedMesh[] = [];
-  private treeAt = new THREE.Vector2(Infinity, Infinity);
+  private forest = new Forest();
+  readonly roads = new Roads();
+  private modelTreesAt = new THREE.Vector3(Infinity, Infinity, -1);
   private houses: THREE.InstancedMesh | null = null;
   private houseAt = new THREE.Vector2(Infinity, Infinity);
   private pitchedHouse: THREE.BufferGeometry | null = null;
@@ -349,24 +349,7 @@ export class TerrainRenderer {
   updateTrees(camPos: THREE.Vector3) {
     const agl = camPos.y - Math.max(0, terrainHeight(camPos.x, camPos.z));
     const cover = this.syncCover();
-    if (!this.trees.length) {
-      // two merged low-poly trees, origin at the foot: a ~16 m conifer and a ~13 m broadleaf
-      const conifer = mergeGeometries([
-        new THREE.CylinderGeometry(0.5, 0.7, 3, 5).translate(0, 1.5, 0),
-        new THREE.ConeGeometry(4.2, 9, 6).translate(0, 7, 0),
-        new THREE.ConeGeometry(3.0, 7, 6).translate(0, 12, 0),
-      ]);
-      const broadleaf = mergeGeometries([
-        new THREE.CylinderGeometry(0.45, 0.65, 5, 5).translate(0, 2.5, 0).toNonIndexed(),
-        new THREE.IcosahedronGeometry(4.6, 0).scale(1, 0.85, 1).translate(0, 8.4, 0),
-      ]);
-      for (const geo of [conifer, broadleaf]) {
-        const m = new THREE.InstancedMesh(geo, ringMaterial(new THREE.MeshLambertMaterial({ color: 0xffffff }), proceduralInner, NEAR_SCENERY), TREE_MAX);
-        m.frustumCulled = false;
-        m.count = 0;
-        this.trees.push(m);
-        this.group.add(m);
-      }
+    if (!this.houses) {
       // a house: walls and a pitched roof, coloured per vertex (the instance colour tints both)
       const walls = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
       const roof = new THREE.CylinderGeometry(0.72, 0.72, 1.04, 3, 1).rotateZ(Math.PI / 2).scale(1, 0.55, 1).translate(0, 1.2, 0);
@@ -380,23 +363,21 @@ export class TerrainRenderer {
       // desert towns: flat roofs
       this.flatHouse = paint(walls.clone().toNonIndexed(), 0.82, 0.78, 0.72);
       this.pitchedHouse = house;
-      this.houses = new THREE.InstancedMesh(house, ringMaterial(new THREE.MeshLambertMaterial({ vertexColors: true }), proceduralInner, NEAR_SCENERY), HOUSE_MAX);
-      this.houses.frustumCulled = false;
-      this.houses.count = 0;
-      this.group.add(this.houses);
+      const houses = new THREE.InstancedMesh(house, ringMaterial(new THREE.MeshLambertMaterial({ vertexColors: true }), proceduralInner, NEAR_SCENERY), HOUSE_MAX);
+      houses.frustumCulled = false;
+      houses.count = 0;
+      this.group.add(houses);
+      this.houses = houses;
     }
     const pal = terrainPalette();
     if (currentTheater().id === 'europe') realBuildings.load();
     realBuildings.update(camPos, agl);
     this.far.update(camPos, cover, pal, agl);
-    // invisible (and not worth rebuilding) higher up, where the far tiles alone carry the scene
-    const treesOn = agl < 3500 && pal.trees;
-    for (const t of this.trees) t.visible = treesOn;
+    // invisible (and not worth building) higher up, where the far tiles alone carry the scene
+    this.forest.update(camPos, cover, pal, agl < 3500 && pal.trees);
+    this.roads.update(camPos, agl);
+    this.uniforms.uStreets.value = this.roads.group.visible ? 0 : 1;
     this.houses!.visible = agl < 5000;
-    if (treesOn && Math.hypot(camPos.x - this.treeAt.x, camPos.z - this.treeAt.y) > 1000) {
-      this.treeAt.set(camPos.x, camPos.z);
-      this.placeTrees(camPos, cover, pal);
-    }
     if (this.houses!.visible && Math.hypot(camPos.x - this.houseAt.x, camPos.z - this.houseAt.y) > 1000) {
       this.houseAt.set(camPos.x, camPos.z);
       this.placeHouses(camPos, cover, pal);
@@ -407,42 +388,16 @@ export class TerrainRenderer {
     const showModels = modelsOn && this.models.ready && agl < 3000;
     this.models.group.visible = showModels;
     proceduralInner.value = showModels ? DETAIL_SCENERY : 0;
+    treeInner.value = showModels ? DETAIL_TREES : 0;
     if (showModels && Math.hypot(camPos.x - this.modelAt.x, camPos.z - this.modelAt.y) > 1000) {
       this.modelAt.set(camPos.x, camPos.z);
-      this.placeModels(camPos, cover, pal);
+      this.placeModels(camPos, cover);
     }
-  }
-
-  private placeTrees(camPos: THREE.Vector3, cover: CoverGrid, pal: TerrainPalette) {
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
-    const col = new THREE.Color();
-    const ci = Math.floor(camPos.x / TREE_CELL), cj = Math.floor(camPos.z / TREE_CELL), r = Math.ceil(TREE_RADIUS / TREE_CELL);
-    const k = [0, 0];
-    for (let j = cj - r; j <= cj + r; j++) {
-      for (let i = ci - r; i <= ci + r; i++) {
-        const hsh = hash2(i, j);
-        const x = (i + hsh) * TREE_CELL, z = (j + hash2(j, i)) * TREE_CELL;
-        if ((x - camPos.x) ** 2 + (z - camPos.z) ** 2 > TREE_RADIUS * TREE_RADIUS) continue;
-        if (!treeAt(cover, x, z)) continue;
-        const h = terrainHeight(x, z);
-        if (h < 2 || h > pal.snowLine(x, z) - pal.rockBelowSnow - 150 || nearRunway(x, z)) continue;
-        // conifers take over with height; broadleaf woods in the lowlands
-        const kind = hash2(i + 3, j - 5) < 0.35 + h / 1200 ? 0 : 1;
-        if (k[kind] >= TREE_MAX) continue;
-        const sc = 0.7 + hsh * 0.7;
-        q.setFromAxisAngle(up, hsh * 6.283);
-        m.compose(p.set(x, h - 0.5, z), q, s.set(sc, sc * (0.85 + hash2(i + 7, j) * 0.4), sc));
-        this.trees[kind].setMatrixAt(k[kind], m);
-        const v = hash2(i - 11, j + 4);
-        this.trees[kind].setColorAt(k[kind], kind === 0 ? col.setRGB(0.15 + v * 0.05, 0.25 + v * 0.06, 0.13) : col.setRGB(0.2 + v * 0.1, 0.32 + v * 0.08, 0.13 + v * 0.04));
-        k[kind]++;
-      }
+    // the model trees follow the camera more closely (their ring is small), and fill in as forest tiles arrive
+    if (showModels && (Math.hypot(camPos.x - this.modelTreesAt.x, camPos.z - this.modelTreesAt.y) > 150 || this.modelTreesAt.z !== this.forest.version)) {
+      this.modelTreesAt.set(camPos.x, camPos.z, this.forest.version);
+      this.placeModelTrees(camPos);
     }
-    this.trees.forEach((t, n) => {
-      t.count = k[n];
-      t.instanceMatrix.needsUpdate = true;
-      if (t.instanceColor) t.instanceColor.needsUpdate = true;
-    });
   }
 
   private placeHouses(camPos: THREE.Vector3, cover: CoverGrid, pal: TerrainPalette) {
@@ -480,7 +435,7 @@ export class TerrainRenderer {
   }
 
   /** Model houses and trees on the same cells the procedural ones use (their hashes), within the detail ring. */
-  private placeModels(camPos: THREE.Vector3, cover: CoverGrid, pal: TerrainPalette) {
+  private placeModels(camPos: THREE.Vector3, cover: CoverGrid) {
     const M = this.models, F = M.fam, R = DETAIL_SCENERY + 1100, picks: CellPick[] = [];
     // east of the Oder (Poland, Kaliningrad, Belarus) and in the former GDR the tall blocks are often prefab panel blocks
     const ll = currentTheater().geo?.(camPos.x, camPos.z);
@@ -524,25 +479,19 @@ export class TerrainRenderer {
       // real house footprints: the model house of the nearest shape, fitted to the footprint
       for (const b of realBuildings.housesNear(camPos.x, camPos.z, R)) { const pk = this.fitHouse(b); if (pk) picks.push(pk); }
     }
-    // trees: conifers take over with height, broadleaf woods in the lowlands (as the procedural forest)
-    if (pal.trees && (F.conifer.length || F.broadleaf.length)) {
-      const ci = Math.floor(camPos.x / TREE_CELL), cj = Math.floor(camPos.z / TREE_CELL), r = Math.ceil(R / TREE_CELL);
-      for (let j = cj - r; j <= cj + r; j++) for (let i = ci - r; i <= ci + r; i++) {
-        const hsh = hash2(i, j);
-        const x = (i + hsh) * TREE_CELL, z = (j + hash2(j, i)) * TREE_CELL;
-        if ((x - camPos.x) ** 2 + (z - camPos.z) ** 2 > R * R) continue;
-        if (!treeAt(cover, x, z)) continue;
-        const h = terrainHeight(x, z);
-        if (h < 2 || h > pal.snowLine(x, z) - pal.rockBelowSnow - 150 || nearRunway(x, z)) continue;
-        const conifer = hash2(i + 3, j - 5) < 0.35 + h / 1200;
-        const list = conifer && F.conifer.length ? F.conifer : F.broadleaf.length ? F.broadleaf : F.conifer;
-        const name = pick(list, hash2(i + 7, j - 2));
-        // the pack's conifers are tall (25–33 m): scale them to a managed forest's 14–24 m
-        const sz = M.sizeOf(name)!, target = (conifer ? 15 : 13) * (0.75 + hsh * 0.6);
-        picks.push({ x, z, h: h - 0.5, rot: hsh * 6.283, scale: target / sz[1], variant: name });
-      }
-    }
-    M.set(picks);
+    M.set(picks, false);
+  }
+
+  /** Model trees on the forest's own trees (forest.ts), within the model-tree ring. */
+  private placeModelTrees(camPos: THREE.Vector3) {
+    const M = this.models, F = M.fam, picks: CellPick[] = [];
+    if (F.conifer.length || F.broadleaf.length) this.forest.eachNear(camPos.x, camPos.z, DETAIL_TREES + 200, (x, h, z, size, rot, conifer, v) => {
+      const list = conifer && F.conifer.length ? F.conifer : F.broadleaf.length ? F.broadleaf : F.conifer;
+      const name = pick(list, v);
+      // the pack's conifers are tall (25–33 m): scale them to a managed forest's 14–24 m
+      picks.push({ x, z, h: h - 0.5, rot, scale: (conifer ? 17 : 14.5) * size / M.sizeOf(name)![1], variant: name });
+    });
+    M.set(picks, true);
   }
 
   /** a small model house fitted to a real footprint: long side to long side, height from the data or kept in proportion */
@@ -568,6 +517,8 @@ export class TerrainRenderer {
     this.buildBudget = 1000;
     this.update(p, viewDist);
     this.buildBudget = old;
+    const pal = terrainPalette(), agl = p.y - Math.max(0, terrainHeight(p.x, p.z));
+    this.forest.update(p, this.syncCover(), pal, agl < 3500 && pal.trees, 400);
   }
 }
 
@@ -585,11 +536,28 @@ export function buildScenery(): THREE.Group {
   // below the terrain's own sea surface (-2 m): low coasts sit within a metre of sea level and would z-fight with it
   // at a distance (the flicker along the horizon); the plane only fills in beyond the built terrain
   sea.position.y = -8;
+  sea.renderOrder = -8;
   g.add(sea);
 
   const fields = AIRBASES.map((ab) => buildAirfield(ab));
   for (const fld of fields) g.add(fld.group);
   g.userData.airfields = fields;
+  // the map's other fields (hundreds on a real-world map) are built as the camera comes within sight of them
+  const others = new Map<string, Airfield>();
+  g.userData.updateFields = (cam: THREE.Vector3) => {
+    let budget = 1;
+    for (const ab of currentTheater().fields ?? []) {
+      const d = Math.hypot(ab.x - cam.x, ab.z - cam.z), have = others.get(ab.id);
+      if (!have && d < 70000 && budget > 0) {
+        budget--;
+        const f = buildAirfield(ab);
+        others.set(ab.id, f); g.add(f.group); fields.push(f);
+      } else if (have && d > 100000) {
+        others.delete(ab.id); g.remove(have.group); fields.splice(fields.indexOf(have), 1);
+        have.group.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) m.geometry.dispose(); });
+      }
+    }
+  };
   const cityMat = new THREE.MeshLambertMaterial({ color: 0x8a8378 });
   for (const o of OBJECTIVES) {
     if (o.kind !== 'city') continue;

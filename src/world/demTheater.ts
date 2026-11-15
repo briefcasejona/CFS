@@ -5,6 +5,7 @@ import { fbm } from './noise.js';
 import { Lcc } from './lcc.js';
 import type { Airbase, ObjectiveDef, Runway, Theater } from './theater.js';
 import { RUNWAYS } from './theaters/runways.js';
+import type { FieldRow } from './theaters/civil.js';
 import type { CoverPatch } from './landcover.js';
 
 export interface DemConfig {
@@ -94,6 +95,13 @@ export class DemGrid {
       return { id, name, side, ...main, elev: 0, ...(rest.length ? { extra: rest } : {}) };
     });
   }
+  /** the map's other fields (scripts/terrain/bake-airports.mjs): the longest runway is the main one */
+  fields(rows: FieldRow[]): Airbase[] {
+    return rows.map(([ident, name, kind, rws]) => {
+      const [main, ...rest] = rws.map(([a, b, c, d]) => this.runway(a, b, c, d));
+      return { id: ident.toLowerCase(), name, side: 'blue' as const, kind, ...main, elev: 0, ...(rest.length ? { extra: rest } : {}) };
+    });
+  }
   objectives(rows: ObjRow[]): ObjectiveDef[] {
     return rows.map(([id, name, kind, side, lat, lon, value, samType]) => {
       const p = this.lcc.forward(lat, lon);
@@ -105,7 +113,7 @@ export class DemGrid {
   setGrid(g: Int16Array, theater: Theater) {
     if (g.length !== this.n * this.n) throw new Error(`${this.cfg.asset} grid has ${g.length} samples, expected ${this.n * this.n}`);
     this.grid = g;
-    for (const ab of theater.airbases) ab.elev = Math.max(5, this.rawHeight(ab.x, ab.z));
+    for (const ab of [...theater.airbases, ...(theater.fields ?? [])]) ab.elev = Math.max(5, this.rawHeight(ab.x, ab.z));
   }
 
   /** install the airfield patches (index from patches.json, heights concatenated in that order) */
@@ -118,7 +126,7 @@ export class DemGrid {
     }
     if (off !== heights.length) throw new Error(`${this.cfg.asset} patches have ${heights.length} samples, expected ${off}`);
     this.patches = patches;
-    for (const ab of theater.airbases) ab.elev = Math.max(5, this.rawHeight(ab.x, ab.z));
+    for (const ab of [...theater.airbases, ...(theater.fields ?? [])]) ab.elev = Math.max(5, this.rawHeight(ab.x, ab.z));
   }
 
   /** install the landcover grid (RGBA fractions on the cfg.cover spacing) */

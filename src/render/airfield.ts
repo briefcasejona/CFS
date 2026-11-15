@@ -171,6 +171,11 @@ export function buildAirfield(ab: Airbase): Airfield {
   const ap = atS(0, APRON_OFF - 15, y0 + 0.1);
   g.add(flat(250, apronL, decal(T.apron, 2, [250 / 80, apronL / 80]), ap.x, ap.y, ap.z, hr));
 
+  if (ab.kind && ab.kind !== 'military') {
+    addCivil(g, ab, atS, hr, y0, S);
+    return { group: g, ...addPapi(g, ab, y0) };
+  }
+
   // buildings: hangars where the gameplay hangars are, shelters, tower, fuel farm
   const wall = new THREE.MeshLambertMaterial({ color: ab.side === 'blue' ? 0x7d8278 : 0x7a7466 });
   const roof = new THREE.MeshLambertMaterial({ color: 0x5c605f });
@@ -204,6 +209,84 @@ export function buildAirfield(ab: Airbase): Airfield {
   g.add(tank);
 
   return { group: g, ...addPapi(g, ab, y0) };
+}
+
+/** A civilian field beside the generic taxiway and apron: a terminal (with piers and a car park at an airport),
+ *  hangars, a control tower and a fuel farm, sized by the kind of field. */
+function addCivil(g: THREE.Group, ab: Airbase, atS: (along: number, across: number, y?: number) => THREE.Vector3, hr: number, y0: number, S: number) {
+  const len = ab.length, hub = ab.kind === 'hub', regional = ab.kind === 'regional';
+  const glass = new THREE.MeshStandardMaterial({ color: 0x5d7890, roughness: 0.25, metalness: 0.6 });
+  const wall = new THREE.MeshLambertMaterial({ color: 0xd4d2ca });
+  const roof = new THREE.MeshLambertMaterial({ color: 0x6a6e70 });
+  const metal = new THREE.MeshLambertMaterial({ color: 0xa9adb0 });
+  const tarmac = new THREE.MeshLambertMaterial({ color: 0x3c3d40 });
+  const box = (w: number, h: number, d: number, mat: THREE.Material, along: number, across: number, rot = 0) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.copy(atS(along, across, y0 + h / 2)); m.rotation.y = -hr + rot;
+    m.castShadow = true; m.receiveShadow = true;
+    g.add(m);
+    return m;
+  };
+  // (box: w runs across the runway axis, d along it)
+  const apronL = len * 0.45;
+  // terminal along the far edge of the apron: a glazed hall under an overhanging roof
+  const tl = hub ? Math.min(520, apronL * 0.55) : regional ? 150 : 46, td = hub ? 70 : regional ? 38 : 16, th = hub ? 21 : regional ? 11 : 6;
+  const tAcross = APRON_OFF + 110 + td / 2;
+  box(td, th, tl, glass, 0, tAcross);
+  box(td + 8, 1.2, tl + 10, roof, 0, tAcross).position.y = y0 + th + 0.6;
+  box(td * 0.5, th * 0.45, tl * 0.96, wall, 0, tAcross + td * 0.3).position.y = y0 + th * 0.225;
+  if (hub) {
+    // piers reaching onto the apron, with a gate lounge at each tip
+    const n = Math.max(2, Math.round(tl / 170));
+    for (let k = 0; k < n; k++) {
+      const a = (k - (n - 1) / 2) * (tl / n);
+      box(150, 9, 22, glass, a, tAcross - td / 2 - 75);
+      box(152, 0.8, 26, roof, a, tAcross - td / 2 - 75).position.y = y0 + 9.4;
+      box(34, 11, 46, glass, a, tAcross - td / 2 - 150);
+      box(38, 0.8, 50, roof, a, tAcross - td / 2 - 150).position.y = y0 + 11.4;
+    }
+    // multi-storey car parks and the forecourt road behind the terminal
+    for (const a of [-tl * 0.28, tl * 0.28]) {
+      box(95, 15, tl * 0.38, wall, a, tAcross + td / 2 + 95);
+      for (let f = 1; f < 5; f++) box(96, 0.5, tl * 0.38 + 1, roof, a, tAcross + td / 2 + 95).position.y = y0 + f * 3;
+    }
+    box(16, 0.3, tl + 260, tarmac, 0, tAcross + td / 2 + 24).position.y = y0 + 0.15;
+    // maintenance hangars and cargo sheds further along the apron
+    for (const [a, w, d, h] of [[apronL * 0.42, 90, 110, 26], [apronL * 0.42 + 135, 90, 110, 26], [-apronL * 0.44, 60, 140, 12], [-apronL * 0.44 - 170, 60, 140, 12]] as const) {
+      box(w, h, d, metal, a, APRON_OFF + 110 + w / 2);
+      box(w + 2, 1, d + 2, roof, a, APRON_OFF + 110 + w / 2).position.y = y0 + h + 0.5;
+    }
+  } else {
+    const hn = regional ? 3 : 4, hw = regional ? 46 : 26, hh = regional ? 13 : 8;
+    for (let k = 0; k < hn; k++) {
+      const a = tl / 2 + 60 + k * (hw + 22);
+      box(hw * 0.9, hh, hw, metal, a, APRON_OFF + 110 + hw * 0.45);
+      box(hw * 0.9 + 1.5, 0.8, hw + 1.5, roof, a, APRON_OFF + 110 + hw * 0.45).position.y = y0 + hh + 0.4;
+    }
+    box(60, 0.3, tl + 40, tarmac, 0, tAcross + td / 2 + 40).position.y = y0 + 0.15;   // car park
+  }
+  // control tower: a slender shaft, a flared cab with dark glazing, a roof and a mast
+  const towerH = hub ? 62 : regional ? 30 : 16, tp = atS(-tl / 2 - (hub ? 120 : 45), APRON_OFF + 120 + (hub ? 30 : 10));
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(hub ? 4.2 : 3, hub ? 5.5 : 3.6, towerH, 12), wall);
+  shaft.position.copy(tp).setY(y0 + towerH / 2); shaft.castShadow = true; g.add(shaft);
+  const cab = new THREE.Mesh(new THREE.CylinderGeometry(hub ? 9 : 6, hub ? 6.5 : 4.6, hub ? 7 : 4.6, 12), new THREE.MeshStandardMaterial({ color: 0x1c2b3c, roughness: 0.15, metalness: 0.7 }));
+  cab.position.copy(tp).setY(y0 + towerH + (hub ? 3.5 : 2.3)); g.add(cab);
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(hub ? 9.8 : 6.6, hub ? 9.8 : 6.6, 0.9, 12), roof);
+  cap.position.copy(tp).setY(y0 + towerH + (hub ? 7.5 : 5)); g.add(cap);
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 9, 5), metal);
+  mast.position.copy(tp).setY(y0 + towerH + (hub ? 12.5 : 10)); g.add(mast);
+  // a wider apron in front of an airport terminal
+  if (hub) {
+    const T = textures(), ap = atS(0, APRON_OFF + 150, y0 + 0.09);
+    g.add(flat(260, Math.max(apronL, tl + 420), decal(T.apron, 2, [260 / 80, Math.max(apronL, tl + 420) / 80]), ap.x, ap.y, ap.z, hr));
+  }
+  // fuel farm
+  const tank = new THREE.InstancedMesh(new THREE.CylinderGeometry(hub ? 13 : 7, hub ? 13 : 7, hub ? 14 : 8, 18), new THREE.MeshLambertMaterial({ color: 0xe2e0d8 }), hub ? 6 : 2);
+  const mtx = new THREE.Matrix4();
+  for (let k = 0; k < tank.count; k++) { const p = atS(-len * 0.4 - (k % 3) * (hub ? 34 : 20), APRON_OFF + 160 + Math.floor(k / 3) * 34, y0 + (hub ? 7 : 4)); mtx.makeTranslation(p.x, p.y, p.z); tank.setMatrixAt(k, mtx); }
+  tank.castShadow = true;
+  g.add(tank);
+  void S;
 }
 
 /** PAPI: 4 boxes left of the runway, 300 m in from the start threshold (landing towards the "end") */

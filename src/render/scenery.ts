@@ -12,7 +12,7 @@ import { realBuildings } from './buildings.js';
 export const NEAR_SCENERY = 5000;
 /** how far towns (and, to FAR_TREES, forests) are drawn */
 export const FAR_HOUSES = 32000, FAR_TREES = 16000;
-const TILE = 4000, HOUSE_CELL = 105, TREE_CELL = 50;
+const TILE = 4000, HOUSE_CELL = 105, TREE_CELL = 22;
 
 /** live camera position and ring radii, shared by every scenery material */
 export const sceneryUniforms = {
@@ -164,10 +164,10 @@ export class FarScenery {
         if (!treeAt(cover, x, z)) continue;
         const h = terrainHeight(x, z);
         if (h < 2 || h > pal.snowLine(x, z) - pal.rockBelowSnow - 150) continue;
-        const r = 9 + hsh * 7, ht = 15 + hash2(ci, cj + 1) * 9;
+        const r = 8 + hsh * 6, ht = 14 + hash2(ci, cj + 1) * 9;
         mats.push(m.compose(p.set(x, h - 1, z), q.identity(), s.set(r, ht, r)).clone());
         const v = hash2(ci - 11, cj + 4);
-        cols.push(col.setRGB(0.14 + v * 0.06, 0.23 + v * 0.07, 0.12 + v * 0.03).clone());
+        cols.push(col.setRGB(0.06 + v * 0.04, 0.12 + v * 0.045, 0.045 + v * 0.015).clone());
       }
       if (mats.length) meshes.push(this.instanced(this.clumpGeo, this.clumpMat, mats, cols, 'clump'));
     }
