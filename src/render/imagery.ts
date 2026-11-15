@@ -142,6 +142,7 @@ export class Imagery {
   private regions: Regions | null = null;
   private regionsFor = '';
   private aerialErrors = new Map<string, number>();
+  private aerialOk = new Map<string, number>();
   readonly uniforms: Record<string, THREE.IUniform> = { uImgOn: { value: 0 } };
   private inflight = 0;
   private ok = 0;
@@ -187,6 +188,13 @@ export class Imagery {
     }
   }
 
+  /** tiles loaded and failed so far, per service (for the benchmark page and debugging) */
+  stats() {
+    const out: Record<string, { ok: number; failed: number }> = { sentinel2: { ok: this.ok, failed: this.errors } };
+    for (const p of Object.keys(AERIAL)) out[p] = { ok: this.aerialOk.get(p) ?? 0, failed: this.aerialErrors.get(p) ?? 0 };
+    return out;
+  }
+
   private load({ lv, x, y }: { lv: Level; x: number; y: number }) {
     const key = lv.claim(x, y);
     const [, tx, ty] = key.split('/').map(Number);
@@ -201,7 +209,7 @@ export class Imagery {
       img.crossOrigin = 'anonymous';
       img.referrerPolicy = 'no-referrer';
       img.decoding = 'async';
-      img.onload = () => { this.inflight--; lv.put(x, y, key, img); };
+      img.onload = () => { this.inflight--; this.aerialOk.set(p, (this.aerialOk.get(p) ?? 0) + 1); lv.put(x, y, key, img); };
       img.onerror = () => {
         this.inflight--;
         lv.fail(x, y, key);
