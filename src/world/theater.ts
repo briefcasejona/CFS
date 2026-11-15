@@ -135,6 +135,8 @@ export interface TerrainPalette {
   style: 'temperate' | 'desert';
   /** instanced forest trees near the camera */
   trees: boolean;
+  /** where a temperate map turns to desert: 0 (green) … 1 (sand and gravel) at a point */
+  arid?: (x: number, z: number) => number;
 }
 const DEFAULT_PALETTE: TerrainPalette = { beach: 8, snowLine: () => 1900, rockBelowSnow: 200, style: 'temperate', trees: true };
 export function terrainPalette(): TerrainPalette { return { ...DEFAULT_PALETTE, ...current.palette }; }

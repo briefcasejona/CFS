@@ -72,6 +72,16 @@ export const USWEST: Theater = {
     beach: 0,
     snowLine: (_x, z) => 3600 - Math.max(0, (40.8 - z / 111000) - 36) * 95,
     rockBelowSnow: 900,
+    // the rain shadow: the Great Basin, the Mojave and the Columbia and Snake plains east of the Sierra and the Cascades
+    arid: (x, z) => {
+      const { lat, lon } = uswestLcc.inverse(x, z);
+      // (the line where the mountains' wet side ends: Peninsular and Transverse Ranges, Tehachapi, Sierra, Cascades)
+      const crest = lat < 33.8 ? -116.5 : lat < 34.3 ? -116.8 : lat < 35.3 ? -118.7 : lat < 36 ? -118.4
+        : lat < 40 ? -118.4 - (lat - 36) / 4 * 2.2 : lat < 44 ? -120.6 - (lat - 40) / 4 * 0.8 : -121.4 + Math.min(1, (lat - 44) / 3) * 0.6;
+      // the Rockies' foothills in Idaho and the Wasatch are greener again
+      const east = lon > -114.5 && lat > 43.5 ? 0.4 : 1;
+      return Math.max(0, Math.min(1, (lon - crest) / 0.6)) * east;
+    },
   },
   // Instant Action engagement area: over the Nevada Test and Training Range, the aggressors to the east
   iaAnchor: { ...uswestLcc.forward(37.4, -117.2), enemyHdg: 80, blueBase: 'edwards', redBase: 'nellis' },

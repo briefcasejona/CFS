@@ -63,9 +63,12 @@ export class DemStream {
     this.tiles.clear(); this.tileUsed.clear(); this.pending.clear();
   }
 
+  /** streaming here at all: switched on, in a browser, and the tile service reachable */
+  get active() { return enabled && DemStream.supported() && !(this.errors > 12 && this.ok === 0); }
+
   /** Follow the camera: request the tiles of the wanted cells, build at most one cell, drop the far ones. */
   update(x: number, z: number, vx = 0, vz = 0) {
-    if (!enabled || !DemStream.supported() || (this.errors > 12 && this.ok === 0)) return;
+    if (!this.active) return;
     this.frame++;
     // where the camera will be in 20 s, so a fast jet finds the ground ahead already loaded
     const px = x + vx * 20, pz = z + vz * 20;

@@ -38,15 +38,18 @@ const SNOW = new THREE.Color(0.9, 0.92, 0.95);
 /** Ground colour from height and slope, and how much the landcover (forest, fields, towns, water — painted per pixel
  *  in the shader) shows over it: none on sea, beaches, rock and snow. Only gentle, low-frequency variation lives here,
  *  so a chunk looks the same at every level of detail; the fine patterns come from textures in the shader. */
-function terrainColor(h: number, slope: number, x: number, z: number, pal: TerrainPalette, out: THREE.Color, nIn?: number): number {
+const MEADOW = new THREE.Color();
+function terrainColor(h: number, slope: number, x: number, z: number, pal: TerrainPalette, out: THREE.Color, nIn?: number, aridIn?: number): number {
   const n = nIn ?? fbm(x * 0.0007, z * 0.0007, 3) * 0.5 + 0.5;
   if (h <= 0.5) { out.setRGB(0.12, 0.2, 0.28); return 0; }
   if (h < pal.beach) { out.setRGB(0.55, 0.52, 0.42); return 0; }
   const snowLine = pal.snowLine(x, z);
-  if (pal.style === 'desert' && slope <= 0.55 && h <= snowLine - pal.rockBelowSnow) {
-    // sand, gravel plains and darker stony patches
+  const arid = pal.style === 'desert' ? 1 : aridIn ?? pal.arid?.(x, z) ?? 0;
+  if (arid > 0 && slope <= 0.55 && h <= snowLine - pal.rockBelowSnow) {
+    // sand, gravel plains and darker stony patches (sagebrush steppe and scrub where only partly arid)
     const stony = n > 0.6 ? 0.82 : 1;
     out.setRGB((0.70 + n * 0.04 + h * 0.00003) * stony, (0.60 + n * 0.03) * stony, (0.43 + n * 0.03) * stony);
+    if (arid < 1) out.lerp(MEADOW.setRGB(0.31 + n * 0.05 + h * 0.00004, 0.37 + n * 0.04, 0.2 + h * 0.00003), 1 - arid);
     return 1;
   }
   if (slope > 0.55 || h > snowLine - pal.rockBelowSnow) {
@@ -172,6 +175,7 @@ export class TerrainRenderer {
   private frame = 0;
   private buildBudget = 3;
   private streamVersion = 0;
+  private fineLods = false;
   private lastCam = new THREE.Vector3(Infinity, 0, 0);
   private lastCamT = 0;
   private camVel = new THREE.Vector3();
@@ -232,11 +236,13 @@ export class TerrainRenderer {
     // features) — on a coarse lattice every G vertices, interpolated in between (exact at the lattice points; the
     // projection bends far less than a metre over a lattice step)
     const G = res >= 64 ? 16 : res >= 16 ? 4 : 1, gn = Math.ceil(res / G) + 1;
-    const gm = new Float64Array(gn * gn * 2), gc = new Float32Array(gn * gn);
+    const gm = new Float64Array(gn * gn * 2), gc = new Float32Array(gn * gn), ga = new Float32Array(gn * gn);
+    const aridOf = terrainPalette().arid;
     for (let b = 0; b < gn; b++) for (let a = 0; a < gn; a++) {
       const gx = x0 + Math.min(res, a * G) * step, gz = z0 + Math.min(res, b * G) * step;
       if (geoOf) { const ll = geoOf(gx, gz); mercator(ll.lat, ll.lon, mp); gm[(b * gn + a) * 2] = mp.x; gm[(b * gn + a) * 2 + 1] = mp.y; }
       gc[b * gn + a] = fbm(gx * 0.0007, gz * 0.0007, 3) * 0.5 + 0.5;
+      ga[b * gn + a] = aridOf ? aridOf(gx, gz) : 0;
     }
     const lerpG = (arr: Float64Array | Float32Array, i: number, j: number, stride: number, o: number) => {
       const a = Math.min(gn - 2, Math.floor(i / G)), b = Math.min(gn - 2, Math.floor(j / G));
@@ -265,7 +271,7 @@ export class TerrainRenderer {
         pos[v * 3] = i * step; pos[v * 3 + 1] = Math.max(h, -2); pos[v * 3 + 2] = j * step;
         const nl = Math.hypot(hx, 2 * step, hz);
         nrm[v * 3] = -hx / nl; nrm[v * 3 + 1] = 2 * step / nl; nrm[v * 3 + 2] = -hz / nl;
-        cov[v * 2] = terrainColor(h, slope, x0 + i * step, z0 + j * step, pal, c, lerpG(gc, i, j, 1, 0));
+        cov[v * 2] = terrainColor(h, slope, x0 + i * step, z0 + j * step, pal, c, lerpG(gc, i, j, 1, 0), lerpG(ga, i, j, 1, 0));
         // steeper ground a little darker: cheap ambient occlusion that gives the relief depth
         cov[v * 2 + 1] = h > 0.5 ? 1 - 0.22 * Math.min(1, slope * 1.6) : 1;
         col[v * 3] = c.r; col[v * 3 + 1] = c.g; col[v * 3 + 2] = c.b;
@@ -327,8 +333,11 @@ export class TerrainRenderer {
     this.syncCover();
     const th = currentTheater();
     this.imagery.update(camPos, th.geo ?? null, th.id);
-    const LODS = th.stream ? FINE_LODS : COARSE_LODS;
     if (th.stream) this.followStream(th.stream, camPos);
+    // the fine levels only where fine elevation can come (the 1 km grid gains nothing from a 50 m mesh)
+    const fine = !!th.stream && (th.stream.active || th.stream.loaded > 0);
+    if (fine !== this.fineLods) { this.fineLods = fine; for (const e of this.chunks.values()) e.stale = true; }
+    const LODS = fine ? FINE_LODS : COARSE_LODS;
     const nC = Math.ceil((2 * THEATER_HALF) / CHUNK);
     const want = new Map<string, number>();
     const maxDist = Math.min(viewDist, LODS[LODS.length - 1].dist);
