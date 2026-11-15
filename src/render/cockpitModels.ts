@@ -5,9 +5,8 @@
 // THE SLOT FOR THE NEW F-16 COCKPIT
 // Drop the file at the `url` below (glTF binary). Until it is there the game falls back to the exterior model's own
 // cockpit, so nothing breaks. Once it loads:
-//  * `axes`, `scale` and `offset` put it in the game's body frame (metres, x right, y up, z aft, origin at the jet's
-//    centre). Tune `offset` so the canopy sill lines up with the exterior canopy.
-//  * `eye` is the design eye point the camera sits at.
+//  * `axes` and `scale` bring it to game axes (x right, y up, z aft) and metres.
+//  * `eye` is the design eye point in the model: the model is moved so it sits at the exterior's eye point.
 //  * `mfds` are the two MFD glass faces (centre, size, outward normal) that the live displays are drawn on, and that
 //    the clickable OSBs are laid around. Measure them on the model (the same way as the exterior specs in
 //    hdModels.ts).
@@ -22,13 +21,12 @@ export interface CockpitModelSpec {
   title: string; author: string; source: string; license: string;
   /** source axes: 'xfwd' = nose +X, right +Z; 'zfwd' = nose +Z, left +X; 'game' = already nose −Z, right +X */
   axes: 'xfwd' | 'zfwd' | 'game';
-  /** source units → metres */
+  /** source units → game metres (also brings the model to the size of the flight model's airframe) */
   scale: number;
-  /** where the model's origin sits in the game body frame (metres) */
-  offset: [number, number, number];
-  /** pilot design eye point in the game body frame (metres); left out, the exterior model's eye point is used */
-  eye?: [number, number, number];
-  /** live MFD faces in the game body frame (metres): centre, size, outward normal, which display (0 left, 1 right) */
+  /** the pilot's design eye point in the model's own frame (game axes and metres, after `axes` and `scale`). The model
+   *  is placed so that this point sits at the exterior model's eye point, which lines it up with the canopy. */
+  eye: [number, number, number];
+  /** live MFD faces in the model's own frame (as `eye`): centre, size, outward normal, which display (0 left, 1 right) */
   mfds?: Array<{ c: [number, number, number]; w: number; h: number; n: [number, number, number]; screen: 0 | 1 }>;
   /** HUD combiner glass node(s): drawn as faint see-through glass (the symbology itself is the HUD overlay) */
   hudGlass?: RegExp;
@@ -38,13 +36,26 @@ export interface CockpitModelSpec {
   switches?: Record<string, string>;
 }
 
+/** the F-16 cockpit's source airframe is 14.0 m long, the flight model's 15.06 m */
+const K16 = 15.06 / 14.0;
+/** a point measured in the source model's metres, in the scaled model's frame */
+const k3 = (x: number, y: number, z: number): [number, number, number] => [x * K16, y * K16, z * K16];
+
 /** Keyed by aircraft family. Only flyable aircraft need one. */
 export const COCKPIT_MODELS: Record<string, CockpitModelSpec> = {
   'F-16': {
+    // the cockpit Jonathan cut from "F-16 pretty cool?" (an F-16D Block 60), converted from FBX (centimetres) with the
+    // textures of the same model; game axes, metres. Scaled from the source airframe (14.0 m) to the F-16's 15.06 m.
     url: 'assets/models/cockpits/f16/cockpit.glb',
-    title: 'F-16C cockpit', author: '', source: '', license: '',
-    // placeholders until the model arrives: an export in metres, nose −Z, origin at the jet's centre
-    axes: 'game', scale: 1, offset: [0, 0, 0],
+    title: 'F-16 pretty cool? (cockpit)', author: 'NORMAL (i_am_dead.)',
+    source: 'https://sketchfab.com/3d-models/f-16-pretty-cool-47d5f8e8eab04274928ec3c2b92845a1', license: 'CC BY 4.0',
+    axes: 'game', scale: K16,
+    eye: k3(0, 2.55, -3.5),
+    // the two MFDs either side of the HSI, measured by raycasting the model from the eye point
+    mfds: [
+      { c: k3(-0.0692, 2.183, -4.1882), w: 0.04 * K16, h: 0.062 * K16, n: [0, 0.574, 0.819], screen: 0 },
+      { c: k3(0.0698, 2.183, -4.1882), w: 0.04 * K16, h: 0.062 * K16, n: [0, 0.574, 0.819], screen: 1 },
+    ],
   },
 };
 
@@ -78,7 +89,7 @@ function place(scene: THREE.Object3D, spec: CockpitModelSpec): THREE.Group {
   root.name = 'cockpit-model';
   const holder = new THREE.Group();
   holder.matrixAutoUpdate = false;
-  holder.matrix.copy(new THREE.Matrix4().makeTranslation(...spec.offset).multiply(SRC_TO_GAME[spec.axes]).multiply(new THREE.Matrix4().makeScale(spec.scale, spec.scale, spec.scale)));
+  holder.matrix.copy(SRC_TO_GAME[spec.axes].clone().multiply(new THREE.Matrix4().makeScale(spec.scale, spec.scale, spec.scale)));
   holder.add(scene);
   root.add(holder);
   scene.traverse((o) => {

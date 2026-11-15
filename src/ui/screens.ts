@@ -12,6 +12,7 @@ import { multiplayerScreen } from './multiplayer.js';
 import { editorScreen } from './editor.js';
 import { hdCredits, setHdModelsEnabled } from '../render/hdModels.js';
 import { hdStoreCredits } from '../render/hdStores.js';
+import { cockpitCredits } from '../render/cockpitModels.js';
 import { MENU_THEMES } from './menuBackground.js';
 import { setImageryEnabled, AERIAL } from '../render/imagery.js';
 import { setDemStreamEnabled } from '../world/demStream.js';
@@ -393,7 +394,7 @@ export function settingsScreen(app: AppApi): HTMLElement {
           <label>Graphics quality <select data-q="graphicsQuality">${[['auto', 'Auto (holds 60 fps)'], ...LEVEL_NAMES.map((n, i) => [String(i), n])].map(([v, n]) => `<option value="${v}"${String(s.graphicsQuality) === v ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
           <p class="muted small">Auto lowers tree range, shadows and render resolution when the frame rate drops below 60 and raises them again when there is room.</p>
           ${chk('hdModels', 'HD aircraft models', 'detailed 3D models where available (F-14, F-16, F/A-18F, F-4, Gripen) and real buildings and trees on the Western Europe map; loaded on demand, ~4–7 MB each')}
-          <div class="muted small credits">3D models: ${[...hdCredits(), ...hdStoreCredits()].map((c) => `"${esc(c.title)}" by ${esc(c.author)} (<a href="${c.source}" target="_blank" rel="noopener">Sketchfab</a>), ${c.license}, textures re-encoded`).join(' · ')}</div>
+          <div class="muted small credits">3D models: ${[...hdCredits(), ...hdStoreCredits(), ...cockpitCredits()].map((c) => `"${esc(c.title)}" by ${esc(c.author)} (<a href="${c.source}" target="_blank" rel="noopener">Sketchfab</a>), ${c.license}, textures re-encoded`).join(' · ')}</div>
           <div class="muted small credits">Europe buildings and trees: ${SCENERY_CREDITS.map((c) => `"${esc(c.title)}" by ${esc(c.author)} (<a href="${c.source}" target="_blank" rel="noopener">Sketchfab</a>)`).join(' · ')}, CC BY 4.0; split into separate objects, merged and textures re-encoded.</div>
           ${chk('satImagery', 'Satellite imagery', 'real imagery on the real-world maps, streamed while you fly: Sentinel-2 everywhere (tiles.maps.eox.at), and close to the ground open aerial photographs in the US, France, the Netherlands, Switzerland and Austria (your browser contacts the national map services listed below); off = painted ground, nothing downloaded')}
           ${chk('fineTerrain', 'Detailed terrain', 'real elevation at about 25 m around your aircraft on the real-world maps, streamed while you fly (your browser contacts s3.amazonaws.com); off = the built-in 1 km terrain, with 75 m detail around the airbases')}

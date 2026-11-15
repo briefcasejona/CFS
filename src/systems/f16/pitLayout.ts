@@ -29,8 +29,11 @@ export const F16_PIT: PitLayout = {
       ],
     },
     {
-      id: 'rightConsole', c: [0.4, -0.755, -0.24], n: UP, up: FWD, w: 0.28, h: 0.32, fit: 0.3,
+      id: 'rightConsole', c: [0.4, -0.755, -0.29], n: UP, up: FWD, w: 0.28, h: 0.42, fit: 0.3,
       rows: [
+        ['t:HUD'],
+        ['c:hudScales', 'c:hudFpm', 'c:hudDed', 'c:hudRet'],
+        ['c:hudVel', 'c:hudAlt', 'c:hudBrt', ''],
         ['t:SNSR PWR'],
         ['c:fcr', 'c:rwr', 'c:rdrAlt', ''],
         ['t:AVIONICS POWER'],
@@ -87,12 +90,13 @@ export const F16_PIT: PitLayout = {
       rows: [['d:ded']],
     },
     {
-      id: 'icp', c: [0, -0.259, -0.677], n: [0, 0.35, 0.937], up: [0, 0.937, -0.35], w: 0.15, h: 0.088, fit: 0.12,
+      id: 'icp', c: [0, -0.272, -0.672], n: [0, 0.35, 0.937], up: [0, 0.937, -0.35], w: 0.15, h: 0.12, fit: 0.12,
       rows: [
         ['c:icpCOM1', 'c:icpCOM2', 'c:icpIFF', 'c:icpLIST', 'c:icpAA', 'c:icpAG', 'c:icpWARN'],
         ['c:icpINC', 'c:icp1', 'c:icp2', 'c:icp3', 'c:icpRCL', 'c:icpUP'],
         ['c:icpDEC', 'c:icp4', 'c:icp5', 'c:icp6', 'c:icpENTR', 'c:icpDOWN'],
         ['c:icp7', 'c:icp8', 'c:icp9', 'c:icp0', 'c:icpRTN', 'c:icpSEQ'],
+        ['c:driftCo*2', 'c:retDepr*2', '', ''],
       ],
     },
   ],

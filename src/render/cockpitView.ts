@@ -60,7 +60,6 @@ export class CockpitView {
 
   /** The eye point in the body frame, for the cockpit in use. */
   eye(m: AircraftModel | undefined, ac: Aircraft): THREE.Vector3 {
-    if (this.model && this.modelSpec?.eye) return new THREE.Vector3(...this.modelSpec.eye);
     if (m?.hd && m.hd.root.visible && m.hd.cockpit.length) return m.hd.eye.clone();
     const L = ac.def.length;
     const R = Math.max(0.55, L * 0.042) * (ac.def.model.engines === 2 ? 1.15 : 1);
@@ -97,10 +96,12 @@ export class CockpitView {
     this.dropDrawn(m);
     this.source = src;
     if (src === 'model') {
+      // the model's design eye goes where the exterior's eye is, so it lines up with the canopy
+      this.model!.position.copy(this.eye(m, ac)).sub(new THREE.Vector3(...this.modelSpec!.eye));
       m.body.add(this.model!);
       // the exterior's own cockpit (and its HUD glass) would show through the new one
       if (m.hd) for (const c of m.hd.cockpit) { if (c.visible) { c.visible = false; this.hdHidden.push(c); } }
-      this.addScreens(m.body, this.modelSpec!.mfds);
+      this.addScreens(m.body, this.modelFaces());
     } else if (src === 'hd') {
       this.addScreens(m.body, hdSpecFor(ac.def)?.mfds);
     } else {
@@ -108,6 +109,12 @@ export class CockpitView {
       this.proc.group.visible = true;
       m.body.add(this.proc.group);
     }
+  }
+
+  /** the cockpit model's MFD faces in the body frame */
+  private modelFaces(): Screen[] | undefined {
+    const o = this.model?.position;
+    return o && this.modelSpec?.mfds?.map((d) => ({ ...d, c: [d.c[0] + o.x, d.c[1] + o.y, d.c[2] + o.z] as [number, number, number] }));
   }
 
   /** Live MFD pages laid over a cockpit's painted screens. */
@@ -141,7 +148,7 @@ export class CockpitView {
       m.body.updateWorldMatrix(true, true);
       const meshes = this.source === 'model' ? [this.model!] : this.source === 'hd' ? m.hd!.cockpit : this.proc ? [this.proc.group] : [];
       pit.fit(meshes, key);
-      const faces = this.source === 'model' ? this.modelSpec?.mfds : this.source === 'hd' ? hdSpecFor(ac.def)?.mfds : undefined;
+      const faces = this.source === 'model' ? this.modelFaces() : this.source === 'hd' ? hdSpecFor(ac.def)?.mfds : undefined;
       if (faces?.length) for (const d of faces) {
         const n = new THREE.Vector3(...d.n).normalize();
         pit.placeMfd(d.screen, new THREE.Vector3(...d.c).sub(eye).addScaledVector(n, 0.002), n, d.w, d.h);
