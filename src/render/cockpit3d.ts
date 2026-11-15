@@ -253,7 +253,8 @@ export class Cockpit3D {
   private buildLight(g: THREE.Group, it: Extract<PitItem, { kind: 'light' }>, local: (x: number, y: number, z?: number) => THREE.Vector3) {
     const d = it.def;
     const [on, off] = LIGHT[d.kind === 'indicator' ? d.color ?? 'green' : d.kind];
-    const w = it.w * 0.9, h = it.h * 0.82;
+    // a caption light keeps its real size when it shares a row with switches
+    const h = Math.min(it.h * 0.82, 0.0125), w = Math.min(it.w * 0.9, 0.034);
     const lines = wrap(d.label, 8);
     const tw = Math.round(w * PPM * 1.5), th = Math.round(h * PPM * 1.5);
     const lit = textTexture(lines, tw, th, '#fff8e8', on, true), dark = textTexture(lines, tw, th, '#6a6258', '#17130f');
