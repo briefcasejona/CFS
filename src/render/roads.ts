@@ -236,7 +236,7 @@ export class Roads {
         return m;
       };
       const unit = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
-      mk(unit, new THREE.MeshLambertMaterial({ color: 0xb9b6ae }), 600);                                     // platforms
+      mk(unit, new THREE.MeshLambertMaterial({ color: 0x8d8a83 }), 600);                                     // platforms
       mk(unit, new THREE.MeshStandardMaterial({ color: 0x59646c, roughness: 0.4, metalness: 0.5 }), 600);    // canopies and halls
       mk(unit, new THREE.MeshLambertMaterial({ color: 0x70757a }), 2400);                                    // canopy posts
       mk(stationHouse(), new THREE.MeshLambertMaterial({ vertexColors: true }), 300);                        // station buildings

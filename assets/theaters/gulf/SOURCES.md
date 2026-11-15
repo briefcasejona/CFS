@@ -17,3 +17,15 @@
 - `patches.json` + `patches.bin.gz`: 50 × 50 km elevation patches at 75 m spacing around each airfield (Int16, same
   projection), from the same **AWS Terrain Tiles** at zoom 11; blended into the 1 km grid over their outer 6 km.
   Baked by `scripts/terrain/bake-patches.mjs gulf`.
+- `roads/index.json`, `roads/major/<i>_<j>.bin.gz`, `roads/local/<field>.bin.gz`, `roads/stations.json`: the road
+  and railway network of the whole theater (motorways to tertiary roads, standard-gauge railways; the minor roads and
+  streets as well inside the squares of `patches.json`) and its railway stations, from the **Overture Maps**
+  transportation and places themes (release 2026-10-21.0), built from **© OpenStreetMap contributors**, under the
+  **Open Database License (ODbL) 1.0** — https://opendatacommons.org/licenses/odbl/ (attribution: © OpenStreetMap
+  contributors, Overture Maps Foundation). Changes: tunnels and unbuilt or abandoned lines dropped, chains merged,
+  simplified to 1.5–4.5 m, re-projected to the theater grid and cut into 8 km (streets: 2 km) cells; stations snapped
+  to the nearest track. This derived database is offered under the ODbL as well. Extracted by
+  `scripts/terrain/extract-transport.py` and `extract-stations.py`, baked by `scripts/terrain/bake-transport.mjs`.
+- Civil and other non-mission airfields (`src/world/theaters/civil.ts`): every large or medium airport with a paved
+  runway of 1,200 m or more, from **OurAirports** (public domain), baked by `scripts/terrain/bake-airports.mjs`.
+  Terminals, hangars and aprons are generic, sized by the airport's class.

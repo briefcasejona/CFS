@@ -17,7 +17,13 @@ export const treeInner = { value: 0 };
 
 /** keep airfields clear of trees and houses */
 export function nearRunway(x: number, z: number) {
-  for (const ab of fieldsNear(x, z)) for (const rw of runwaysOf(ab)) if (Math.abs(x - rw.x) < rw.length / 2 + 1500 && Math.abs(z - rw.z) < rw.length / 2 + 1500) return true;
+  for (const ab of fieldsNear(x, z)) for (const rw of runwaysOf(ab)) {
+    const dx = x - rw.x, dz = z - rw.z;
+    if (!ab.kind) { if (Math.abs(dx) < rw.length / 2 + 1500 && Math.abs(dz) < rw.length / 2 + 1500) return true; continue; }
+    // a civil field: the strip, its approaches and the terminal side, with the woods left standing around it
+    const hr = rw.hdg * Math.PI / 180;
+    if (Math.abs(dx * Math.sin(hr) - dz * Math.cos(hr)) < rw.length / 2 + 700 && Math.abs(dx * Math.cos(hr) + dz * Math.sin(hr)) < 750) return true;
+  }
   return false;
 }
 
