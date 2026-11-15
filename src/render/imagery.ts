@@ -67,12 +67,12 @@ export function mercator(lat: number, lon: number, out: { x: number; y: number }
 class Level {
   readonly canvas: HTMLCanvasElement | null;
   readonly tex: THREE.Texture;
-  readonly mask: THREE.DataTexture;
   readonly org: THREE.Vector3;       // window origin (tiles) and 2^z
   private slots: string[] = new Array(N * N).fill('');
-  private maskData = new Uint8Array(N * N * 4);
   dirty = false;
-  constructor(readonly z: number, readonly aerial: boolean) {
+  /** @param mask the loaded-slot mask of all levels, N wide and N rows per level (one texture for all of them: some
+   *  GPUs allow only 16 textures in a shader) */
+  constructor(readonly z: number, readonly aerial: boolean, private readonly index: number, private readonly mask: THREE.DataTexture) {
     this.org = new THREE.Vector3(-1e9, -1e9, 2 ** z);
     this.canvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
     if (this.canvas) { this.canvas.width = this.canvas.height = N * TS; }
@@ -83,9 +83,6 @@ class Level {
     t.minFilter = THREE.LinearMipmapLinearFilter;
     t.anisotropy = 4;
     this.tex = t;
-    this.mask = new THREE.DataTexture(this.maskData, N, N, THREE.RGBAFormat);
-    this.mask.wrapS = this.mask.wrapT = THREE.RepeatWrapping;
-    this.mask.needsUpdate = true;
   }
 
   /** move the window to centre on (tx, ty); returns the tiles that now need loading, nearest first */
@@ -131,19 +128,25 @@ class Level {
   }
 
   private setMask(s: number, v: number) {
-    this.maskData[s * 4] = v;
+    (this.mask.image.data as Uint8Array)[(this.index * N * N + s) * 4] = v;
     this.mask.needsUpdate = true;
   }
 }
 
 /** Streams the tiles and owns the shader uniforms. */
 export class Imagery {
-  readonly levels = ZOOMS.map((z, i) => new Level(z, i >= FIRST_AERIAL));
+  private readonly mask = (() => {
+    const t = new THREE.DataTexture(new Uint8Array(N * N * ZOOMS.length * 4), N, N * ZOOMS.length, THREE.RGBAFormat);
+    t.wrapS = THREE.RepeatWrapping;
+    t.needsUpdate = true;
+    return t;
+  })();
+  readonly levels = ZOOMS.map((z, i) => new Level(z, i >= FIRST_AERIAL, i, this.mask));
   private regions: Regions | null = null;
   private regionsFor = '';
   private aerialErrors = new Map<string, number>();
   private aerialOk = new Map<string, number>();
-  readonly uniforms: Record<string, THREE.IUniform> = { uImgOn: { value: 0 } };
+  readonly uniforms: Record<string, THREE.IUniform> = { uImgOn: { value: 0 }, uImgMask: { value: this.mask } };
   private inflight = 0;
   private ok = 0;
   private errors = 0;
@@ -154,7 +157,6 @@ export class Imagery {
   constructor() {
     this.levels.forEach((lv, i) => {
       this.uniforms[`uImg${i}`] = { value: lv.tex };
-      this.uniforms[`uImgMask${i}`] = { value: lv.mask };
       this.uniforms[`uImgOrg${i}`] = { value: lv.org };
     });
   }
@@ -238,14 +240,16 @@ export class Imagery {
 /** GLSL for the ground shader: `vec3 imagery(vec3 base)` blends the finest available level over `base` */
 export const IMAGERY_GLSL = `
 uniform float uImgOn;
-${ZOOMS.map((_, i) => `uniform sampler2D uImg${i};\nuniform sampler2D uImgMask${i};\nuniform vec3 uImgOrg${i};`).join('\n')}
+uniform sampler2D uImgMask;
+${ZOOMS.map((_, i) => `uniform sampler2D uImg${i};\nuniform vec3 uImgOrg${i};`).join('\n')}
 varying vec2 vMerc;
-vec3 imgLevel(sampler2D tex, sampler2D mask, vec3 org, inout float w) {
+vec3 imgLevel(sampler2D tex, float level, vec3 org, inout float w) {
   vec2 t = vMerc * org.z;
   vec2 l = t - org.xy;
   vec2 e = min(l, ${N}.0 - l);
   vec2 uv = t / ${N}.0;
-  float m = texture2D(mask, fract(uv)).r;
+  vec2 f = fract(uv);
+  float m = texture2D(uImgMask, vec2(f.x, (min(f.y, 0.9999) + level) / ${ZOOMS.length}.0)).r;
   w = clamp(min(e.x, e.y) * 1.2, 0.0, 1.0) * step(0.5, m);
   return textureGrad(tex, fract(uv), dFdx(uv), dFdy(uv)).rgb;
 }
@@ -254,7 +258,7 @@ vec3 imagery(vec3 base, out float cov) {
   if (uImgOn < 0.5) return base;
   vec3 c = base;
   float w;
-${ZOOMS.map((_, i) => `  { vec3 s = imgLevel(uImg${i}, uImgMask${i}, uImgOrg${i}, w); c = mix(c, s * ${GAIN[i].toFixed(2)}, w); cov = max(cov, w); }`).join('\n')}
+${ZOOMS.map((_, i) => `  { vec3 s = imgLevel(uImg${i}, ${i}.0, uImgOrg${i}, w); c = mix(c, s * ${GAIN[i].toFixed(2)}, w); cov = max(cov, w); }`).join('\n')}
   return c;
 }
 `;
