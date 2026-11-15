@@ -68,12 +68,17 @@ function roadMaterial(uniforms: { uPix: { value: number } }) {
           }
           c = mix(c, vec3(0.82, 0.82, 0.78), mark * lines);
         }
-        // (the sky's fill light is strong and blue on a flat surface: asphalt is darker and warmer than its albedo says)
-        diffuseColor.rgb = c * vec3(0.6, 0.53, 0.46);
+        diffuseColor.rgb = c * vec3(0.4, 0.385, 0.365);
         // feathered edge; a road thinner than a pixel fades instead of flickering
         diffuseColor.a = vRoad.z * (1.0 - smoothstep(1.0 - fu * 1.5, 1.0, au * vRoad.z + (1.0 - vRoad.z)));
       }
-      #include <color_fragment>`);
+      #include <color_fragment>`).replace('#include <opaque_fragment>', `
+      {
+        // the light's brightness without its tint: asphalt under a blue sky still reads grey
+        const vec3 LUM = vec3(0.2126, 0.7152, 0.0722);
+        outgoingLight = diffuseColor.rgb * (dot(outgoingLight, LUM) / max(dot(diffuseColor.rgb, LUM), 1e-4));
+      }
+      #include <opaque_fragment>`);
   };
   mat.customProgramCacheKey = () => 'road';
   return mat;
@@ -168,7 +173,6 @@ export class Roads {
     want.sort((a, b) => a[0] - b[0]);
     for (const [, key, file, ci, cj, lod] of want) {
       let c = this.cells.get(key);
-      if (c && c.lod !== lod && Math.abs(c.lod - lod) === 1 && c.used === this.frame - 1 && (this.frame + ci + cj) % 40 !== 0) { /* settle before swapping levels */ }
       if (!c || c.lod !== lod) {
         if (performance.now() - t0 < budget) {
           const b = this.block(file);
@@ -299,7 +303,7 @@ function stationHouse() {
 function clearOfRunways(pl: Polyline): Polyline | null {
   const n = pl.pts.length / 2;
   const near = fieldsNear(pl.pts[0], pl.pts[1]);
-  if (!near.length || pl.cls === RAILWAY && false) return pl;
+  if (!near.length) return pl;
   let cut = false;
   const keep: number[] = [];
   for (let i = 0; i < n; i++) {
@@ -314,5 +318,5 @@ function clearOfRunways(pl: Polyline): Polyline | null {
   }
   if (!cut) return pl;
   // keep the longer clear end (the other is usually a stub on the field)
-  return keep.length >= 4 && (pl.cls <= UNCLASSIFIED || pl.cls === RESIDENTIAL) ? { ...pl, pts: Float64Array.from(keep) } : keep.length >= 4 ? { ...pl, pts: Float64Array.from(keep) } : null;
+  return keep.length >= 4 ? { ...pl, pts: Float64Array.from(keep) } : null;
 }

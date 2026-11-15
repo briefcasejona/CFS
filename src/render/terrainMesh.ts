@@ -81,7 +81,7 @@ function addGroundShader(mat: THREE.MeshStandardMaterial, uniforms: Record<strin
     Object.assign(sh.uniforms, uniforms);
     sh.vertexShader = `attribute vec2 aCover;\nattribute vec2 aMerc;\nvarying vec2 vCover;\nvarying vec2 vMerc;\nvarying vec3 vWorldPos;\n` + sh.vertexShader.replace('#include <worldpos_vertex>',
       `#include <worldpos_vertex>\n vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\n vCover = aCover;\n vMerc = aMerc;`);
-    sh.fragmentShader = `uniform sampler2D uDetail;\nuniform sampler2D uCover;\nuniform vec3 uCoverGrid;\nvarying vec2 vCover;\nvarying vec3 vWorldPos;
+    sh.fragmentShader = `uniform sampler2D uDetail;\nuniform sampler2D uCover;\nuniform vec3 uCoverGrid;\nuniform float uStreets;\nvarying vec2 vCover;\nvarying vec3 vWorldPos;
 float patchN(vec2 p, float s, float o) {
   float a = texture2D(uDetail, p / s + o).r, b = texture2D(uDetail, p / (s * 0.37) + o * 1.7).r;
   return clamp((a * 0.65 + b * 0.35 - 0.5) * 1.36 + 0.5, 0.0, 1.0);
@@ -120,7 +120,7 @@ ${IMAGERY_GLSL}
         cropC = mix(cropC, vec3(0.42, 0.42, 0.24), smoothstep(9000.0, 30000.0, dist));
         // towns: roofs (grey, red tile) on blocks between streets
         vec2 bc = floor(p / 48.0), bp = fract(p / 48.0);
-        float street = step(0.8, max(bp.x, bp.y));
+        float street = step(0.8, max(bp.x, bp.y)) * uStreets;   // (a made-up street grid only where no real roads are drawn)
         float rh = hash(bc + 7.0);
         vec3 builtC = mix(mix(vec3(0.47, 0.45, 0.42), vec3(0.5, 0.43, 0.39), step(0.5, rh)) * (0.88 + 0.24 * hash(bc)), vec3(0.36, 0.36, 0.37), street);
         builtC = mix(builtC, vec3(0.46, 0.42, 0.39), smoothstep(3000.0, 14000.0, dist));
@@ -162,6 +162,7 @@ export class TerrainRenderer {
     uDetail: { value: detailTexture() },
     uCover: { value: null },
     uCoverGrid: { value: new THREE.Vector3() },  // half, res, n
+    uStreets: { value: 1 },
     ...this.imagery.uniforms,
   };
   private cover: CoverGrid | null = null;
@@ -375,6 +376,7 @@ export class TerrainRenderer {
     // invisible (and not worth building) higher up, where the far tiles alone carry the scene
     this.forest.update(camPos, cover, pal, agl < 3500 && pal.trees);
     this.roads.update(camPos, agl);
+    this.uniforms.uStreets.value = this.roads.group.visible ? 0 : 1;
     this.houses!.visible = agl < 5000;
     if (this.houses!.visible && Math.hypot(camPos.x - this.houseAt.x, camPos.z - this.houseAt.y) > 1000) {
       this.houseAt.set(camPos.x, camPos.z);
