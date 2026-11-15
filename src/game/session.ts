@@ -8,7 +8,7 @@ import type { InputManager } from '../input/input.js';
 import type { AudioSystem } from '../core/audio.js';
 import type { Settings } from '../core/settings.js';
 import { Autopilot } from '../sim/autopilot.js';
-import { buildMission, evaluate, type BuiltMission, type MissionResult, type MissionSpec } from './mission.js';
+import { buildMission, evaluate, withFlyablePlayer, type BuiltMission, type MissionResult, type MissionSpec } from './mission.js';
 import { WEAPONS } from '../weapons/stores.js';
 import { approach, clamp, DEG } from '../core/math.js';
 import { NM } from '../sim/atmosphere.js';
@@ -196,7 +196,7 @@ export class FlightSession {
   start(spec: MissionSpec, onEnd: EndCallback) {
     this.onEnd = onEnd;
     const s = this.settings;
-    this.built = buildMission(spec, {
+    this.built = buildMission(withFlyablePlayer(spec), {
       unlimitedFuel: s.unlimitedFuel, unlimitedWeapons: s.unlimitedWeapons, invulnerable: s.invulnerable,
       gEffects: s.gEffects, abDetent: s.abDetent,
     }, s.coldStart && this.rampStart(spec));
@@ -335,7 +335,10 @@ export class FlightSession {
       color: this.settings.hudColor,
       ...this.steering(),
     }, dt);
-    this.mfds.draw(world, dt);
+    // the displays belong to the cockpit: outside views neither draw nor show them
+    const inPit = this.scene.view === 'cockpit';
+    for (const cv of [this.ui.mfdL, this.ui.mfdR]) cv.style.display = inPit ? '' : 'none';
+    if (inPit) this.mfds.draw(world, dt);
     this.sysPanel.update(dt);
     this.updateTip();
     if (this.mapOpen) this.drawMap();

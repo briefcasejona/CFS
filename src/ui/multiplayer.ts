@@ -1,6 +1,6 @@
 // Co-op lobby: host a room (share the 6-letter code) or join one. The host picks the scenario; every player picks
 // their own jet. Peers connect directly (WebRTC via public trackers) — no server and no port forwarding.
-import { AIRCRAFT, AIRCRAFT_BY_ID } from '../aircraft/defs.js';
+import { AIRCRAFT_BY_ID, FLYABLE, isFlyable } from '../aircraft/defs.js';
 import { SCENARIOS, buildScenario, defaultCustom, type ScenarioId, type MissionSpec } from '../game/mission.js';
 import { makeRoomCode, NET_VERSION } from '../net/protocol.js';
 import { CoopHost, CoopClient, addCoopFlights, clientSpec, type CoopPlayer } from '../net/coop.js';
@@ -17,7 +17,7 @@ const save = (k: string, v: string) => { try { localStorage.setItem(k, v); } cat
 let link: NetLink | null = null;
 
 export function multiplayerScreen(app: AppApi): HTMLElement {
-  const playable = AIRCRAFT.filter((a) => a.playable !== false);
+  const playable = FLYABLE;
   const e = el(`
     <div class="screen mp">
       <div class="header"><button data-a="back">◀ Back</button><h2>Multiplayer — co-op</h2></div>
@@ -39,7 +39,7 @@ export function multiplayerScreen(app: AppApi): HTMLElement {
           <div class="muted small status">Connecting…</div>
           <table class="kv players"></table>
           <div class="hostonly hidden">
-            <label>Mission <select class="mpscen">${SCENARIOS.filter((s) => s.id !== 'takeoff').map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label>
+            <label>Mission <select class="mpscen">${SCENARIOS.filter((s) => s.id !== 'takeoff' && !s.carrier).map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></label>
             <div class="btnrow"><button data-a="start" class="primary big">START ▶</button></div>
           </div>
           <h3>Chat</h3>
@@ -89,7 +89,7 @@ export function multiplayerScreen(app: AppApi): HTMLElement {
     L.on('hi', (d: Peer & { v: number }, from) => {
       if (d.v !== NET_VERSION) { chat('—', `${d.name} runs a different CFS version — both need the latest update`); return; }
       const known = peers.has(from);
-      peers.set(from, { peerId: from, name: String(d.name).slice(0, 12), aircraftId: AIRCRAFT_BY_ID[d.aircraftId] ? d.aircraftId : 'f16c' });
+      peers.set(from, { peerId: from, name: String(d.name).slice(0, 12), aircraftId: isFlyable(d.aircraftId) ? d.aircraftId : 'f16c' });
       if (!known) { chat('—', `${d.name} joined`); hello(); }
       renderPlayers();
     });

@@ -214,7 +214,7 @@ export function campaignHQ(app: AppApi): HTMLElement {
       ${f ? `<div><b>${esc(f.callsign)}</b> — ${esc(f.task)} vs ${esc(f.targetName)}</div>
       <div class="muted small">${f.count}× ${esc(AIRCRAFT_BY_ID[f.aircraftId].name)} · ${esc(summarizeStores(f.stores))}</div>` : '<div class="muted">Select a flight from the ATO.</div>'}
       <div class="btnrow">
-        ${f && !f.flown ? '<button data-a="fly" class="primary">Fly this flight ▶</button>' : ''}
+        ${f && !f.flown ? (AIRCRAFT_BY_ID[f.aircraftId].flyable ? '<button data-a="fly" class="primary">Fly this flight ▶</button>' : '<span class="muted small">AI flight: only the F-16 flights can be flown.</span>') : ''}
         <button data-a="skip">Skip turn (resolve) ⏭</button>
       </div></div>`);
     box.querySelector('[data-a="skip"]')!.addEventListener('click', () => {

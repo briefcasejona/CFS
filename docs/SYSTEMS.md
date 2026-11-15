@@ -88,6 +88,25 @@ on the apron elsewhere (`game/ramp.ts`). Ground clears the taxi once the engine 
 off, the route is drawn on the map (F10), the HUD marks the next corner, and tower clears the take-off at the
 hold-short point.
 
+## V2: F-16 only, cockpit loaded on demand
+
+From V2 the F-16 is the only aircraft the player flies. Every other type is still in the game, flown by the AI.
+
+* `AircraftDef.flyable` (set from `FLYABLE_FAMILIES` in `aircraft/defs.ts`) decides what the player may fly. The
+  aircraft picker, multiplayer, the mission editor's player flight and the campaign's "Fly this flight" only offer
+  flyable aircraft; the aircraft database still lists them all. A mission that seats the player in anything else
+  (an older file, a saved campaign) is flown in the F-16 instead (`withFlyablePlayer`, applied by the flight
+  session). The carrier scenarios are only offered to carrier-capable jets, so they are hidden for now.
+* `render/cockpitView.ts` owns everything that exists only in cockpit view: the cockpit model, the clickable
+  cockpit (`Cockpit3D`) and the live MFD screens. It is built when the player enters cockpit view and unloaded,
+  with its GPU memory freed, when the player leaves it. The 2D MFD overlays are hidden and not drawn outside
+  cockpit view. The aircraft's systems keep running in every view (the engine does not stop when you look from
+  outside).
+* The cockpit is a separate model from the exterior. `render/cockpitModels.ts` has the slot for the F-16's: drop
+  the file at `assets/models/cockpits/f16/cockpit.glb` and fill in its spec (axes, scale, offset, eye point, MFD
+  faces, credits). Until the file is there the exterior model's own cockpit is used. The file's node hierarchy is
+  kept, so the switches modelled in it can be bound to the systems' controls by node name (`switches`).
+
 ## Next stages
 
 1. VR hands for the clickable cockpit.

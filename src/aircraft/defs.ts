@@ -588,10 +588,16 @@ export function deriveCapabilities(d: AircraftDef): Capability[] {
   return [...caps];
 }
 
+/** V2: the F-16 is the only aircraft the player flies; every other type is in the game as AI only. */
+export const FLYABLE_FAMILIES: ReadonlySet<string> = new Set(['F-16']);
+/** the aircraft the player is put in when a mission asks for one that is not flyable */
+export const DEFAULT_PLAYER_AIRCRAFT = 'f16c';
+
 /** Fill in variant-system defaults (family, seats, allowed stores, capabilities). */
 function finalize(d: AircraftDef): AircraftDef {
   const allowed = d.allowedStores ?? [...new Set(d.loadouts.flatMap((l) => l.stores).filter(Boolean))];
   const out: AircraftDef = { ...d, family: d.family ?? d.name, seats: d.seats ?? 1, allowedStores: allowed, datalink: d.datalink ?? !NO_DATALINK.has(d.id), playable: d.playable ?? true };
+  out.flyable = d.flyable ?? FLYABLE_FAMILIES.has(out.family!);
   out.capabilities = deriveCapabilities(out);
   // loadouts may only use allowed stores
   out.loadouts = out.loadouts.filter((l) => l.stores.every((s) => !s || allowed.includes(s)));
@@ -624,6 +630,10 @@ for (const id of ORDER) {
 export const AIRCRAFT: AircraftDef[] = familyOrder.map((id) => finalize(RESOLVED[id]));
 
 export const AIRCRAFT_BY_ID: Record<string, AircraftDef> = Object.fromEntries(AIRCRAFT.map((a) => [a.id, a]));
+
+/** The aircraft the player may fly (V2: the F-16 family). */
+export const FLYABLE: AircraftDef[] = AIRCRAFT.filter((a) => a.flyable);
+export function isFlyable(id: string) { return !!AIRCRAFT_BY_ID[id]?.flyable; }
 
 /** All aircraft of a family, in definition order. */
 export function familyOf(family: string): AircraftDef[] { return AIRCRAFT.filter((a) => a.family === family); }
