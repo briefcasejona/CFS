@@ -1,7 +1,7 @@
 // F-16C/D avionics after TO 1F-16CM/AM-34-1-1 (BMS): the up-front controls (integrated control panel and data
 // entry display, 2.2.1), the embedded GPS/INS and its alignment (2.2.3), fuel and altitude warnings (2.2.1.3) and
 // the multifunction display formats (2.1.6). Section numbers in the comments refer to that manual.
-import { INV_OFF, INV_ON, type FireControl, type MfdView, type MissionData, type NavPoint, type NavState, type TextDisplayDef } from '../types.js';
+import { INV_OFF, INV_ON, type AvAction, type FireControl, type MfdView, type MissionData, type NavPoint, type NavState, type TextDisplayDef } from '../types.js';
 import type { FaultList } from './flcs.js';
 
 const NM = 1852, FT = 0.3048, KT = 0.514444;
@@ -10,13 +10,7 @@ const ROWS = 5, COLS = 24;
 export type IcpKey = '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | 'ENTR' | 'RCL' | 'COM1' | 'COM2' | 'IFF' | 'LIST'
   | 'AA' | 'AG' | 'UP' | 'DOWN' | 'SEQ' | 'RTN' | 'INC' | 'DEC' | 'WARN';
 
-/** What the avionics ask the rest of the jet to do (radar, stores). */
-export type AvAction =
-  | { t: 'radarMode'; mode: 'RWS' | 'TWS' | 'ACM' | 'OFF' }
-  | { t: 'radarRange'; d: 1 | -1 }
-  | { t: 'radarAz' }
-  | { t: 'weaponNext' }
-  | { t: 'master'; mode: NavState['masterMode'] };
+export type { AvAction };
 
 export interface AvInput {
   dt: number; time: number; wow: boolean;

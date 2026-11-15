@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { SceneRenderer, type ViewMode } from '../render/scene.js';
 import { Hud } from '../ui/hud.js';
 import { Mfds } from '../ui/mfd.js';
@@ -15,6 +16,8 @@ import { COMMS, matchCommand, type CommsCommand } from './comms.js';
 import { VoiceInput } from '../input/voice.js';
 import type { Aircraft } from '../sim/entities.js';
 import type { World } from '../sim/world.js';
+import type { MissionData } from '../systems/types.js';
+import { AIRBASES, currentTheater } from '../world/theater.js';
 
 const DT = 1 / 120;
 
@@ -59,6 +62,7 @@ export class FlightSession {
   private mapOpen = false;
   private mapView: MapView = { cx: 0, cz: 0, mpp: 300, w: 1, h: 1 };
   private steerIndex = 0;
+  private steerVec = new THREE.Vector3();
   private ejectArm = -99;
   private cmsQueue: Array<{ t: number; kind: 'flare' | 'chaff' }> = [];
   private padlock = false;
@@ -169,6 +173,8 @@ export class FlightSession {
     // the player's jet gets its own systems if its type has them; a ground start can be cold and dark
     const state = !p.fm.wow ? 'air' : s.coldStart && this.built.world.carrierOps.state(p) !== 'cat' ? 'cold' : 'ground';
     p.attachSystems(state, this.built.world.fmOpts(p));
+    p.systems?.avionics?.loadMission(this.missionData(spec));
+    this.mfds.onPress = (side, osb) => this.built?.player.systems?.avionics?.mfdPress(side, osb);
     this.sysPanel.attach(p.systems);
     this.sysPanel.show(!!p.systems && state === 'cold');
     this.radarHeld = false;
@@ -277,8 +283,7 @@ export class FlightSession {
     this.hud.draw(world, this.scene, {
       autopilot: this.autopilot, timeAccel: this.timeAccel, paused: this.paused, labels: this.labels,
       color: this.settings.hudColor,
-      steerpoint: this.built.steerpoints[this.steerIndex]?.pos ?? null,
-      steerName: `${this.steerIndex + 1} ${this.built.steerpoints[this.steerIndex]?.name ?? ''}`,
+      ...this.steering(),
     }, dt);
     this.mfds.draw(world, dt);
     this.sysPanel.update(dt);
@@ -307,6 +312,59 @@ export class FlightSession {
     }
   }
 
+  /** The steerpoint the HUD steers to: from the jet's own navigation system where it has one. */
+  private steering(): { steerpoint: THREE.Vector3 | null; steerName: string } {
+    const av = this.built.player.systems?.avionics;
+    if (av) {
+      const n = av.nav(), sp = av.steerPoint();
+      if (!sp) return { steerpoint: null, steerName: n.align || (n.insReady ? '' : 'INS OFF') };
+      this.steerVec.set(sp.x, sp.alt, sp.z);
+      return { steerpoint: this.steerVec, steerName: `${n.align ? n.align + ' ' : ''}${n.steer + 1} ${sp.name}` };
+    }
+    const s = this.built.steerpoints[this.steerIndex];
+    return { steerpoint: s?.pos ?? null, steerName: `${this.steerIndex + 1} ${s?.name ?? ''}` };
+  }
+
+  /** The flight plan, radio aids and fuel plan as the data cartridge carries them. */
+  private missionData(spec: MissionSpec): MissionData {
+    const th = currentTheater();
+    // fictional theatres get a plain projection around 42°N 44°E so coordinates still read sensibly
+    const geo = th.geo ?? ((x: number, z: number) => ({ lat: 42 - z / 111320, lon: 44 + x / (111320 * Math.cos(42 * DEG)) }));
+    const p = this.built.player;
+    return {
+      steerpoints: this.built.steerpoints.map((s) => ({
+        name: s.name, x: s.pos.x, z: s.pos.z, alt: s.pos.y,
+        kind: s.name === 'HOME' || s.name === 'MOTHER' ? 'home' as const : 'stpt' as const,
+      })),
+      geo,
+      // every field gets a TACAN channel and an ILS frequency from its place in the list
+      navaids: AIRBASES.map((ab, k) => ({
+        id: ab.id.slice(0, 4).toUpperCase(), name: ab.name, x: ab.x, z: ab.z, elev: ab.elev,
+        tacan: 20 + k * 3, band: 'X' as const, ils: 108.1 + (k % 20) * 0.2, crs: ab.hdg,
+      })),
+      bingoKg: p.def.fuelInternal * 0.25,
+      callsign: p.callsign,
+      zuluStart: spec.weather.timeOfDay * 3600,
+    };
+  }
+
+  /** Radar and stores requests from the avionics (MFD buttons, ICP master modes). */
+  private applyAvionics(p: Aircraft) {
+    const av = p.systems?.avionics;
+    if (!av) return;
+    for (const a of av.drainActions()) {
+      if (a.t === 'radarMode') p.radar?.setMode(a.mode);
+      else if (a.t === 'radarRange') { if (a.d > 0) p.radar?.rangeUp(); else p.radar?.rangeDown(); }
+      else if (a.t === 'radarAz' && p.radar) p.radar.azScan = p.radar.azScan >= 60 ? 10 : p.radar.azScan >= 30 ? 60 : 30;
+      else if (a.t === 'weaponNext') p.cycleWeapon(1);
+      else if (a.t === 'master') {
+        if (a.mode === 'AA' && p.selectByKind(['arh', 'sarh', 'ir'])) { if (p.radar && p.radar.mode !== 'OFF') p.radar.setMode(p.radar.def.tws ? 'TWS' : 'RWS'); }
+        else if (a.mode === 'AG') p.selectByKind(['bomb', 'lgb', 'agm', 'arm']);
+        else if (a.mode === 'DGFT' && p.selectByKind(['ir', 'gun'])) p.radar?.setMode('ACM');
+      }
+    }
+  }
+
   /** Cockpit systems: panel and auto-start keys, crew alerts, and avionics that have lost their power. */
   private handleSystems(p: Aircraft, world: World) {
     const i = this.input;
@@ -321,6 +379,7 @@ export class FlightSession {
       world.radio(sys.autoStart ? 'Crew chief: starting the jet for you.' : 'Auto-start stopped.', '#ccc');
     }
     if (i.pressed('masterCaution')) { sys.set('masterCaution', 1); sys.set('masterCaution', 0); }
+    this.applyAvionics(p);
     for (const m of sys.drainMessages()) world.radio(m.text, m.level === 'warning' ? '#ff6a5a' : m.level === 'caution' ? '#ffcf70' : '#ccc');
     // a radar without power stops; it comes back in its search mode when power returns
     if (p.radar) {
@@ -358,8 +417,9 @@ export class FlightSession {
       }
       this.scene.view = v;
     }
-    if (i.pressed('mfdLeft')) this.mfds.cycle('left');
-    if (i.pressed('mfdRight')) this.mfds.cycle('right');
+    const av = this.built.player.systems?.avionics;
+    if (i.pressed('mfdLeft')) { if (av) av.mfdNext(0); else this.mfds.cycle('left'); }
+    if (i.pressed('mfdRight')) { if (av) av.mfdNext(1); else this.mfds.cycle('right'); }
     if (i.mouseWheel !== 0) {
       if (!this.mapOpen) {
         if (this.scene.view === 'cockpit') this.scene.zoom = clamp(this.scene.zoom * (i.mouseWheel > 0 ? 1 / 1.15 : 1.15), 1, 5);
@@ -405,7 +465,14 @@ export class FlightSession {
     const ax = (a: string, kb: number) => { const v = i.axis(a); return v === null ? kb : clamp(v + kb, -1, 1); };
     let pitch = ax('pitch', this.kb.pitch), roll = ax('roll', this.kb.roll);
     const yaw = ax('yaw', this.kb.yaw);
-    if (i.pressed('autopilot')) {
+    // a jet with its own A/P switch: the key moves the switch, and the switch decides
+    const apSw = p.systems?.controls.some((x) => x.id === 'apPitch') ? p.systems : null;
+    let apToggle = i.pressed('autopilot');
+    if (apSw) {
+      if (apToggle) { const why = apSw.set('apPitch', apSw.get('apPitch') === 1 ? 0 : 1); if (why) world.radio(why, '#fc8'); }
+      apToggle = (apSw.get('apPitch') !== 1) !== this.autopilot;
+    }
+    if (apToggle) {
       this.autopilot = !this.autopilot;
       if (this.autopilot) {
         this.apAlt = p.pos.y; this.apHdg = p.fm.attitude().hdg; this.apSpd = p.fm.tas;
@@ -413,7 +480,7 @@ export class FlightSession {
         world.radio('Autopilot: altitude / heading hold engaged.', '#ccc');
       }
     }
-    if (this.autopilot && (Math.abs(pitch) > 0.35 || Math.abs(roll) > 0.35 || p.fm.wow)) { this.autopilot = false; world.radio('Autopilot disengaged.', '#ccc'); }
+    if (this.autopilot && (Math.abs(pitch) > 0.35 || Math.abs(roll) > 0.35 || p.fm.wow)) { this.autopilot = false; apSw?.set('apPitch', 1); world.radio('Autopilot disengaged.', '#ccc'); }
     if (this.autopilot) {
       const thr = c.throttle;
       this.ap.holdAltHdgSpd(p.fm, this.apAlt, this.apHdg, this.apSpd, c, dt, 30 * DEG);
@@ -488,10 +555,15 @@ export class FlightSession {
     }
     if (i.pressed('weaponNext')) p.cycleWeapon(1);
     if (i.pressed('weaponPrev')) p.cycleWeapon(-1);
-    if (i.pressed('modeAA') && p.selectByKind(['arh', 'sarh'])) p.radar?.setMode(p.radar.def.tws ? 'TWS' : 'RWS');
-    if (i.pressed('modeDogfight') && p.selectByKind(['ir'])) p.radar?.setMode('ACM');
+    const avn = p.systems?.avionics;
+    if (avn) {
+      if (i.pressed('modeAA')) avn.setMasterMode('AA');
+      if (i.pressed('modeAG')) avn.setMasterMode('AG');
+      if (i.pressed('modeDogfight')) avn.setMasterMode('DGFT');
+    } else if (i.pressed('modeAA') && p.selectByKind(['arh', 'sarh'])) p.radar?.setMode(p.radar.def.tws ? 'TWS' : 'RWS');
+    if (!avn && i.pressed('modeDogfight') && p.selectByKind(['ir'])) p.radar?.setMode('ACM');
     if (i.pressed('modeGun') && p.selectByKind(['gun'])) p.radar?.setMode('ACM');
-    if (i.pressed('modeAG')) p.selectByKind(['bomb', 'lgb', 'agm', 'arm']);
+    if (!avn && i.pressed('modeAG')) p.selectByKind(['bomb', 'lgb', 'agm', 'arm']);
     // ---- sensors
     const sd = p.selectedDef();
     const ag = !!sd && ['bomb', 'lgb', 'agm', 'arm'].includes(sd.kind);
@@ -519,7 +591,7 @@ export class FlightSession {
     // ---- the carrier steerpoint moves with the ship
     for (const s of this.built.steerpoints) if (s.name === 'MOTHER' && world.carriers[0]) s.pos.set(world.carriers[0].pos.x, s.pos.y, world.carriers[0].pos.z);
     // ---- steerpoint sequencing
-    const sp = this.built.steerpoints[this.steerIndex];
+    const sp = p.systems?.avionics ? null : this.built.steerpoints[this.steerIndex];
     if (sp && Math.hypot(sp.pos.x - p.pos.x, sp.pos.z - p.pos.z) < 2 * NM && this.steerIndex < this.built.steerpoints.length - 1) {
       this.steerIndex++;
       world.radio(`Steerpoint ${this.steerIndex + 1}: ${this.built.steerpoints[this.steerIndex].name}`, '#ccc');
@@ -603,8 +675,9 @@ export class FlightSession {
       markers.push({ x: g.x, z: g.z, side: g.side, kind: 'target', label: `${g.name ?? g.kind} (${alive}/${u.length})`, dead: u.length > 0 && alive === 0 });
     }
     for (const cv of w.carriers) markers.push({ x: cv.pos.x, z: cv.pos.z, side: cv.side, kind: 'ground', label: cv.name, hdg: cv.hdg });
-    this.built.steerpoints.forEach((s, k) => markers.push({ x: s.pos.x, z: s.pos.z, side: 'neutral', kind: 'waypoint', label: `${k + 1} ${s.name}`, highlight: k === this.steerIndex }));
-    const route = { pts: [{ x: p.pos.x, z: p.pos.z }, ...this.built.steerpoints.slice(this.steerIndex).map((s) => ({ x: s.pos.x, z: s.pos.z }))], color: '#fff', dashed: true };
+    const si = p.systems?.avionics ? clamp(p.systems.avionics.nav().steer, 0, Math.max(0, this.built.steerpoints.length - 1)) : this.steerIndex;
+    this.built.steerpoints.forEach((s, k) => markers.push({ x: s.pos.x, z: s.pos.z, side: 'neutral', kind: 'waypoint', label: `${k + 1} ${s.name}`, highlight: k === si }));
+    const route = { pts: [{ x: p.pos.x, z: p.pos.z }, ...this.built.steerpoints.slice(si).map((s) => ({ x: s.pos.x, z: s.pos.z }))], color: '#fff', dashed: true };
     drawTheater(ctx, this.mapView, { markers, routes: [route], showObjectives: false });
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
     ctx.fillRect(this.mapView.w / 2 - 240, 8, 480, 26);

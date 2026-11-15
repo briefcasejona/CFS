@@ -1,7 +1,7 @@
 // The cockpit panel: every switch, light and gauge an aircraft's systems declare, grouped by cockpit panel, with the
 // current checklist beside it. It is built entirely from the declarations in AircraftSystems, so an aircraft that
 // gets its own systems gets a working panel without any UI code of its own.
-import type { AircraftSystems, ControlDef } from '../systems/types.js';
+import { INV_OFF, INV_ON, type AircraftSystems, type ControlDef } from '../systems/types.js';
 
 const CSS = `
 .sysp{position:absolute;right:12px;top:54px;bottom:12px;width:min(560px,46vw);z-index:6;display:none;flex-direction:column;
@@ -40,6 +40,13 @@ const CSS = `
 .sysp .cl div.next{color:#fff;font-weight:600}
 .sysp .cl div.next::before{content:'▶';position:absolute;left:2px;color:#ffcf70}
 .sysp .cl small{display:block;font-weight:400;color:#aab7bd}
+.sysp .keys{display:flex;flex-wrap:wrap;gap:4px;margin:5px 0}
+.sysp .keys button{min-width:44px;padding:5px 6px;font-size:11px}
+.sysp pre.disp{margin:5px 0;padding:6px 8px;background:#030603;border:1px solid #1d3a22;border-radius:4px;color:#5dff7e;
+  font:600 14px/1.25 ui-monospace,Consolas,monospace;letter-spacing:.06em;display:inline-block;min-height:1.25em}
+.sysp pre.disp.amber{color:#ffd24a;border-color:#3a3212}
+.sysp pre.disp b{background:currentColor}
+.sysp pre.disp b span{color:#030603}
 .sysp .why{color:#ffb060;min-height:16px;padding:0 12px 6px}
 `;
 
@@ -53,6 +60,7 @@ export class SystemsPanel {
   private title: HTMLElement;
   private btns = new Map<string, HTMLButtonElement[]>();
   private lts = new Map<string, HTMLElement>();
+  private disps = new Map<string, HTMLElement>();
   private ggs = new Map<string, { box: HTMLElement; val: HTMLElement; bar: HTMLElement }>();
   private armed = '';
   private timer = 0;
@@ -84,12 +92,13 @@ export class SystemsPanel {
 
   attach(sys: AircraftSystems | null) {
     this.sys = sys;
-    this.btns.clear(); this.lts.clear(); this.ggs.clear();
+    this.btns.clear(); this.lts.clear(); this.ggs.clear(); this.disps.clear();
     this.body.innerHTML = '';
     if (!sys) { this.show(false); return; }
     this.title.textContent = sys.title;
     const panels: string[] = [];
-    for (const x of [...sys.lights, ...sys.gauges, ...sys.controls]) if (!panels.includes(x.panel)) panels.push(x.panel);
+    const displays = sys.avionics?.displays ?? [];
+    for (const x of [...sys.lights, ...sys.gauges, ...sys.controls, ...displays]) if (!panels.includes(x.panel)) panels.push(x.panel);
     for (const name of panels) {
       const h = document.createElement('h4'); h.textContent = name; this.body.append(h);
       const lights = sys.lights.filter((l) => l.panel === name);
@@ -114,7 +123,23 @@ export class SystemsPanel {
         }
         this.body.append(box);
       }
-      for (const c of sys.controls.filter((x) => x.panel === name)) this.body.append(this.controlRow(c));
+      for (const d of displays.filter((x) => x.panel === name)) {
+        const pre = document.createElement('pre'); pre.className = `disp${d.id === 'pfld' ? ' amber' : ''}`; pre.title = d.label;
+        this.disps.set(d.id, pre); this.body.append(pre);
+      }
+      // plain push-buttons sit together as a keypad; everything else gets a row of its own
+      const isKey = (c: ControlDef) => !!c.momentary && c.positions.length === 2 && c.positions[0] === '' && c.id.startsWith('icp');
+      const keys = sys.controls.filter((x) => x.panel === name && isKey(x));
+      if (keys.length) {
+        const box = document.createElement('div'); box.className = 'keys';
+        for (const c of keys) {
+          const b = document.createElement('button'); b.textContent = c.label; if (c.help) b.title = c.help;
+          b.onmousedown = () => this.move(c, 1);
+          this.btns.set(c.id, [document.createElement('button'), b]); box.append(b);
+        }
+        this.body.append(box);
+      }
+      for (const c of sys.controls.filter((x) => x.panel === name && !isKey(x))) this.body.append(this.controlRow(c));
     }
     this.refresh(true);
   }
@@ -192,6 +217,12 @@ export class SystemsPanel {
       w.bar.style.width = `${Math.max(0, Math.min(1, (v - g.min) / (g.max - g.min))) * 100}%`;
       w.box.classList.toggle('red', (g.redAbove !== undefined && v > g.redAbove) || (g.redBelow !== undefined && v < g.redBelow));
     }
+    for (const [id, pre] of this.disps) {
+      const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+      const d = displays(sys, id);
+      const html = d.map((r) => esc(r).split(INV_ON).map((part, k) => k === 0 ? part : `<b><span>${part.replace(INV_OFF, '</span></b>')}`).join('')).join('\n');
+      if (pre.dataset.h !== html) { pre.dataset.h = html; pre.innerHTML = html; }
+    }
     this.autoBtn.textContent = sys.autoStart ? 'Auto-start: running' : 'Auto-start';
     this.autoBtn.classList.toggle('on', sys.autoStart);
     const steps = sys.checklist();
@@ -200,4 +231,10 @@ export class SystemsPanel {
       `<div class="${s.done ? 'done' : k === next ? 'next' : ''}">${s.text}${k === next && s.note ? `<small>${s.note}</small>` : ''}</div>`).join('')
       + (next < 0 ? '<div class="next">Checklist complete.</div>' : '');
   }
+}
+
+function displays(sys: AircraftSystems, id: string): string[] {
+  const def = sys.avionics?.displays.find((d) => d.id === id);
+  const rows = sys.avionics?.display(id) ?? [];
+  return def ? Array.from({ length: def.rows }, (_, k) => rows[k] || ' '.repeat(def.cols)) : rows;
 }

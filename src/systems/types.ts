@@ -218,6 +218,14 @@ export interface MissionData {
   zuluStart: number;
 }
 
+/** What the avionics ask the rest of the jet to do (radar, stores). */
+export type AvAction =
+  | { t: 'radarMode'; mode: 'RWS' | 'TWS' | 'ACM' | 'OFF' }
+  | { t: 'radarRange'; d: 1 | -1 }
+  | { t: 'radarAz' }
+  | { t: 'weaponNext' }
+  | { t: 'master'; mode: NavState['masterMode'] };
+
 /** Navigation and fire-control state the rest of the sim reads back from the avionics. */
 export interface NavState {
   /** index into `steerpoints` of the selected steerpoint */
@@ -249,6 +257,12 @@ export interface Avionics {
   readonly mfdCount: number;
   mfd(i: number): MfdView;
   mfdPress(i: number, osb: number): void;
+  /** step a display to its next format (display-management switch) */
+  mfdNext(i: number): void;
+  /** the selected steerpoint as the navigation system believes it, or null when it has no position */
+  steerPoint(): NavPoint | null;
+  /** requests to the radar and stores since the last call */
+  drainActions(): AvAction[];
   /** master-mode requests from HOTAS-style keys (the ICP buttons call the same thing) */
   setMasterMode(m: NavState['masterMode']): void;
 }
