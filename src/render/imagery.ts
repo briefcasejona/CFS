@@ -65,23 +65,27 @@ export function mercator(lat: number, lon: number, out: { x: number; y: number }
 }
 
 class Level {
-  readonly canvas: HTMLCanvasElement | null;
-  readonly tex: THREE.Texture;
+  readonly tex: THREE.DataTexture;
   readonly org: THREE.Vector3;       // window origin (tiles) and 2^z
   private slots: string[] = new Array(N * N).fill('');
-  dirty = false;
+  /** tiles that arrived and wait to be copied into the texture (a few a frame) */
+  readonly arrived: Array<{ s: number; key: string; img: HTMLImageElement }> = [];
   /** @param mask the loaded-slot mask of all levels, N wide and N rows per level (one texture for all of them: some
    *  GPUs allow only 16 textures in a shader) */
   constructor(readonly z: number, readonly aerial: boolean, private readonly index: number, private readonly mask: THREE.DataTexture) {
     this.org = new THREE.Vector3(-1e9, -1e9, 2 ** z);
-    this.canvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
-    if (this.canvas) { this.canvas.width = this.canvas.height = N * TS; }
-    const t = this.canvas ? new THREE.CanvasTexture(this.canvas) : new THREE.Texture();
+    // the window's texture lives on the GPU only: each tile is copied into its slot as it arrives (texSubImage2D),
+    // never the whole 2048² texture at once (a full re-upload of an accelerated canvas stalls the GPU process)
+    const t = new THREE.DataTexture(null, N * TS, N * TS, THREE.RGBAFormat);
+    t.source.dataReady = false;
     t.flipY = false;
     t.colorSpace = THREE.SRGBColorSpace;
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.magFilter = THREE.LinearFilter;
     t.minFilter = THREE.LinearMipmapLinearFilter;
+    t.generateMipmaps = true;
     t.anisotropy = 4;
+    t.needsUpdate = true;
     this.tex = t;
   }
 
@@ -112,14 +116,36 @@ class Level {
     return key;
   }
 
-  /** a tile arrived: draw it if its slot still wants it */
+  /** a tile arrived: queue it for its slot if the slot still wants it */
   put(x: number, y: number, key: string, img: HTMLImageElement) {
     const s = this.slot(x, y);
-    if (this.slots[s] !== 'pending:' + key || !this.canvas) return;
-    this.slots[s] = key;
-    this.canvas.getContext('2d')!.drawImage(img, (s % N) * TS, Math.floor(s / N) * TS, TS, TS);
-    this.setMask(s, 255);
-    this.dirty = true;
+    if (this.slots[s] !== 'pending:' + key) return;
+    this.arrived.push({ s, key, img });
+  }
+
+  /** copy queued tiles into the texture (at most `max`); the mipmaps are regenerated once, after the last */
+  upload(renderer: THREE.WebGLRenderer, max: number) {
+    let n = 0;
+    while (this.arrived.length && n < max) {
+      const a = this.arrived.shift()!;
+      if (this.slots[a.s] !== 'pending:' + a.key) continue;
+      n++;
+      this.slots[a.s] = a.key;
+      const last = !this.arrived.length || n === max;
+      this.tex.generateMipmaps = last;
+      let img: HTMLImageElement | HTMLCanvasElement = a.img;
+      if (img.naturalWidth !== TS || img.naturalHeight !== TS) {
+        // (a service that answers with 512 px tiles: scaled to the slot)
+        const c = document.createElement('canvas'); c.width = c.height = TS;
+        c.getContext('2d')!.drawImage(img, 0, 0, TS, TS);
+        img = c;
+      }
+      const src = new THREE.Texture(img);
+      renderer.copyTextureToTexture(src, this.tex, null, new THREE.Vector2((a.s % N) * TS, Math.floor(a.s / N) * TS));
+      this.tex.generateMipmaps = true;
+      this.setMask(a.s, 255);
+    }
+    return n;
   }
 
   fail(x: number, y: number, key: string) {
@@ -151,7 +177,9 @@ export class Imagery {
   private ok = 0;
   private errors = 0;
   private queue: Array<{ lv: Level; x: number; y: number }> = [];
-  private lastUpload = 0;
+  /** set by the scene: the tiles are copied into the GPU textures with it */
+  renderer: THREE.WebGLRenderer | null = null;
+  private ready = new Set<Level>();
   private m = { x: 0, y: 0 };
 
   constructor() {
@@ -181,12 +209,15 @@ export class Imagery {
       for (const [, x, y] of lv.recentre(this.m.x * s, this.m.y * s)) this.queue.push({ lv, x, y });
     }
     while (this.inflight < MAX_INFLIGHT && this.queue.length) this.load(this.queue.shift()!);
-    const now = performance.now();
-    if (now - this.lastUpload > 150) {
-      // one level per tick: each upload is a whole 2048² texture with its mipmaps
-      const lv = this.levels.find((l) => l.dirty);
-      if (lv) { lv.tex.needsUpdate = true; lv.dirty = false; }
-      this.lastUpload = now;
+    // the arrived tiles into their textures: a few a frame, coarse levels first
+    if (this.renderer) {
+      let budget = 4;
+      for (const lv of this.levels) {
+        if (budget <= 0) break;
+        if (!lv.arrived.length) continue;
+        if (!this.ready.has(lv)) { this.renderer.initTexture(lv.tex); this.ready.add(lv); }
+        budget -= lv.upload(this.renderer, budget);
+      }
     }
   }
 

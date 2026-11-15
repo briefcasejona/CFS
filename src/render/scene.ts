@@ -92,6 +92,7 @@ export class SceneRenderer {
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    this.terrain.imagery.renderer = this.renderer;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.camera = new THREE.PerspectiveCamera(this.fovBase, 1, 0.3, 450000);
     // the camera lives in a rig: on a monitor the rig stays at the origin; in VR it carries the cockpit eye point and
