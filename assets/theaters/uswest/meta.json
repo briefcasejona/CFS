@@ -1,0 +1,16 @@
+{
+  "proj": {
+    "lat0": 40.8,
+    "lon0": -118.5,
+    "lat1": 34,
+    "lat2": 47
+  },
+  "half": 960000,
+  "res": 1000,
+  "n": 1921,
+  "format": "int16le-gzip",
+  "min": -5152,
+  "max": 4184,
+  "source": "AWS Terrain Tiles (Terrarium), Mapzen/Tilezen; data © their providers (SRTM, GMTED2010, ETOPO1, EU-DEM, …)",
+  "baked": "2026-11-15T16:27:35.734Z"
+}

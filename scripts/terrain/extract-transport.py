@@ -22,6 +22,8 @@ import shapely
 RELEASE = '2026-10-21.0'
 BASE = f'overturemaps-us-west-2/release/{RELEASE}/theme=transportation/type=segment/'
 OUT = '.cache/transport'
+# the theaters to extract (the Gulf's roads are baked and unchanged; add it back to re-extract)
+THEATERS = [t for t in os.environ.get('CFS_THEATERS', 'europe,uswest').split(',') if t]
 ROAD = {'motorway': 0, 'trunk': 1, 'primary': 2, 'secondary': 3, 'tertiary': 4, 'unclassified': 5, 'residential': 6, 'living_street': 6}
 MAJOR = [k for k, v in ROAD.items() if v <= 4]
 MINOR = [k for k, v in ROAD.items() if v > 4]
@@ -52,7 +54,7 @@ class Lcc:
 def boxes():
     """lon/lat boxes: one per theater, and one per detail square"""
     theaters, patches = [], []
-    for tid in ('europe', 'gulf'):
+    for tid in THEATERS:
         meta = json.load(open(f'assets/theaters/{tid}/meta.json'))
         lcc = Lcc(**meta['proj'])
         def box(x0, z0, x1, z1):

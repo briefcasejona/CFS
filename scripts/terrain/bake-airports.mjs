@@ -51,7 +51,13 @@ for (const r of await csv('runways')) {
 }
 
 const out = {};
-for (const theater of ['europe', 'gulf']) {
+// which countries each theater's content covers (OurAirports iso_country); the land around them is terrain only
+export const COUNTRIES = {
+  europe: { set: new Set(['FR', 'BE', 'LU', 'CH', 'LI', 'IT', 'SM', 'VA', 'MC', 'NL', 'AT', 'GB', 'IM', 'JE', 'GG', 'DK', 'NO']), maxLat: { NO: 62 } },
+  gulf: null,
+  uswest: { set: new Set(['US']), maxLat: {} },
+};
+for (const theater of ['europe', 'gulf', 'uswest']) {
   const mod = await import(`../../build/src/world/theaters/${theater}.js`);
   const lcc = mod[`${theater}Lcc`];
   const T = mod[theater.toUpperCase()];
@@ -59,6 +65,8 @@ for (const theater of ['europe', 'gulf']) {
   const rows = [];
   for (const a of airports) {
     if (a[2] !== 'large_airport' && a[2] !== 'medium_airport') continue;
+    const cc = COUNTRIES[theater];
+    if (cc && (!cc.set.has(a[8]) || +a[4] > (cc.maxLat[a[8]] ?? 90))) continue;
     const rws = byAirport.get(a[0]);
     if (!rws) continue;
     const c = lcc.forward(+a[4], +a[5]);

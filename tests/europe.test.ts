@@ -13,23 +13,26 @@ const loadGrid = () => {
 
 describe('Europe theater', () => {
   it('Lambert projection round-trips and has metric scale near 1', () => {
-    const l = new Lcc({ lat0: 52, lon0: 10, lat1: 47, lat2: 57 });
-    for (const [lat, lon] of [[52, 10], [42, -6], [62, 26], [55.2, 9.26]]) {
+    const l = new Lcc({ lat0: 49.6, lon0: 7, lat1: 41, lat2: 57 });
+    for (const [lat, lon] of [[49.6, 7], [37, 15], [61.5, 6], [55.2, 9.26]]) {
       const p = l.forward(lat, lon);
       const b = l.inverse(p.x, p.z);
       expect(b.lat).toBeCloseTo(lat, 6);
       expect(b.lon).toBeCloseTo(lon, 6);
     }
     // 1° of latitude ≈ 111 km
-    const a = l.forward(52, 10), b = l.forward(53, 10);
+    const a = l.forward(49.6, 7), b = l.forward(50.6, 7);
     expect(Math.abs(Math.hypot(b.x - a.x, b.z - a.z) / 111195 - 1)).toBeLessThan(0.02);
-    expect(l.forward(53, 10).z).toBeLessThan(0); // north = −z
+    expect(l.forward(50.6, 7).z).toBeLessThan(0); // north = −z
   });
 
   it('baked DEM: sea is water, the Alps are high, every airfield is on land', () => {
     loadGrid();
     const h = (lat: number, lon: number) => { const p = europeLcc.forward(lat, lon); return EUROPE.rawHeight(p.x, p.z); };
     expect(h(55.5, 3.0)).toBeLessThan(0);      // North Sea
+    expect(h(39.5, 12.0)).toBeLessThan(-1000); // Tyrrhenian Sea
+    expect(h(37.75, 15.0)).toBeGreaterThan(2500); // Etna
+    expect(h(61.6, 8.3)).toBeGreaterThan(1500); // Jotunheimen, southern Norway
     expect(h(45.9, 7.0)).toBeGreaterThan(1500); // Alps near Mont Blanc
     expect(h(52.1, 5.1)).toBeGreaterThan(-15);  // Utrecht (polder country, around sea level)
     for (const ab of EUROPE.airbases) expect(EUROPE.rawHeight(ab.x, ab.z) > 0, `${ab.name} on land`).toBe(true);
@@ -63,7 +66,7 @@ describe('Europe theater', () => {
       // the takeoff scenario starts on a real NATO runway
       const tk = buildMission(buildScenario({ ...defaultCustom(), scenario: 'takeoff', theaterId: 'europe' }), OPTS);
       expect(tk.player.fm.wow).toBe(true);
-      expect(T.nearestAirbase(tk.player.pos.x, tk.player.pos.z).id).toBe('malbork');
+      expect(T.nearestAirbase(tk.player.pos.x, tk.player.pos.z).id).toBe('aviano');
     } finally { T.setTheater('varnia'); }
   });
 
@@ -71,11 +74,11 @@ describe('Europe theater', () => {
     loadGrid();
     T.setTheater('europe');
     try {
-      expect(T.THEATER_NAME).toBe('Northern Europe');
+      expect(T.THEATER_NAME).toBe('Western Europe');
       const v = T.requireAirbase('volkel');
       expect(T.terrainHeight(v.x, v.z)).toBeCloseTo(v.elev, 0);
       expect(T.defaultNation('blue')).toBe('nl');
-      expect(T.defaultNation('red')).toBe('ru');
+      expect(T.defaultNation('red')).toBe('aggressor');
     } finally { T.setTheater('varnia'); }
   });
 });

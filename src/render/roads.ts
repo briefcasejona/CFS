@@ -17,7 +17,7 @@ export const ROADS_FAR = 44000, ROADS_ALL = 20000, STREETS = 7000;
 const NEAR_STEP = 30, FAR_STEP = 350, STATION_RANGE = 9000;
 
 interface Index { half: number; block: number; cell: number; blocks: Array<[number, number]>; local: Array<{ id: string; x0: number; z0: number; size: number }>; localCell: number }
-interface CellMesh { mesh: THREE.Mesh | null; lod: number; used: number }
+interface CellMesh { mesh: THREE.Mesh | null; lod: number; used: number; box: [number, number, number, number] }
 
 function roadMaterial(uniforms: { uPix: { value: number } }) {
   const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, side: THREE.DoubleSide, depthWrite: false });
@@ -111,6 +111,12 @@ export class Roads {
     for (const m of this.stationMeshes) m.count = 0;
   }
 
+  /** the ground changed under a square (streamed elevation arrived): its cells are rebuilt, the old ones showing until then */
+  invalidate(x0: number, z0: number, x1: number, z1: number) {
+    for (const c of this.cells.values()) if (c.box[0] < x1 && c.box[2] > x0 && c.box[1] < z1 && c.box[3] > z0) c.lod = -1;
+    if (this.stationAt.x > x0 - 6000 && this.stationAt.x < x1 + 6000 && this.stationAt.y > z0 - 6000 && this.stationAt.y < z1 + 6000) this.stationAt.set(Infinity, Infinity);
+  }
+
   private base() { return `assets/theaters/${this.theaterId}/roads`; }
 
   private loadIndex() {
@@ -148,7 +154,7 @@ export class Roads {
     this.frame++;
     const t0 = performance.now(), budget = this.budgetMs;
     // nearest first: [distance, key, block file, cell i, j, level]
-    const want: Array<[number, string, string, number, number, number]> = [];
+    const want: Array<[number, string, string, number, number, number, number, number, number]> = [];
     const ring = (reach: number, size: number, fn: (i: number, j: number, d: number, x0: number, z0: number) => void, ox: number, oz: number) => {
       const i0 = Math.floor((cam.x - reach - ox) / size), i1 = Math.floor((cam.x + reach - ox) / size), j0 = Math.floor((cam.z - reach - oz) / size), j1 = Math.floor((cam.z + reach - oz) / size);
       for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
@@ -158,20 +164,20 @@ export class Roads {
       }
     };
     const per = ix.block / ix.cell;
-    ring(ROADS_FAR, ix.cell, (i, j, d) => {
+    ring(ROADS_FAR, ix.cell, (i, j, d, x0, z0) => {
       const bi = Math.floor(i / per), bj = Math.floor(j / per);
       if (!this.blockSet.has(`${bi}_${bj}`)) return;
       // level 0: every class, following the ground closely; 1: every class; 2: the main roads and railways only
       const lod = d < 5000 ? 0 : d < ROADS_ALL ? 1 : 2;
-      want.push([d, `M${i},${j}`, `major/${bi}_${bj}`, i - bi * per, j - bj * per, lod]);
+      want.push([d, `M${i},${j}`, `major/${bi}_${bj}`, i - bi * per, j - bj * per, lod, x0, z0, ix.cell]);
     }, -ix.half, -ix.half);
     if (agl < 6000) for (const p of ix.local) {
       if (cam.x < p.x0 - STREETS || cam.z < p.z0 - STREETS || cam.x > p.x0 + p.size + STREETS || cam.z > p.z0 + p.size + STREETS) continue;
       const T = Math.ceil(p.size / ix.localCell);
-      ring(STREETS, ix.localCell, (i, j, d) => { if (i >= 0 && j >= 0 && i < T && j < T) want.push([d, `L${p.id},${i},${j}`, `local/${p.id}`, i, j, 0]); }, p.x0, p.z0);
+      ring(STREETS, ix.localCell, (i, j, d, x0, z0) => { if (i >= 0 && j >= 0 && i < T && j < T) want.push([d, `L${p.id},${i},${j}`, `local/${p.id}`, i, j, 0, x0, z0, ix.localCell]); }, p.x0, p.z0);
     }
     want.sort((a, b) => a[0] - b[0]);
-    for (const [, key, file, ci, cj, lod] of want) {
+    for (const [, key, file, ci, cj, lod, bx, bz, bs] of want) {
       let c = this.cells.get(key);
       if (!c || c.lod !== lod) {
         if (performance.now() - t0 < budget) {
@@ -179,7 +185,7 @@ export class Roads {
           if (b) {
             const mesh = this.buildCell(b, ci, cj, lod, key[0] === 'L');
             if (c?.mesh) { this.group.remove(c.mesh); c.mesh.geometry.dispose(); }
-            c = { mesh, lod, used: this.frame };
+            c = { mesh, lod, used: this.frame, box: [bx, bz, bx + bs, bz + bs] };
             this.cells.set(key, c);
             if (mesh) this.group.add(mesh);
           }

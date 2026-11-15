@@ -76,6 +76,10 @@ export class Forest {
     this.tiles.clear();
     this.version++;
   }
+  /** the ground changed under a square (streamed elevation arrived): its trees are planted again */
+  invalidate(x0: number, z0: number, x1: number, z1: number) {
+    for (const [k, t] of this.tiles) if (t.x0 < x1 && t.x0 + TILE > x0 && t.z0 < z1 && t.z0 + TILE > z0) { this.drop(t); this.tiles.delete(k); this.version++; }
+  }
   private drop(t: Tile) { for (const m of t.meshes) { this.group.remove(m); m.dispose(); } }
 
   /** show the tiles within reach of the camera, building up to `budget` missing ones */

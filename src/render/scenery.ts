@@ -89,6 +89,16 @@ export class FarScenery {
     this.tiles.clear();
   }
 
+  /** the ground changed under these squares (streamed elevation arrived): their tiles are built again */
+  invalidate(rects: Array<{ x0: number; z0: number; x1: number; z1: number }>) {
+    for (const [key, t] of this.tiles) {
+      const [ti, tj] = key.split(',').map(Number), x0 = ti * TILE, z0 = tj * TILE;
+      if (!rects.some((r) => x0 < r.x1 && x0 + TILE > r.x0 && z0 < r.z1 && z0 + TILE > r.z0)) continue;
+      for (const m of t.meshes) { this.group.remove(m); m.dispose(); }
+      this.tiles.delete(key);
+    }
+  }
+
   update(cam: THREE.Vector3, cover: CoverGrid, pal: TerrainPalette, agl: number) {
     if (cover !== this.cover) { this.clear(); this.cover = cover; }
     this.frame++;

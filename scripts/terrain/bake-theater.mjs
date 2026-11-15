@@ -14,7 +14,8 @@ import { Lcc } from '../../build/src/world/lcc.js';
 // per theater: Lambert Conformal Conic frame, half extent (square), grid spacing, Terrarium zoom, lon/lat window for
 // the Natural Earth land mask
 export const THEATERS = {
-  europe: { proj: { lat0: 52, lon0: 10, lat1: 47, lat2: 57 }, half: 1150000, res: 1000, z: 7, window: [-20, 35, 40, 70] },
+  europe: { proj: { lat0: 49.6, lon0: 7, lat1: 41, lat2: 57 }, half: 1420000, res: 1000, z: 7, window: [-15, 33, 25, 66] },
+  uswest: { proj: { lat0: 40.8, lon0: -118.5, lat1: 34, lat2: 47 }, half: 960000, res: 1000, z: 7, window: [-132, 28, -105, 52] },
   gulf: { proj: { lat0: 29.5, lon0: 47.5, lat1: 26, lat2: 33 }, half: 600000, res: 1000, z: 8, window: [38, 20, 57, 38] },
 };
 const ID = process.argv[2];

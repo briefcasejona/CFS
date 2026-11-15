@@ -15,6 +15,8 @@ export const NATIONS: Record<string, Nation> = Object.fromEntries(([
   // fictional (Varnia)
   { id: 'coalition', name: 'Coalition', airForce: 'Coalition Air Forces', roundel: ['#1d4f91', '#ffffff', '#1d4f91'], fictional: true },
   { id: 'federation', name: 'Federation', airForce: 'Federation Air Force', roundel: ['#b3262d', '#ffffff', '#b3262d'], fictional: true },
+  // training adversary (Western Europe, US West Coast): a hypothetical "red air" squadron, no real nation
+  { id: 'aggressor', name: 'Aggressors', airForce: 'Aggressor Squadron (red air)', roundel: ['#b3262d', '#1a1a1a', '#b3262d'], fictional: true },
   // real
   { id: 'us', name: 'United States', airForce: 'US Air Force / US Navy', roundel: ['#ffffff', '#002868', '#ffffff'] },
   { id: 'nl', name: 'Netherlands', airForce: 'Royal Netherlands Air Force', roundel: ['#ae1c28', '#ffffff', '#21468b'] },
@@ -22,6 +24,9 @@ export const NATIONS: Record<string, Nation> = Object.fromEntries(([
   { id: 'de', name: 'Germany', airForce: 'Luftwaffe', roundel: ['#000000', '#ffffff', '#000000'] },
   { id: 'fr', name: 'France', airForce: 'Armée de l\'Air et de l\'Espace', roundel: ['#ef4135', '#ffffff', '#0055a4'] },
   { id: 'uk', name: 'United Kingdom', airForce: 'Royal Air Force', roundel: ['#012169', '#ffffff', '#c8102e'] },
+  { id: 'it', name: 'Italy', airForce: 'Aeronautica Militare', roundel: ['#009246', '#ffffff', '#ce2b37'] },
+  { id: 'at', name: 'Austria', airForce: 'Austrian Air Force', roundel: ['#ed2939', '#ffffff', '#ed2939'] },
+  { id: 'ch', name: 'Switzerland', airForce: 'Swiss Air Force', roundel: ['#ff0000', '#ffffff', '#ff0000'] },
   { id: 'dk', name: 'Denmark', airForce: 'Royal Danish Air Force', roundel: ['#c8102e', '#ffffff', '#c8102e'] },
   { id: 'no', name: 'Norway', airForce: 'Royal Norwegian Air Force', roundel: ['#ba0c2f', '#ffffff', '#00205b'] },
   { id: 'se', name: 'Sweden', airForce: 'Swedish Air Force', roundel: ['#006aa7', '#fecc00', '#006aa7'] },

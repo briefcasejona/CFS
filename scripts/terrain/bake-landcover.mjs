@@ -15,7 +15,8 @@ import { Lcc } from '../../build/src/world/lcc.js';
 
 // grid spacing and COG overview per theater (image 0 = 36000 px per 3° tile, 4 = 2250, 5 = 1125): Europe at 1 km keeps the texture inside 4096² (2301²); the smaller Gulf affords 500 m
 const THEATERS = {
-  europe: { proj: { lat0: 52, lon0: 10, lat1: 47, lat2: 57 }, half: 1150000, res: 1000, overview: 5 },
+  europe: { proj: { lat0: 49.6, lon0: 7, lat1: 41, lat2: 57 }, half: 1420000, res: 1000, overview: 5 },
+  uswest: { proj: { lat0: 40.8, lon0: -118.5, lat1: 34, lat2: 47 }, half: 960000, res: 1000, overview: 5 },
   gulf: { proj: { lat0: 29.5, lon0: 47.5, lat1: 26, lat2: 33 }, half: 600000, res: 500, overview: 4 },
 };
 const ID = process.argv[2];

@@ -1,11 +1,11 @@
-// Real building footprints around the European airfields → assets/theaters/europe/buildings/<patch>.bin.gz
+// Real building footprints around a real-world theater's airfields → assets/theaters/<id>/buildings/<patch>.bin.gz
 //
 // Input: one JSON per landcover detail patch (coverdetail.json), each building as
 //   [lat, lon, w, d, angle, height or -1, fill]
 // where w × d is the footprint's minimum-area rectangle (m), angle the direction of side w (rad, counter-clockwise
 // from east), height the roof height (m, -1 = unknown) and fill the footprint's share of that rectangle. They come from
 // the Overture Maps buildings theme (OpenStreetMap and other open sources; ODbL), read with pyarrow from the public
-// release on S3 — see SOURCES.md.
+// release on S3 by scripts/terrain/extract-buildings.py — see SOURCES.md.
 //
 // Output per patch: the buildings sorted into 2 km tiles, each tile's large buildings first (so a far tile can draw
 // just that prefix), 8 bytes a building:
@@ -15,16 +15,18 @@
 //   h     u8   roof height, 0 = unknown, 0.25 m steps to 50 m, then 2 m steps
 // Header: 'CFSB', version, tiles per side, building count, tile offsets (u32 × T²+1), large counts (u32 × T²).
 //
-// usage: node scripts/terrain/bake-buildings.mjs <dir with bld-<patch>.json>
+// usage: npm run build && node scripts/terrain/bake-buildings.mjs <europe|uswest> [dir with bld-<patch>.json, default .cache/buildings/<id>]
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
-import { europeLcc as lcc } from '../../build/src/world/theaters/europe.js';
+const ID = process.argv[2];
+if (!['europe', 'uswest'].includes(ID)) { console.error('usage: bake-buildings.mjs <europe|uswest> [dir]'); process.exit(1); }
+const lcc = (await import(`../../build/src/world/theaters/${ID}.js`))[`${ID}Lcc`];
 
-const SRC = process.argv[2];
-const OUT = 'assets/theaters/europe/buildings';
+const SRC = process.argv[3] ?? `.cache/buildings/${ID}`;
+const OUT = `assets/theaters/${ID}/buildings`;
 const TILE = 2000, MIN_AREA = 30, BIG_AREA = 400;
 mkdirSync(OUT, { recursive: true });
-const patches = JSON.parse(readFileSync('assets/theaters/europe/coverdetail.json', 'utf8')).patches;
+const patches = JSON.parse(readFileSync(`assets/theaters/${ID}/coverdetail.json`, 'utf8')).patches;
 
 const encSize = (m) => m <= 50 ? Math.round(m * 4) : Math.min(255, 200 + Math.round((m - 50) / 6));
 const encH = (m) => m <= 0 ? 0 : m <= 50 ? Math.max(1, Math.round(m * 4)) : Math.min(255, 200 + Math.round((m - 50) / 2));
