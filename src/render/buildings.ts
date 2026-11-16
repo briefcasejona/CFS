@@ -7,6 +7,7 @@
 // only its large buildings, out to the far scenery range. Facades get floors of windows in the shader.
 import * as THREE from 'three';
 import { gunzip } from '../world/demTheater.js';
+import { workLeft } from './quality.js';
 import { terrainHeight, runwaysOf, fieldsNear, currentTheater } from '../world/theater.js';
 import { hash2, FAR_HOUSES } from './scenery.js';
 import { proceduralInner } from './modelScenery.js';
@@ -220,7 +221,7 @@ export class RealBuildings {
     const on = this.state === 'ready' && currentTheater().id === this.theaterId && agl < 14000;
     this.group.visible = on;
     if (!on) return;
-    let budget = 2;
+    let budget = 3;
     const want: Array<[number, Patch, number, number]> = [];
     for (const p of this.patches) {
       const size = p.T * p.tile;
@@ -243,8 +244,10 @@ export class RealBuildings {
       if (!t) this.tiles.set(key, t = { used: this.frame });
       t.used = this.frame;
       const near = d < NEAR_REAL;
-      if (near && !t.near && budget > 0) { budget--; t.near = this.buildNear(p, ti, tj); }
-      if (!near && !t.far && !t.near && budget > 0) { budget--; t.far = this.buildFar(p, ti, tj); }
+      // one tile a frame, a second only while the frame has time left (a dense town tile is a lot of geometry)
+      const may = budget > 1 || (budget > 0 && workLeft());
+      if (near && !t.near && may) { budget -= 2; t.near = this.buildNear(p, ti, tj); }
+      else if (!near && !t.far && !t.near && may) { budget -= 2; t.far = this.buildFar(p, ti, tj); }
       // a near tile already built keeps drawing until the far one exists, then its detail is freed
       if (!near && t.near && t.far) { for (const m of t.near) { this.group.remove(m); m.dispose(); } t.near = undefined; }
       const showNear = !!t.near && (near || !t.far);
