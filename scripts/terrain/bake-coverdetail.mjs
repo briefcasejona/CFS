@@ -18,6 +18,7 @@ import { fromUrl } from 'geotiff';
 const THEATERS = {
   europe: { module: '../../build/src/world/theaters/europe.js' },
   gulf: { module: '../../build/src/world/theaters/gulf.js' },
+  uswest: { module: '../../build/src/world/theaters/uswest.js' },
 };
 export const DETAIL_RES = 20;
 const ID = process.argv[2];

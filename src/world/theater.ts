@@ -3,8 +3,10 @@ import type { Side } from '../aircraft/types.js';
 import { VARNIA } from './theaters/varnia.js';
 import { EUROPE } from './theaters/europe.js';
 import { GULF } from './theaters/gulf.js';
+import { USWEST } from './theaters/uswest.js';
 import type { CarrierSpec } from '../sim/carrier.js';
 import type { CoverGrid } from './landcover.js';
+import type { DemStream } from './demStream.js';
 
 export { fbm } from './noise.js';
 
@@ -118,6 +120,8 @@ export interface Theater {
   geo?: (x: number, z: number) => { lat: number; lon: number };
   /** ground cover (forest, towns, fields, water): baked from satellite landcover, or procedural (landcover.ts) */
   cover?: CoverGrid;
+  /** real-world theaters: fine elevation streamed around the camera (demStream.ts) */
+  stream?: DemStream | null;
 }
 
 export interface TerrainPalette {
@@ -131,6 +135,8 @@ export interface TerrainPalette {
   style: 'temperate' | 'desert';
   /** instanced forest trees near the camera */
   trees: boolean;
+  /** where a temperate map turns to desert: 0 (green) … 1 (sand and gravel) at a point */
+  arid?: (x: number, z: number) => number;
 }
 const DEFAULT_PALETTE: TerrainPalette = { beach: 8, snowLine: () => 1900, rockBelowSnow: 200, style: 'temperate', trees: true };
 export function terrainPalette(): TerrainPalette { return { ...DEFAULT_PALETTE, ...current.palette }; }
@@ -199,6 +205,7 @@ export function setTheater(id: string | undefined): Theater {
 
 registerTheater(VARNIA);
 registerTheater(EUROPE);
+registerTheater(USWEST);
 registerTheater(GULF);
 indexFields();
 

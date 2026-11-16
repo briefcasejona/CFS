@@ -21,9 +21,12 @@
 // usage: npm run build && node scripts/terrain/bake-transport.mjs <europe|gulf>
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, existsSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
+import { theaterCountries } from './countries.mjs';
 
 const ID = process.argv[2];
-if (!['europe', 'gulf'].includes(ID)) { console.error('usage: bake-transport.mjs <europe|gulf>'); process.exit(1); }
+if (!['europe', 'gulf', 'uswest'].includes(ID)) { console.error('usage: bake-transport.mjs <europe|gulf|uswest>'); process.exit(1); }
+// only the theater's own countries (scripts/terrain/countries.mjs): the land around them is terrain only
+const inCountry = await theaterCountries(ID);
 const mod = await import(`../../build/src/world/theaters/${ID}.js`);
 const lcc = mod[`${ID}Lcc`];
 const meta = JSON.parse(readFileSync(`assets/theaters/${ID}/meta.json`, 'utf8'));
@@ -54,6 +57,7 @@ for (const f of readdirSync(SRC)) {
   for (let k = 0; k < N; k++) {
     const n = npts[k], lo = co[o * 2] / 1e7, la = co[o * 2 + 1] / 1e7;
     if (n < 2 || lo < LO0 || lo > LO1 || la < LA0 || la > LA1) { o += n; continue; }
+    if (inCountry) { const m = o + (n >> 1); if (!inCountry(co[m * 2 + 1] / 1e7, co[m * 2] / 1e7)) { o += n; continue; } }
     const pts = new Float64Array(n * 2);
     for (let i = 0; i < n; i++) { const c = lcc.forward(co[(o + i) * 2 + 1] / 1e7, co[(o + i) * 2] / 1e7); pts[i * 2] = c.x; pts[i * 2 + 1] = c.z; }
     o += n;

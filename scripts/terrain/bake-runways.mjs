@@ -53,7 +53,7 @@ for (const r of runways) {
 }
 
 const out = {};
-for (const theater of ['europe', 'gulf']) {
+for (const theater of ['europe', 'gulf', 'uswest']) {
   const src = readFileSync(`src/world/theaters/${theater}.ts`, 'utf8');
   for (const m of src.matchAll(/\['(\w+)', '([^']+)', '(blue|red)', ([\d.-]+), ([\d.-]+), [\d.]+, \d+\]/g)) {
     const [, id, name, , lat, lon] = m;

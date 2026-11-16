@@ -7,6 +7,7 @@ import type { Airbase, ObjectiveDef, Runway, Theater } from './theater.js';
 import { RUNWAYS } from './theaters/runways.js';
 import type { FieldRow } from './theaters/civil.js';
 import type { CoverPatch } from './landcover.js';
+import { DemStream } from './demStream.js';
 
 export interface DemConfig {
   proj: { lat0: number; lon0: number; lat1: number; lat2: number };
@@ -15,6 +16,8 @@ export interface DemConfig {
   asset: string;  // folder under assets/theaters/
   /** grid spacing (m) of the baked landcover.bin.gz (scripts/terrain/bake-landcover.mjs), when there is one */
   cover?: number;
+  /** stream finer elevation (AWS Terrain Tiles, ~25 m) around the camera at runtime (demStream.ts) */
+  stream?: boolean;
 }
 
 /** a square of finer heights: n×n samples from (x0, z0), res m apart */
@@ -31,10 +34,31 @@ export class DemGrid {
   grid: Int16Array | null = null;
   /** high-resolution elevation around the airfields (scripts/terrain/bake-patches.mjs), blended over the grid */
   patches: DemPatch[] = [];
+  /** streamed ~25 m elevation around the camera (cfg.stream), blended over everything else */
+  readonly stream: DemStream | null;
+  private fine = { h: 0, w: 0 };
   constructor(readonly cfg: DemConfig) {
     this.lcc = new Lcc(cfg.proj);
     this.n = Math.round((2 * cfg.half) / cfg.res) + 1;
+    this.stream = cfg.stream ? new DemStream(this.lcc, cfg.half, (x, z) => this.gridLand(x, z)) : null;
   }
+
+  /** whether the 1 km grid (land-masked at bake time) is land at all four samples around a point */
+  private gridLand(x: number, z: number) {
+    if (!this.grid) return false;
+    const { half, res } = this.cfg;
+    const i = Math.floor((x + half) / res), j = Math.floor((z + half) / res);
+    return this.sample(i, j) > 0 && this.sample(i + 1, j) > 0 && this.sample(i, j + 1) > 0 && this.sample(i + 1, j + 1) > 0;
+  }
+
+  /** the terrain with the streamed fine elevation over it where it has arrived */
+  rawHeight = (x: number, z: number): number => {
+    if (!this.stream) return this.baseHeight(x, z);
+    const f = this.stream.sample(x, z, this.fine);
+    if (f.w >= 1) return f.h;
+    const h = this.baseHeight(x, z);
+    return f.w <= 0 ? h : h * (1 - f.w) + f.h * f.w;
+  };
 
   private sample(i: number, j: number) {
     const N = this.n;
@@ -44,7 +68,7 @@ export class DemGrid {
   }
 
   /** bilinear DEM height plus sub-kilometre noise relief (none near sea level, so low coasts never flood) */
-  rawHeight = (x: number, z: number): number => {
+  baseHeight = (x: number, z: number): number => {
     if (!this.grid) return -50;
     const { half, res } = this.cfg;
     const fx = (x + half) / res, fz = (z + half) / res;

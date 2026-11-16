@@ -20,6 +20,10 @@ export interface Settings {
   hdModels: boolean;
   /** Sentinel-2 satellite imagery on the real-world maps (streamed from EOX) */
   satImagery: boolean;
+  /** ~25 m elevation streamed around the aircraft on the real-world maps (AWS Terrain Tiles) */
+  fineTerrain: boolean;
+  /** graphics quality: 'auto' (holds ~60 fps, as much detail as the PC allows) or a fixed level 0 Low … 3 Ultra */
+  graphicsQuality: 'auto' | number;
   // audio
   volume: number;
   /** push-to-talk voice commands (browser speech recognition; off by default — audio goes to the browser's speech service) */
@@ -47,6 +51,8 @@ export const DEFAULT_SETTINGS: Settings = {
   visibilityKm: 80,
   hdModels: true,
   satImagery: true,
+  fineTerrain: true,
+  graphicsQuality: 'auto',
   volume: 0.6,
   voiceCommands: false,
   hudColor: '#3dff7a',

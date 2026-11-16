@@ -5,6 +5,7 @@ import { expect } from './expect.js';
 import { parseBlock, cellPolylines, buildRibbons, halfWidth, parseStations, MOTORWAY, RESIDENTIAL, RAILWAY, F_BRIDGE, type Polyline } from '../src/world/transport.js';
 import { EUROPE, europeLcc } from '../src/world/theaters/europe.js';
 import { GULF } from '../src/world/theaters/gulf.js';
+import { USWEST, uswestLcc } from '../src/world/theaters/uswest.js';
 import { setTheater, fieldsNear, terrainHeight, ALL_FIELDS } from '../src/world/theater.js';
 
 const block = (rel: string) => { const b = gunzipSync(readFileSync(rel)); return parseBlock(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer); };
@@ -28,7 +29,7 @@ describe('transport', () => {
   it('Europe: the baked road blocks hold the motorways and railways around Volkel', () => {
     const ix = JSON.parse(readFileSync('assets/theaters/europe/roads/index.json', 'utf8'));
     expect(ix.attribution).toContain('OpenStreetMap');
-    expect(ix.blocks.length).toBeGreaterThan(900);
+    expect(ix.blocks.length).toBeGreaterThan(450);
     expect(ix.local.length).toBe(26);
     const g = europeLcc.forward(51.656, 5.709);
     const bi = Math.floor((g.x + ix.half) / ix.block), bj = Math.floor((g.z + ix.half) / ix.block);
@@ -50,10 +51,31 @@ describe('transport', () => {
     let streets = 0;
     for (let j = 0; j < loc.T; j++) for (let i = 0; i < loc.T; i++) streets += cellPolylines(loc, i, j).length;
     expect(streets).toBeGreaterThan(1000);
+    // only the map's own countries: nothing around Frankfurt or Madrid (terrain only there)
+    for (const [lat, lon] of [[50.1, 8.68], [40.4, -3.7]]) {
+      const p = europeLcc.forward(lat, lon);
+      const k = `${Math.floor((p.x + ix.half) / ix.block)}_${Math.floor((p.z + ix.half) / ix.block)}`;
+      expect(ix.blocks.some(([i, j]: [number, number]) => `${i}_${j}` === k), `road block at ${lat}, ${lon}`).toBe(false);
+    }
+  });
+
+  it('US West Coast: roads and railways around Edwards, streets at Miramar', () => {
+    const ix = JSON.parse(readFileSync('assets/theaters/uswest/roads/index.json', 'utf8'));
+    expect(ix.local.length).toBe(19);
+    const g = uswestLcc.forward(34.905, -117.884);
+    const b = block(`assets/theaters/uswest/roads/major/${Math.floor((g.x + ix.half) / ix.block)}_${Math.floor((g.z + ix.half) / ix.block)}.bin.gz`);
+    let roads = 0, rail = 0;
+    for (let j = 0; j < b.T; j++) for (let i = 0; i < b.T; i++) for (const p of cellPolylines(b, i, j)) { if (p.cls === RAILWAY) rail++; else roads++; }
+    expect(roads).toBeGreaterThan(100);
+    expect(rail).toBeGreaterThan(5);
+    const loc = block('assets/theaters/uswest/roads/local/miramar.bin.gz');
+    let streets = 0;
+    for (let j = 0; j < loc.T; j++) for (let i = 0; i < loc.T; i++) streets += cellPolylines(loc, i, j).length;
+    expect(streets).toBeGreaterThan(1000);
   });
 
   it('stations sit on the map with a track heading', () => {
-    for (const [id, min] of [['europe', 10000], ['gulf', 5]] as const) {
+    for (const [id, min] of [['europe', 10000], ['gulf', 5], ['uswest', 300]] as const) {
       const f = `assets/theaters/${id}/roads/stations.json`;
       expect(existsSync(f)).toBeTruthy();
       const st = parseStations(JSON.parse(readFileSync(f, 'utf8')));
@@ -63,10 +85,10 @@ describe('transport', () => {
   });
 
   it('civil airfields: found by the spatial index, on flattened ground, clear of the mission airbases', () => {
-    for (const th of [EUROPE, GULF]) {
+    for (const th of [EUROPE, GULF, USWEST]) {
       setTheater(th.id);
       const fields = th.fields ?? [];
-      expect(fields.length).toBeGreaterThan(th.id === 'europe' ? 300 : 20);
+      expect(fields.length).toBeGreaterThan(th.id === 'europe' ? 250 : th.id === 'uswest' ? 120 : 20);
       for (const f of fields) {
         expect(fieldsNear(f.x, f.z).includes(f)).toBeTruthy();
         expect(ALL_FIELDS.includes(f)).toBeTruthy();

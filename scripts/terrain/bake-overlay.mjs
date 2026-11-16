@@ -10,7 +10,8 @@ import { Lcc } from '../../build/src/world/lcc.js';
 
 // same frames as scripts/terrain/bake-theater.mjs; minPop = smallest non-capital city labelled
 const THEATERS = {
-  europe: { proj: { lat0: 52, lon0: 10, lat1: 47, lat2: 57 }, half: 1150000, minPop: 600000 },
+  europe: { proj: { lat0: 49.6, lon0: 7, lat1: 41, lat2: 57 }, half: 1420000, minPop: 500000 },
+  uswest: { proj: { lat0: 40.8, lon0: -118.5, lat1: 34, lat2: 47 }, half: 960000, minPop: 250000, states: 'US' },
   gulf: { proj: { lat0: 29.5, lon0: 47.5, lat1: 26, lat2: 33 }, half: 600000, minPop: 150000 },
 };
 const ID = process.argv[2];
@@ -34,7 +35,10 @@ const inside = (p, m = 0) => Math.abs(p.x) <= HALF + m && Math.abs(p.z) <= HALF 
 
 // borders: split lines where they leave the theater, drop points closer than 1.5 km to the previous one
 const borders = [];
-for (const f of (await geojson('ne_10m_admin_0_boundary_lines_land')).features) {
+// national borders, plus the state lines of the theater's own country where it is one large country (the US)
+const lineFeatures = (await geojson('ne_10m_admin_0_boundary_lines_land')).features;
+if (THEATERS[ID].states) lineFeatures.push(...(await geojson('ne_10m_admin_1_states_provinces_lines')).features.filter((f) => f.properties.ADM0_A3 === 'USA'));
+for (const f of lineFeatures) {
   const g = f.geometry;
   const lines = g.type === 'LineString' ? [g.coordinates] : g.type === 'MultiLineString' ? g.coordinates : [];
   for (const line of lines) {

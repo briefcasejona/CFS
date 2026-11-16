@@ -1,6 +1,10 @@
-# Northern Europe theater data
+# Western Europe theater data
 
-- `height.bin.gz`: 1 km elevation grid (Int16, Lambert Conformal Conic 52°N 10°E, std. parallels 47°/57°), resampled
+The frame reaches from Sicily to southern Norway; the content (airfields, airports, roads, rail, stations, buildings)
+covers France, Belgium, Luxembourg, Switzerland, Liechtenstein, Italy, the Netherlands, Austria, the UK, Denmark and
+Norway south of 62°N (`scripts/terrain/countries.mjs`, Natural Earth 10 m countries, public domain).
+
+- `height.bin.gz`: 1 km elevation grid (Int16, Lambert Conformal Conic 49.6°N 7°E, std. parallels 41°/57°), resampled
   from **AWS Terrain Tiles** (Terrarium, zoom 7), a public dataset by Mapzen/Tilezen. Underlying sources include SRTM,
   GMTED2010, ETOPO1 and EU-DEM; see https://github.com/tilezen/joerd/blob/master/docs/attribution.md.
   Land/sea corrected with the Natural Earth 10 m land and lakes layers. Baked by `scripts/terrain/bake-theater.mjs europe`.
@@ -27,7 +31,7 @@
   https://opendatacommons.org/licenses/odbl/ (attribution: © OpenStreetMap contributors, Overture Maps Foundation).
   Changes: each footprint reduced to its minimum-area rectangle (shrunk to the footprint's area), its height where
   known, and re-projected to the theater grid. This derived database is offered under the ODbL as well. Baked by
-  `scripts/terrain/bake-buildings.mjs`.
+  `scripts/terrain/extract-buildings.py` and `scripts/terrain/bake-buildings.mjs`.
 - `roads/index.json`, `roads/major/<i>_<j>.bin.gz`, `roads/local/<field>.bin.gz`, `roads/stations.json`: the road
   and railway network of the whole theater (motorways to tertiary roads, standard-gauge railways; the minor roads and
   streets as well inside the squares of `patches.json`) and its railway stations, from the **Overture Maps**
@@ -40,3 +44,10 @@
 - Civil and other non-mission airfields (`src/world/theaters/civil.ts`): every large or medium airport with a paved
   runway of 1,200 m or more, from **OurAirports** (public domain), baked by `scripts/terrain/bake-airports.mjs`.
   Terminals, hangars and aprons are generic, sized by the airport's class.
+- `imagery.json`: which open aerial-photo service covers which ground (France: IGN BD ORTHO, Licence Ouverte / Etalab
+  2.0; the Netherlands: Beeldmateriaal Nederland via PDOK, CC BY 4.0; Switzerland and Liechtenstein: swisstopo
+  SWISSIMAGE, open government data; Austria: basemap.at orthophoto, CC BY 4.0), rasterised from the Natural Earth 10 m
+  countries by `scripts/terrain/bake-imagery-regions.mjs europe`. The photographs themselves are streamed by the
+  browser at runtime (`src/render/imagery.ts`), not stored here.
+- Streamed elevation: around the aircraft the game fetches **AWS Terrain Tiles** (Terrarium, zoom 12, about 25 m) at
+  runtime (`src/world/demStream.ts`); nothing of it is stored here.

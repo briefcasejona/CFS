@@ -80,14 +80,15 @@ With **Voice commands** switched on in Settings, press the **`** key and say the
 
 ## Carriers
 
-Carrier-capable jets (F-14, F/A-18) can operate from a Nimitz-class carrier that steams through the scenario: the USS Theodore Roosevelt off Varnia's west coast and in the 1991 Gulf, and the USS Harry S. Truman in the North Sea.
+Carrier-capable jets (F-14, F/A-18) can operate from a Nimitz-class carrier that steams through the scenario: the USS Theodore Roosevelt off Varnia's west coast, off southern California and in the 1991 Gulf, and the USS Harry S. Truman in the Tyrrhenian Sea.
 * **Catapult:** run up to full power and press **C**. The shuttle takes the jet to flying speed in about 90 m.
 * **Recovery:** gear, flaps and hook (**H**) down. Fly a 3.5° glideslope to the angled deck. The HUD shows the "ball" (glideslope) and lineup, and the LSO talks you in. Catch one of four wires (the 3-wire is the target), or bolter and go around.
 * The deck moves: it keeps steaming at 15 kt and "walks" to the right on final.
 
 ## Game modes
 
-* **Instant Action**: pick a jet, a map (Varnia, Northern Europe or the Persian Gulf 1991) and a scenario: free flight, takeoff & landing, carrier cat shot & recovery, carrier trap practice, aerial refueling, guns BFM, heater BFM, BVR 2v2, 4v4 furball, strike, SEAD, CAS or scramble.
+* **Real-world maps**: Western Europe (France, the Benelux, Switzerland, Italy, Austria, the UK, Denmark and southern Norway) and the US West Coast (California to Washington, inland across Nevada and Idaho). Real elevation (1 km built in, about 25 m streamed around the aircraft), Sentinel-2 satellite imagery everywhere and open aerial photographs close to the ground in the US, France, the Netherlands, Switzerland and Austria, plus real roads, railways, stations, airports and buildings around the airbases.
+* **Instant Action**: pick a jet, a map (Varnia, Western Europe, the US West Coast or the Persian Gulf 1991) and a scenario: free flight, takeoff & landing, carrier cat shot & recovery, carrier trap practice, aerial refueling, guns BFM, heater BFM, BVR 2v2, 4v4 furball, strike, SEAD, CAS or scramble.
 * **Mission Setup**: the same scenarios, with full control over opponents, numbers, skill, wingmen, start, altitude, time of day and weather.
 * **Dynamic Campaign**: a persistent war on the Varnia Peninsula in 6-hour turns. Each turn both sides' AI writes an **Air Tasking Order** (CAP, sweep, SEAD, strike packages with escort, OCA, CAS). You pick any Coalition flight and fly it in 3D, with enemy CAPs and SAMs placed from the campaign state. Everything you don't fly is resolved statistically.
   * Factories, depots, bridges and the command HQ feed **supply**, which drives the ground war.

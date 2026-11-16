@@ -7,6 +7,7 @@
 // only its large buildings, out to the far scenery range. Facades get floors of windows in the shader.
 import * as THREE from 'three';
 import { gunzip } from '../world/demTheater.js';
+import { workLeft } from './quality.js';
 import { terrainHeight, runwaysOf, fieldsNear, currentTheater } from '../world/theater.js';
 import { hash2, FAR_HOUSES } from './scenery.js';
 import { proceduralInner } from './modelScenery.js';
@@ -14,7 +15,6 @@ import { proceduralInner } from './modelScenery.js';
 export const NEAR_REAL = 9000;
 /** footprints under this (m²) are houses with a pitched roof (and model houses close in) */
 export const HOUSE_AREA = 260;
-const BASE = 'assets/theaters/europe/buildings';
 
 interface PatchInfo { id: string; x0: number; z0: number; tile: number; T: number; count: number }
 interface Patch extends PatchInfo { data?: DataView; offs?: Uint32Array; big?: Uint32Array; loading?: boolean }
@@ -145,10 +145,17 @@ export class RealBuildings {
 
   get ready() { return this.state === 'ready'; }
 
+  private theaterId = '';
+  private base() { return `assets/theaters/${this.theaterId}/buildings`; }
+
+  /** fetch the active real-world theater's building index (once per theater) */
   load() {
+    const id = currentTheater().id;
+    if (id !== this.theaterId) { this.clear(); this.patches = []; this.state = 'idle'; this.theaterId = id; }
     if (this.state !== 'idle') return;
     this.state = 'loading';
-    fetch(`${BASE}/index.json`).then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status))))).then((ix: { patches: PatchInfo[] }) => {
+    fetch(`${this.base()}/index.json`).then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status))))).then((ix: { patches: PatchInfo[] }) => {
+      if (id !== this.theaterId) return;
       this.patches = ix.patches.map((p) => ({ ...p }));
       this.state = 'ready';
       this.onIndex?.();
@@ -157,7 +164,7 @@ export class RealBuildings {
 
   /** inside an area whose buildings are real (so no procedural houses there) */
   covers(x: number, z: number) {
-    if (this.state !== 'ready' || currentTheater().id !== 'europe') return false;
+    if (this.state !== 'ready' || currentTheater().id !== this.theaterId) return false;
     for (const p of this.patches) if (x >= p.x0 && z >= p.z0 && x < p.x0 + p.T * p.tile && z < p.z0 + p.T * p.tile) return true;
     return false;
   }
@@ -165,7 +172,7 @@ export class RealBuildings {
   private fetchPatch(p: Patch) {
     if (p.data || p.loading) return;
     p.loading = true;
-    fetch(`${BASE}/${p.id}.bin.gz`).then((r) => (r.ok ? gunzip(r) : Promise.reject(new Error(String(r.status))))).then((buf) => {
+    fetch(`${this.base()}/${p.id}.bin.gz`).then((r) => (r.ok ? gunzip(r) : Promise.reject(new Error(String(r.status))))).then((buf) => {
       const dv = new DataView(buf), T = dv.getUint32(8, true), n = T * T;
       p.offs = new Uint32Array(buf.slice(16, 16 + (n + 1) * 4));
       p.big = new Uint32Array(buf.slice(16 + (n + 1) * 4, 16 + (n + 1) * 4 + n * 4));
@@ -211,10 +218,10 @@ export class RealBuildings {
 
   update(cam: THREE.Vector3, agl: number) {
     this.frame++;
-    const on = this.state === 'ready' && currentTheater().id === 'europe' && agl < 14000;
+    const on = this.state === 'ready' && currentTheater().id === this.theaterId && agl < 14000;
     this.group.visible = on;
     if (!on) return;
-    let budget = 2;
+    let budget = 3;
     const want: Array<[number, Patch, number, number]> = [];
     for (const p of this.patches) {
       const size = p.T * p.tile;
@@ -237,8 +244,10 @@ export class RealBuildings {
       if (!t) this.tiles.set(key, t = { used: this.frame });
       t.used = this.frame;
       const near = d < NEAR_REAL;
-      if (near && !t.near && budget > 0) { budget--; t.near = this.buildNear(p, ti, tj); }
-      if (!near && !t.far && !t.near && budget > 0) { budget--; t.far = this.buildFar(p, ti, tj); }
+      // one tile a frame, a second only while the frame has time left (a dense town tile is a lot of geometry)
+      const may = budget > 1 || (budget > 0 && workLeft());
+      if (near && !t.near && may) { budget -= 2; t.near = this.buildNear(p, ti, tj); }
+      else if (!near && !t.far && !t.near && may) { budget -= 2; t.far = this.buildFar(p, ti, tj); }
       // a near tile already built keeps drawing until the far one exists, then its detail is freed
       if (!near && t.near && t.far) { for (const m of t.near) { this.group.remove(m); m.dispose(); } t.near = undefined; }
       const showNear = !!t.near && (near || !t.far);
@@ -254,6 +263,16 @@ export class RealBuildings {
   }
 
   clear() { for (const t of this.tiles.values()) this.dispose(t); this.tiles.clear(); }
+
+  /** the ground changed under a square (streamed elevation arrived): the buildings there are set down again */
+  invalidate(x0: number, z0: number, x1: number, z1: number) {
+    for (const [key, t] of this.tiles) {
+      const [id, ij] = key.split(':'), p = this.patches.find((q) => q.id === id);
+      if (!p) continue;
+      const [ti, tj] = ij.split(',').map(Number), bx = p.x0 + ti * p.tile, bz = p.z0 + tj * p.tile;
+      if (bx < x1 && bx + p.tile > x0 && bz < z1 && bz + p.tile > z0) { this.dispose(t); this.tiles.delete(key); }
+    }
+  }
 
   private dispose(t: Tile) {
     for (const m of [...(t.near ?? []), ...(t.far ? [t.far] : [])]) { this.group.remove(m); m.dispose(); }

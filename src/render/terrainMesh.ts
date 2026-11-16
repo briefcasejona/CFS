@@ -10,30 +10,47 @@ import { hdModelsEnabled } from './hdModels.js';
 import { realBuildings, type Building } from './buildings.js';
 import { Forest, nearRunway, treeInner } from './forest.js';
 import { Roads } from './roads.js';
+import { startWork } from './quality.js';
 
 const CHUNK = 16000; // m
-const LODS = [
+const COARSE_LODS = [
   { dist: 6000, res: 192 },     // ~83 m spacing close in: ridges and valleys read properly at low level
   { dist: 18000, res: 112 },
   { dist: 45000, res: 48 },
   { dist: 100000, res: 20 },
   { dist: 260000, res: 8 },
 ];
+// where fine elevation is streamed (demStream.ts, 25 m samples) the mesh close in follows it at 50 m, then 62 m
+const FINE_LODS = [
+  { dist: 3500, res: 320 },
+  { dist: 9000, res: 256 },
+  { dist: 20000, res: 128 },
+  { dist: 45000, res: 48 },
+  { dist: 100000, res: 20 },
+  { dist: 260000, res: 8 },
+];
+/** the chunk levels whose meshes are rebuilt when streamed elevation arrives under them */
+const FINE_REBUILD = 3;
+/** milliseconds a frame may spend building ground chunks (a chunk with nothing to show yet is always built) */
+const BUILD_MS = 5;
 
 const SNOW = new THREE.Color(0.9, 0.92, 0.95);
 
 /** Ground colour from height and slope, and how much the landcover (forest, fields, towns, water — painted per pixel
  *  in the shader) shows over it: none on sea, beaches, rock and snow. Only gentle, low-frequency variation lives here,
  *  so a chunk looks the same at every level of detail; the fine patterns come from textures in the shader. */
-function terrainColor(h: number, slope: number, x: number, z: number, pal: TerrainPalette, out: THREE.Color): number {
-  const n = fbm(x * 0.0007, z * 0.0007, 3) * 0.5 + 0.5;
+const MEADOW = new THREE.Color();
+function terrainColor(h: number, slope: number, x: number, z: number, pal: TerrainPalette, out: THREE.Color, nIn?: number, aridIn?: number): number {
+  const n = nIn ?? fbm(x * 0.0007, z * 0.0007, 3) * 0.5 + 0.5;
   if (h <= 0.5) { out.setRGB(0.12, 0.2, 0.28); return 0; }
   if (h < pal.beach) { out.setRGB(0.55, 0.52, 0.42); return 0; }
   const snowLine = pal.snowLine(x, z);
-  if (pal.style === 'desert' && slope <= 0.55 && h <= snowLine - pal.rockBelowSnow) {
-    // sand, gravel plains and darker stony patches
+  const arid = pal.style === 'desert' ? 1 : aridIn ?? pal.arid?.(x, z) ?? 0;
+  if (arid > 0 && slope <= 0.55 && h <= snowLine - pal.rockBelowSnow) {
+    // sand, gravel plains and darker stony patches (sagebrush steppe and scrub where only partly arid)
     const stony = n > 0.6 ? 0.82 : 1;
     out.setRGB((0.70 + n * 0.04 + h * 0.00003) * stony, (0.60 + n * 0.03) * stony, (0.43 + n * 0.03) * stony);
+    if (arid < 1) out.lerp(MEADOW.setRGB(0.31 + n * 0.05 + h * 0.00004, 0.37 + n * 0.04, 0.2 + h * 0.00003), 1 - arid);
     return 1;
   }
   if (slope > 0.55 || h > snowLine - pal.rockBelowSnow) {
@@ -148,16 +165,24 @@ ${IMAGERY_GLSL}
   mat.customProgramCacheKey = () => 'cfs-terrain-ground';
 }
 
-interface ChunkEntry { mesh: THREE.Mesh; lod: number; used: number }
+interface ChunkEntry { mesh: THREE.Mesh; lod: number; used: number; stale?: boolean }
+/** a chunk being rebuilt over several frames (its old mesh shows meanwhile); dirty: the ground under it changed again */
+interface ChunkJob { lod: number; it: Generator<void, THREE.Mesh>; dirty: boolean }
 
 /** Chunked LOD terrain with skirts. Geometry is generated lazily and cached. */
 export class TerrainRenderer {
   group = new THREE.Group();
   private chunks = new Map<string, ChunkEntry>();
+  private jobs = new Map<string, ChunkJob>();
   readonly imagery = new Imagery();
   private material: THREE.MeshStandardMaterial;
   private frame = 0;
   private buildBudget = 3;
+  private streamVersion = 0;
+  private fineLods = false;
+  private lastCam = new THREE.Vector3(Infinity, 0, 0);
+  private lastCamT = 0;
+  private camVel = new THREE.Vector3();
   private uniforms: Record<string, THREE.IUniform> = {
     uDetail: { value: detailTexture() },
     uCover: { value: null },
@@ -192,6 +217,8 @@ export class TerrainRenderer {
   clear() {
     for (const e of this.chunks.values()) { this.group.remove(e.mesh); e.mesh.geometry.dispose(); }
     this.chunks.clear();
+    this.jobs.clear();
+    this.streamVersion = currentTheater().stream?.version ?? 0;
     this.forest.clear();
     this.roads.clear();
     this.houseAt.set(Infinity, Infinity);
@@ -200,6 +227,13 @@ export class TerrainRenderer {
   }
 
   private buildChunk(ci: number, cj: number, res: number): THREE.Mesh {
+    const it = this.chunkSteps(ci, cj, res);
+    for (;;) { const r = it.next(); if (r.done) return r.value; }
+  }
+
+  /** A chunk's mesh, built in steps of about a millisecond (yields in between), so rebuilding chunks under newly
+   *  arrived elevation is spread over frames instead of stalling one. */
+  private *chunkSteps(ci: number, cj: number, res: number): Generator<void, THREE.Mesh> {
     const x0 = -THEATER_HALF + ci * CHUNK;
     const z0 = -THEATER_HALF + cj * CHUNK;
     const n = res + 1;
@@ -210,12 +244,34 @@ export class TerrainRenderer {
     const cov = new Float32Array(vcount * 2);
     const merc = new Float32Array(vcount * 2);
     const geoOf = currentTheater().geo, mp = { x: 0, y: 0 };
+    // the slowly varying per-vertex inputs — Web-Mercator position for the imagery, the colour noise (≈1.4 km
+    // features) — on a coarse lattice every G vertices, interpolated in between (exact at the lattice points; the
+    // projection bends far less than a metre over a lattice step)
+    const G = res >= 64 ? 16 : res >= 16 ? 4 : 1, gn = Math.ceil(res / G) + 1;
+    const gm = new Float64Array(gn * gn * 2), gc = new Float32Array(gn * gn), ga = new Float32Array(gn * gn);
+    const aridOf = terrainPalette().arid;
+    for (let b = 0; b < gn; b++) for (let a = 0; a < gn; a++) {
+      const gx = x0 + Math.min(res, a * G) * step, gz = z0 + Math.min(res, b * G) * step;
+      if (geoOf) { const ll = geoOf(gx, gz); mercator(ll.lat, ll.lon, mp); gm[(b * gn + a) * 2] = mp.x; gm[(b * gn + a) * 2 + 1] = mp.y; }
+      gc[b * gn + a] = fbm(gx * 0.0007, gz * 0.0007, 3) * 0.5 + 0.5;
+      ga[b * gn + a] = aridOf ? aridOf(gx, gz) : 0;
+    }
+    const lerpG = (arr: Float64Array | Float32Array, i: number, j: number, stride: number, o: number) => {
+      const a = Math.min(gn - 2, Math.floor(i / G)), b = Math.min(gn - 2, Math.floor(j / G));
+      const span = (q: number) => Math.min(res, (q + 1) * G) - q * G;
+      const tx = (i - a * G) / span(a), tz = (j - b * G) / span(b);
+      const k = (b * gn + a) * stride + o, kN = k + gn * stride;
+      return (arr[k] * (1 - tx) + arr[k + stride] * tx) * (1 - tz) + (arr[kN] * (1 - tx) + arr[kN + stride] * tx) * tz;
+    };
     const nrm = new Float32Array(vcount * 3);
     // heights with a one-sample border from the neighbouring chunks: slopes, colours and normals at the chunk edges
     // then match the neighbour's exactly, so no seam line shows where two chunks meet
     const m = n + 2;
     const hs = new Float32Array(m * m);
-    for (let j = 0; j < m; j++) for (let i = 0; i < m; i++) hs[j * m + i] = terrainHeight(x0 + (i - 1) * step, z0 + (j - 1) * step);
+    for (let j = 0; j < m; j++) {
+      for (let i = 0; i < m; i++) hs[j * m + i] = terrainHeight(x0 + (i - 1) * step, z0 + (j - 1) * step);
+      if ((j & 7) === 7) yield;
+    }
     const H = (i: number, j: number) => hs[(j + 1) * m + i + 1];
     const c = new THREE.Color();
     const pal = terrainPalette();
@@ -230,22 +286,21 @@ export class TerrainRenderer {
         pos[v * 3] = i * step; pos[v * 3 + 1] = Math.max(h, -2); pos[v * 3 + 2] = j * step;
         const nl = Math.hypot(hx, 2 * step, hz);
         nrm[v * 3] = -hx / nl; nrm[v * 3 + 1] = 2 * step / nl; nrm[v * 3 + 2] = -hz / nl;
-        cov[v * 2] = terrainColor(h, slope, x0 + i * step, z0 + j * step, pal, c);
+        cov[v * 2] = terrainColor(h, slope, x0 + i * step, z0 + j * step, pal, c, lerpG(gc, i, j, 1, 0), lerpG(ga, i, j, 1, 0));
         // steeper ground a little darker: cheap ambient occlusion that gives the relief depth
         cov[v * 2 + 1] = h > 0.5 ? 1 - 0.22 * Math.min(1, slope * 1.6) : 1;
         col[v * 3] = c.r; col[v * 3 + 1] = c.g; col[v * 3 + 2] = c.b;
-        if (geoOf) {
-          const ll = geoOf(x0 + i * step, z0 + j * step);
-          mercator(ll.lat, ll.lon, mp);
-          merc[v * 2] = mp.x; merc[v * 2 + 1] = mp.y;
-        }
+        if (geoOf) { merc[v * 2] = lerpG(gm, i, j, 2, 0); merc[v * 2 + 1] = lerpG(gm, i, j, 2, 1); }
         v++;
       }
+      if ((j & 7) === 7) yield;
     }
-    const idx: number[] = [];
+    // grid triangles, then the skirts' (4 edges × (n − 1) quads, 12 indices each)
+    const idx = new Uint32Array(res * res * 6 + 4 * (n - 1) * 12);
+    let q = 0;
     for (let j = 0; j < res; j++) for (let i = 0; i < res; i++) {
       const a = j * n + i, b = a + 1, d = a + n, e = d + 1;
-      idx.push(a, d, b, b, d, e);
+      idx[q++] = a; idx[q++] = d; idx[q++] = b; idx[q++] = b; idx[q++] = d; idx[q++] = e;
     }
     // skirts hide cracks between LOD levels
     const drop = step * 0.6 + 20;
@@ -267,7 +322,8 @@ export class TerrainRenderer {
       }
       for (let t = 0; t < n - 1; t++) {
         const a = edges[e][t], b = edges[e][t + 1], a2 = base + t, b2 = base + t + 1;
-        idx.push(a, a2, b, b, a2, b2, a, b, a2, b, b2, a2);
+        idx[q++] = a; idx[q++] = a2; idx[q++] = b; idx[q++] = b; idx[q++] = a2; idx[q++] = b2;
+        idx[q++] = a; idx[q++] = b; idx[q++] = a2; idx[q++] = b; idx[q++] = b2; idx[q++] = a2;
       }
     }
     const geo = new THREE.BufferGeometry();
@@ -276,7 +332,7 @@ export class TerrainRenderer {
     geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
     geo.setAttribute('aCover', new THREE.BufferAttribute(cov, 2));
     geo.setAttribute('aMerc', new THREE.BufferAttribute(merc, 2));
-    geo.setIndex(idx);
+    geo.setIndex(new THREE.BufferAttribute(idx, 1));
     geo.computeBoundingSphere();
     const mesh = new THREE.Mesh(geo, this.material);
     mesh.renderOrder = -8;   // the ground first: the roads (roads.ts) are laid on it before anything else is drawn
@@ -291,7 +347,13 @@ export class TerrainRenderer {
   update(camPos: THREE.Vector3, viewDist: number) {
     this.frame++;
     this.syncCover();
-    this.imagery.update(camPos, currentTheater().geo ?? null);
+    const th = currentTheater();
+    this.imagery.update(camPos, th.geo ?? null, th.id);
+    if (th.stream) this.followStream(th.stream, camPos);
+    // the fine levels only where fine elevation can come (the 1 km grid gains nothing from a 50 m mesh)
+    const fine = !!th.stream && (th.stream.active || th.stream.loaded > 0);
+    if (fine !== this.fineLods) { this.fineLods = fine; for (const e of this.chunks.values()) e.stale = true; }
+    const LODS = fine ? FINE_LODS : COARSE_LODS;
     const nC = Math.ceil((2 * THEATER_HALF) / CHUNK);
     const want = new Map<string, number>();
     const maxDist = Math.min(viewDist, LODS[LODS.length - 1].dist);
@@ -314,24 +376,72 @@ export class TerrainRenderer {
       }
     }
     let budget = this.buildBudget;
+    const t0 = performance.now();
     const entries = [...want.entries()].sort((a, b) => a[1] - b[1]);
     for (const [key, lod] of entries) {
       const ex = this.chunks.get(key);
-      if (ex && ex.lod === lod) { ex.used = this.frame; ex.mesh.visible = true; continue; }
-      if (budget <= 0) { if (ex) { ex.used = this.frame; ex.mesh.visible = true; } continue; }
-      budget--;
+      if (ex && ex.lod === lod && !ex.stale) { ex.used = this.frame; ex.mesh.visible = true; this.jobs.delete(key); continue; }
       const [ci, cj] = key.split(',').map(Number);
-      const mesh = this.buildChunk(ci, cj, LODS[lod].res);
-      if (ex) { this.group.remove(ex.mesh); ex.mesh.geometry.dispose(); }
-      this.group.add(mesh);
-      this.chunks.set(key, { mesh, lod, used: this.frame });
+      if (!ex) {
+        // a hole is filled at once (up to the budget of chunks a frame)
+        if (budget <= 0) continue;
+        budget--;
+        this.jobs.delete(key);
+        const mesh = this.buildChunk(ci, cj, LODS[lod].res);
+        this.group.add(mesh);
+        this.chunks.set(key, { mesh, lod, used: this.frame });
+        continue;
+      }
+      // a chunk that shows something already is rebuilt in steps, in the time left in this frame
+      ex.used = this.frame; ex.mesh.visible = true;
+      let job = this.jobs.get(key);
+      if (!job || job.lod !== lod) { job = { lod, it: this.chunkSteps(ci, cj, LODS[lod].res), dirty: false }; this.jobs.set(key, job); }
+      while (performance.now() - t0 < BUILD_MS) {
+        const r = job.it.next();
+        if (!r.done) continue;
+        this.jobs.delete(key);
+        this.group.remove(ex.mesh); ex.mesh.geometry.dispose();
+        this.group.add(r.value);
+        this.chunks.set(key, { mesh: r.value, lod, used: this.frame, stale: job.dirty });
+        break;
+      }
     }
+    for (const key of this.jobs.keys()) if (!want.has(key)) this.jobs.delete(key);
     for (const [key, e] of this.chunks) {
       if (!want.has(key)) {
         e.mesh.visible = false;
         if (this.frame - e.used > 600) { this.group.remove(e.mesh); e.mesh.geometry.dispose(); this.chunks.delete(key); }
       }
     }
+  }
+
+  /** Stream the fine elevation around the camera (and where it is heading), and mark what stands on ground that
+   *  changed: chunks are rebuilt in place (the old mesh shows until then), roads likewise, trees and houses re-placed. */
+  private followStream(stream: NonNullable<ReturnType<typeof currentTheater>['stream']>, cam: THREE.Vector3) {
+    const now = performance.now();
+    if (Number.isFinite(this.lastCam.x)) {
+      const dt = (now - this.lastCamT) / 1000;
+      if (dt > 0.01 && dt < 1) this.camVel.lerp(new THREE.Vector3().subVectors(cam, this.lastCam).divideScalar(dt), 0.1);
+    }
+    this.lastCam.copy(cam); this.lastCamT = now;
+    stream.update(cam.x, cam.z, this.camVel.x, this.camVel.z);
+    if (stream.version === this.streamVersion) return;
+    const changes = stream.changedSince(this.streamVersion);
+    this.streamVersion = stream.version;
+    for (const c of changes) {
+      for (const [key, e] of this.chunks) {
+        if (e.lod >= FINE_REBUILD) continue;
+        const [ci, cj] = key.split(',').map(Number);
+        const x0 = -THEATER_HALF + ci * CHUNK, z0 = -THEATER_HALF + cj * CHUNK;
+        if (x0 < c.x1 && x0 + CHUNK > c.x0 && z0 < c.z1 && z0 + CHUNK > c.z0) { e.stale = true; const job = this.jobs.get(key); if (job) job.dirty = true; }
+      }
+      this.roads.invalidate(c.x0, c.z0, c.x1, c.z1);
+      this.forest.invalidate(c.x0, c.z0, c.x1, c.z1);
+      realBuildings.invalidate(c.x0, c.z0, c.x1, c.z1);
+      if (Math.max(c.x0 - cam.x, cam.x - c.x1, c.z0 - cam.z, cam.z - c.z1) < HOUSE_RADIUS) { this.houseAt.set(Infinity, Infinity); this.modelAt.set(Infinity, Infinity); this.modelTreesAt.set(Infinity, Infinity, -1); }
+    }
+    // the far scenery tiles sit on the ground too
+    this.far.invalidate(changes);
   }
 
   /** Forest trees and town houses near the camera (instanced), placed on the patches the ground shader paints as
@@ -370,7 +480,7 @@ export class TerrainRenderer {
       this.houses = houses;
     }
     const pal = terrainPalette();
-    if (currentTheater().id === 'europe') realBuildings.load();
+    if (currentTheater().geo) realBuildings.load();
     realBuildings.update(camPos, agl);
     this.far.update(camPos, cover, pal, agl);
     // invisible (and not worth building) higher up, where the far tiles alone carry the scene
@@ -437,9 +547,8 @@ export class TerrainRenderer {
   /** Model houses and trees on the same cells the procedural ones use (their hashes), within the detail ring. */
   private placeModels(camPos: THREE.Vector3, cover: CoverGrid) {
     const M = this.models, F = M.fam, R = DETAIL_SCENERY + 1100, picks: CellPick[] = [];
-    // east of the Oder (Poland, Kaliningrad, Belarus) and in the former GDR the tall blocks are often prefab panel blocks
-    const ll = currentTheater().geo?.(camPos.x, camPos.z);
-    const east = !!ll && (ll.lon > 14.2 || (ll.lon > 11 && ll.lat < 54.2 && ll.lat > 50.4));
+    // prefab panel blocks belong to the former eastern bloc, which the Western Europe map no longer covers
+    const east = false;
     // houses: landmarks first (a church or a market square block in a dense core), then everything else around them
     {
       const ci = Math.floor(camPos.x / HOUSE_CELL), cj = Math.floor(camPos.z / HOUSE_CELL), r = Math.ceil(R / HOUSE_CELL);
@@ -518,7 +627,9 @@ export class TerrainRenderer {
     this.update(p, viewDist);
     this.buildBudget = old;
     const pal = terrainPalette(), agl = p.y - Math.max(0, terrainHeight(p.x, p.z));
-    this.forest.update(p, this.syncCover(), pal, agl < 3500 && pal.trees, 400);
+    // (loading: the trees get as much time as they need)
+    startWork(4000);
+    for (let k = 0; k < 400; k++) { const v = this.forest.version; this.forest.update(p, this.syncCover(), pal, agl < 3500 && pal.trees); if (this.forest.version === v && !this.forest.building) break; }
   }
 }
 

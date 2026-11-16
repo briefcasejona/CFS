@@ -15,6 +15,7 @@ import pngjs from 'pngjs';
 const THEATERS = {
   europe: { module: '../../build/src/world/theaters/europe.js', name: 'EUROPE', z: 11 },
   gulf: { module: '../../build/src/world/theaters/gulf.js', name: 'GULF', z: 11 },
+  uswest: { module: '../../build/src/world/theaters/uswest.js', name: 'USWEST', z: 11 },
 };
 export const PATCH_HALF = 25000, PATCH_RES = 75;    // 50 km square around each field, 75 m spacing
 const ID = process.argv[2];
