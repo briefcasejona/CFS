@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { INV_OFF, INV_ON, type AircraftSystems, type ControlDef } from '../systems/types.js';
 import { flowPlate, type PitItem, type PitLayout, type PlateDef, type V3 } from '../systems/pitLayout.js';
 import { osbPos } from '../ui/mfd.js';
+import type { ModelSwitches } from './modelSwitches.js';
 
 /** canvas pixels per metre of panel: a 3 mm legend is about 13 px tall */
 const PPM = 4400;
@@ -72,8 +73,10 @@ export class Cockpit3D {
   private dispTimer = 0;
   fitted = '';
 
-  constructor(readonly sys: AircraftSystems, readonly layout: PitLayout) {
+  /** `model`: the switches the cockpit model has parts for. Those move in the model and are left off the plates. */
+  constructor(readonly sys: AircraftSystems, readonly layout: PitLayout, readonly model: ModelSwitches | null = null) {
     this.group.name = 'cockpit3d';
+    if (model) this.picks.push(...model.picks);
     for (const p of layout.plates) this.buildPlate(p);
     layout.mfds.forEach((m, i) => this.buildMfd(i, m));
   }
@@ -95,6 +98,8 @@ export class Cockpit3D {
     this.group.add(g);
     this.plates.push({ def: p, g });
     const { items } = flowPlate(p, this.sys);
+    // a plate whose every control is a part of the cockpit model is not needed
+    if (this.model && items.some((it) => it.kind !== 'title') && items.every((it) => it.kind === 'title' || (it.kind === 'control' && this.model!.ids.has(it.def.id)))) g.visible = false;
     const cv = document.createElement('canvas');
     cv.width = Math.round(p.w * PPM); cv.height = Math.round(p.h * PPM);
     const c = cv.getContext('2d')!;
@@ -127,7 +132,7 @@ export class Cockpit3D {
         c.strokeStyle = '#9aa0a6'; c.lineWidth = px(0.0005);
         c.beginPath(); c.moveTo(px(it.x + 0.008), px(it.y + it.h / 2)); c.lineTo(px(cx - tw), px(it.y + it.h / 2));
         c.moveTo(px(cx + tw), px(it.y + it.h / 2)); c.lineTo(px(it.x + it.w - 0.008), px(it.y + it.h / 2)); c.stroke();
-      } else if (it.kind === 'control') this.buildControl(g, it, local, text, c, px);
+      } else if (it.kind === 'control') { if (!this.model?.ids.has(it.def.id)) this.buildControl(g, it, local, text, c, px); }
       else if (it.kind === 'light') this.buildLight(g, it, local);
       else if (it.kind === 'gauge') this.buildGauge(g, it, local, text, c, px);
       else if (it.kind === 'display') this.buildDisplay(g, it, local, c, px);
@@ -435,6 +440,7 @@ export class Cockpit3D {
   update(sys: AircraftSystems, dt: number) {
     this.dispTimer -= dt;
     for (const p of this.parts) p.update(sys, dt);
+    this.model?.update(sys, dt);
     if (this.dispTimer <= 0) this.dispTimer = 0.08;
     for (const [id, t] of this.guards) { if (t - dt <= 0) this.guards.delete(id); else this.guards.set(id, t - dt); }
     for (const [id, t] of this.pressed) { if (t - dt <= 0) this.pressed.delete(id); else this.pressed.set(id, t - dt); }

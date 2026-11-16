@@ -137,8 +137,10 @@ export interface AircraftDef {
   allowedStores?: string[];
   /** shares/receives the coalition air picture (Link 16); false for older jets */
   datalink?: boolean;
-  /** selectable as a player aircraft (false for AWACS / tankers) */
+  /** listed in the aircraft database and as an opponent (false for AWACS / tankers) */
   playable?: boolean;
+  /** the player can fly it. V2 is an F-16 sim: every other type flies as AI only (see FLYABLE_FAMILIES) */
+  flyable?: boolean;
   /** air-to-air refuelling tanker: boom and/or drogue, transfer rate kg/s */
   tanker?: { boom: boolean; drogue: boolean; rateKgS: number };
 }

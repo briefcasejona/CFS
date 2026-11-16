@@ -1,7 +1,7 @@
 import { AIRCRAFT, AIRCRAFT_BY_ID } from '../aircraft/defs.js';
 import { WEAPONS } from '../weapons/stores.js';
 import { SAM_PARAMS } from '../sim/entities.js';
-import { SCENARIOS, buildScenario, startXZ, defaultCustom, type CustomOptions, type MissionResult, type MissionSpec, type BuiltMission } from '../game/mission.js';
+import { buildScenario, scenariosFor, startXZ, defaultCustom, type CustomOptions, type MissionResult, type MissionSpec, type BuiltMission } from '../game/mission.js';
 import { DEFAULT_SETTINGS, realismLabel, saveSettings, type Settings } from '../core/settings.js';
 import { drawTheater, type MapMarker } from './map.js';
 import { airbaseById, ensureTheater, listTheaters, setTheater, theaterById } from '../world/theater.js';
@@ -12,6 +12,7 @@ import { multiplayerScreen } from './multiplayer.js';
 import { editorScreen } from './editor.js';
 import { hdCredits, setHdModelsEnabled } from '../render/hdModels.js';
 import { hdStoreCredits } from '../render/hdStores.js';
+import { cockpitCredits } from '../render/cockpitModels.js';
 import { MENU_THEMES } from './menuBackground.js';
 import { setImageryEnabled, AERIAL } from '../render/imagery.js';
 import { setDemStreamEnabled } from '../world/demStream.js';
@@ -110,6 +111,7 @@ let lastCustom: CustomOptions = defaultCustom();
 
 export function missionSetup(app: AppApi, advanced: boolean): HTMLElement {
   const o = { ...lastCustom };
+  if (!AIRCRAFT_BY_ID[o.aircraftId]?.flyable) { o.aircraftId = defaultCustom().aircraftId; o.loadoutIndex = 0; }
   const e = el(`
     <div class="screen setup">
       <div class="header"><button data-a="back">◀ Back</button><h2>${advanced ? 'Mission Setup' : 'Instant Action'}</h2></div>
@@ -171,14 +173,14 @@ export function missionSetup(app: AppApi, advanced: boolean): HTMLElement {
   const renderAc = () => {
     grid.innerHTML = '';
     // one card per family; variants as chips inside the card
-    for (const [fam, list] of families()) {
+    for (const [fam, list] of families(true)) {
       const cur = list.find((a) => a.id === o.aircraftId);
       const shown = cur ?? list[0];
       const card = el(`<div class="accard ${cur ? 'sel' : ''}" role="button" tabindex="0">
         <b>${esc(list.length > 1 ? fam : shown.name)}</b><span>${esc(shown.role)}${shown.seats === 2 ? ' · 2-seat' : ''}</span><small>${esc(shown.country)}</small>
         ${list.length > 1 ? `<div class="variants">${list.map((a) => `<button class="vchip ${a.id === o.aircraftId ? 'on' : ''}" data-id="${a.id}" title="${esc(a.fullName)}">${esc(a.variant ?? a.name)}</button>`).join('')}</div>` : ''}
       </div>`);
-      const pick = (id: string) => { o.aircraftId = id; o.loadoutIndex = 0; renderAc(); renderLoad(); };
+      const pick = (id: string) => { o.aircraftId = id; o.loadoutIndex = 0; renderAc(); renderLoad(); renderScen(); };
       card.addEventListener('click', (ev) => {
         const chip = (ev.target as HTMLElement).closest('.vchip') as HTMLElement | null;
         pick(chip?.dataset.id ?? shown.id);
@@ -189,7 +191,9 @@ export function missionSetup(app: AppApi, advanced: boolean): HTMLElement {
   };
   const renderScen = () => {
     scen.innerHTML = '';
-    for (const s of SCENARIOS) {
+    const list = scenariosFor(o.aircraftId);
+    if (!list.some((s) => s.id === o.scenario)) o.scenario = list[0].id;
+    for (const s of list) {
       const b = el(`<button class="scen ${s.id === o.scenario ? 'sel' : ''}"><b>${esc(s.name)}</b><span>${esc(s.desc)}</span></button>`);
       b.addEventListener('click', () => { o.scenario = s.id; renderScen(); });
       scen.append(b);
@@ -390,7 +394,7 @@ export function settingsScreen(app: AppApi): HTMLElement {
           <label>Graphics quality <select data-q="graphicsQuality">${[['auto', 'Auto (holds 60 fps)'], ...LEVEL_NAMES.map((n, i) => [String(i), n])].map(([v, n]) => `<option value="${v}"${String(s.graphicsQuality) === v ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
           <p class="muted small">Auto lowers tree range, shadows and render resolution when the frame rate drops below 60 and raises them again when there is room.</p>
           ${chk('hdModels', 'HD aircraft models', 'detailed 3D models where available (F-14, F-16, F/A-18F, F-4, Gripen) and real buildings and trees on the Western Europe map; loaded on demand, ~4–7 MB each')}
-          <div class="muted small credits">3D models: ${[...hdCredits(), ...hdStoreCredits()].map((c) => `"${esc(c.title)}" by ${esc(c.author)} (<a href="${c.source}" target="_blank" rel="noopener">Sketchfab</a>), ${c.license}, textures re-encoded`).join(' · ')}</div>
+          <div class="muted small credits">3D models: ${[...hdCredits(), ...hdStoreCredits(), ...cockpitCredits()].map((c) => `"${esc(c.title)}" by ${esc(c.author)} (<a href="${c.source}" target="_blank" rel="noopener">Sketchfab</a>), ${c.license}, textures re-encoded`).join(' · ')}</div>
           <div class="muted small credits">Europe buildings and trees: ${SCENERY_CREDITS.map((c) => `"${esc(c.title)}" by ${esc(c.author)} (<a href="${c.source}" target="_blank" rel="noopener">Sketchfab</a>)`).join(' · ')}, CC BY 4.0; split into separate objects, merged and textures re-encoded.</div>
           ${chk('satImagery', 'Satellite imagery', 'real imagery on the real-world maps, streamed while you fly: Sentinel-2 everywhere (tiles.maps.eox.at), and close to the ground open aerial photographs in the US, France, the Netherlands, Switzerland and Austria (your browser contacts the national map services listed below); off = painted ground, nothing downloaded')}
           ${chk('fineTerrain', 'Detailed terrain', 'real elevation at about 25 m around your aircraft on the real-world maps, streamed while you fly (your browser contacts s3.amazonaws.com); off = the built-in 1 km terrain, with 75 m detail around the airbases')}
@@ -427,10 +431,10 @@ export function settingsScreen(app: AppApi): HTMLElement {
 }
 
 // ------------------------------------------------------------------ aircraft database
-/** Aircraft grouped by family, in definition order. */
-export function families(): Map<string, typeof AIRCRAFT> {
+/** Aircraft grouped by family, in definition order (`flyableOnly`: the ones the player may fly). */
+export function families(flyableOnly = false): Map<string, typeof AIRCRAFT> {
   const m = new Map<string, typeof AIRCRAFT>();
-  for (const a of AIRCRAFT) { if (a.playable === false) continue; const f = a.family ?? a.name; if (!m.has(f)) m.set(f, []); m.get(f)!.push(a); }
+  for (const a of AIRCRAFT) { if (a.playable === false || (flyableOnly && !a.flyable)) continue; const f = a.family ?? a.name; if (!m.has(f)) m.set(f, []); m.get(f)!.push(a); }
   // within a family: by block number, then variant letter (A, B, B(U), C, D, E)
   const key = (a: (typeof AIRCRAFT)[number]) => {
     const v = a.variant ?? '';

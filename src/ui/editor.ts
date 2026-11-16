@@ -1,7 +1,7 @@
 // Mission editor: place flights, ground groups and waypoints on the theater map; edit their properties; set goals,
 // weather and briefing; save / export / import / share as a link; fly it. Reads and writes the MissionSpec that
 // Instant Action and the campaign also use.
-import { AIRCRAFT, AIRCRAFT_BY_ID } from '../aircraft/defs.js';
+import { AIRCRAFT, AIRCRAFT_BY_ID, DEFAULT_PLAYER_AIRCRAFT } from '../aircraft/defs.js';
 import type { Side } from '../aircraft/types.js';
 import type { MissionSpec, FlightSpec, GroupKind, MissionGoal } from '../game/mission.js';
 import { startXZ as flightStartXZ } from '../game/mission.js';
@@ -127,7 +127,7 @@ export function editorScreen(app: AppApi, load?: MissionSpec): HTMLElement {
         <div class="row3"><label>Callsign <input data-k="callsign" value="${esc(f.callsign)}"></label>
           <label>Side <select data-k="side"><option>blue</option><option>red</option></select></label>
           <label>Count <input data-k="count" type="number" min="1" max="8" value="${f.count}"></label></div>
-        <label>Aircraft <select data-k="aircraftId">${AIRCRAFT.map((a) => `<option value="${a.id}">${esc(a.name)} (${esc(a.country)})</option>`).join('')}</select></label>
+        <label>Aircraft <select data-k="aircraftId">${(f.player ? AIRCRAFT.filter((a) => a.flyable) : AIRCRAFT).map((a) => `<option value="${a.id}">${esc(a.name)} (${esc(a.country)})</option>`).join('')}</select></label>
         <label>Loadout <select data-k="loadout">${def.loadouts.map((l, i) => `<option value="${i}">${esc(l.name)}</option>`).join('')}</select></label>
         <div class="row3"><label>Task <select data-k="task">${TASKS.map((t) => `<option>${t}</option>`).join('')}</select></label>
           <label>Skill <select data-k="skill">${SKILLS.map((s) => `<option>${s}</option>`).join('')}</select></label>
@@ -149,7 +149,11 @@ export function editorScreen(app: AppApi, load?: MissionSpec): HTMLElement {
         else if (k === 'loadout') f.stores = AIRCRAFT_BY_ID[f.aircraftId].loadouts[Number(v)]?.stores ?? [];
         else if (k === 'task') f.task = v as AITask;
         else if (k === 'skill') f.skill = v as Skill;
-        else if (k === 'player') { for (const o of m.flights) o.player = false; f.player = (inp as HTMLInputElement).checked; if (f.player) f.side = 'blue'; }
+        else if (k === 'player') {
+          for (const o of m.flights) o.player = false;
+          f.player = (inp as HTMLInputElement).checked;
+          if (f.player) { f.side = 'blue'; if (!AIRCRAFT_BY_ID[f.aircraftId]?.flyable) { f.aircraftId = DEFAULT_PLAYER_AIRCRAFT; f.stores = AIRCRAFT_BY_ID[f.aircraftId].loadouts[0].stores; } }
+        }
         else if (k === 'startKind') {
           const s = startXZ(f);
           f.start = v === 'air' ? { kind: 'air', x: s.x, z: s.z, alt: 6000, hdg: 0, speed: 220 } : { kind: 'runway', airbaseId: AIRBASES.find((a) => a.side === f.side)?.id ?? AIRBASES[0].id };

@@ -48,6 +48,16 @@ export const F16_CONTROLS: ControlDef[] = [
   sw('fcr', 'SNSR PWR', 'FCR', ['OFF', 'FCR'], 1, 0),
   sw('rwr', 'SNSR PWR', 'THREAT WARN', ['OFF', 'POWER'], 1, 0),
   sw('rdrAlt', 'SNSR PWR', 'RDR ALT', ['OFF', 'STBY', 'RDR ALT'], 2, 0, { help: 'Radar altimeter: needed for the ALOW low-altitude warning.' }),
+  // ---- HUD control panel (TO 1F-16CM/AM-34-1-1, 2.1.7.4), forward right console
+  sw('hudScales', 'HUD', 'SCALES', ['VV/VAH', 'VAH', 'OFF'], 0, 0, { help: 'VV/VAH: airspeed, altitude, heading and vertical velocity scales and the bank angle indicator. VAH: the same without vertical velocity and the bank angle indicator. OFF: no scales (the digital readouts stay).' }),
+  sw('hudFpm', 'HUD', 'FPM', ['ATT/FPM', 'FPM', 'OFF'], 0, 0, { help: 'ATT/FPM: flight path marker, attitude bars and roll indicator. FPM: the flight path marker and bank angle indicator only. OFF: none of them.' }),
+  sw('hudDed', 'HUD', 'DED DATA', ['DED DATA', 'PFL', 'OFF'], 2, 2, { help: 'Repeats the DED (or the pilot fault list) in the lower HUD.' }),
+  sw('hudRet', 'HUD', 'DEPR RET', ['STBY', 'PRI', 'OFF'], 2, 2, { help: 'PRI: primary reticle over the normal symbology. STBY: standby reticle only, everything else cleared. Depression from RET DEPR on the ICP.' }),
+  sw('hudVel', 'HUD', 'VELOCITY', ['CAS', 'TAS', 'GND SPD'], 0, 0, { help: 'Airspeed scale. CAS whenever the gear handle is down and in dogfight.' }),
+  sw('hudAlt', 'HUD', 'ALT', ['RADAR', 'BARO', 'AUTO'], 1, 1, { help: 'RADAR: radar altitude scale. BARO: barometric. AUTO: radar thermometer scale below 1200 ft descending (1500 ft climbing), barometric above.' }),
+  sw('hudBrt', 'HUD', 'BRT', ['DAY', 'AUTO BRT', 'NIGHT'], 0, 0, { help: 'NIGHT limits the symbology to half brightness.' }),
+  sw('driftCo', 'ICP', 'DRIFT C/O', ['NORM', 'DRIFT C/O'], 0, 0, { help: 'DRIFT C/O keeps the flight path marker centred in azimuth (no wind drift).' }),
+  sw('retDepr', 'ICP', 'RET DEPR', ['0', '20', '40', '60', '80', '100', '120', '140', '160', '180', '200', '220', '240', '260'], 0, 0, { help: 'Depression of the manual reticle, 0 to 260 mR.' }),
   // ---- miscellaneous panel
   sw('masterArm', 'MISC', 'MASTER ARM', ['SIMULATE', 'OFF', 'MASTER ARM'], 2, 1, { help: 'Nothing leaves the jet unless this is in MASTER ARM.' }),
   sw('apPitch', 'MISC', 'A/P PITCH', ['ALT HOLD', 'A/P OFF', 'ATT HOLD'], 1, 1, { help: 'Engages the autopilot. Drops back to A/P OFF with the gear down, over 15° AoA, in digital backup or standby gains.' }),

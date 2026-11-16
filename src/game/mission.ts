@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Side } from '../aircraft/types.js';
-import { AIRCRAFT_BY_ID, getAircraft } from '../aircraft/defs.js';
+import { AIRCRAFT_BY_ID, DEFAULT_PLAYER_AIRCRAFT, getAircraft, isFlyable } from '../aircraft/defs.js';
 import { Aircraft, GroundUnit, SamSite, type GroundType } from '../sim/entities.js';
 import { World, type WorldOptions } from '../sim/world.js';
 import { AIPilot, type AITask, type Skill } from '../ai/pilot.js';
@@ -254,6 +254,21 @@ function spawnGroup(world: World, g: GroupSpec, seed: number): GroundUnit[] {
   return units;
 }
 
+/**
+ * V2: only the F-16 is flown by the player. A mission (an older file, a saved campaign) that seats the player in
+ * anything else puts the player's flight in the default F-16 instead, with the loadout that best matches its task.
+ * Every other type stays in the mission as AI. The flight session applies this; buildMission itself stays general.
+ */
+export function withFlyablePlayer(spec: MissionSpec): MissionSpec {
+  if (spec.flights.every((f) => !f.player || isFlyable(f.aircraftId))) return spec;
+  return { ...spec, flights: spec.flights.map((f) => {
+    if (!f.player || isFlyable(f.aircraftId)) return f;
+    const id = DEFAULT_PLAYER_AIRCRAFT;
+    const want = f.task === 'strike' || f.task === 'cas' ? ['strike', 'cas'] : f.task === 'sead' ? ['sead'] : ['cap'];
+    return { ...f, aircraftId: id, stores: pickLoadout(id, want) };
+  }) };
+}
+
 /** `rampStart`: a player who starts at an airbase is parked on the ramp instead of lined up on the runway. */
 export function buildMission(spec: MissionSpec, opts: WorldOptions, rampStart = false): BuiltMission {
   let ramp: BuiltMission['ramp'];
@@ -438,11 +453,11 @@ export function evaluate(b: BuiltMission): MissionResult {
 // ------------------------------------------------------------------ instant action / mission setup
 export type ScenarioId = 'freeflight' | 'takeoff' | 'carrier_ops' | 'carrier_trap' | 'refuel' | 'bfm_guns' | 'bfm_ir' | 'bvr' | 'furball' | 'strike' | 'sead' | 'cas' | 'scramble';
 
-export const SCENARIOS: Array<{ id: ScenarioId; name: string; desc: string }> = [
+export const SCENARIOS: Array<{ id: ScenarioId; name: string; desc: string; carrier?: true }> = [
   { id: 'freeflight', name: 'Free flight', desc: 'Air start at 15,000 ft near Halvorsen AB. No threats — learn the jet.' },
   { id: 'takeoff', name: 'Takeoff & landing', desc: 'Runway start at Halvorsen AB. Take off, fly the pattern and land.' },
-  { id: 'carrier_ops', name: 'Carrier: cat shot & recovery', desc: 'On the bow catapult. Full power, launch (C), fly the pattern, lower the hook (H) and trap. Carrier-capable jets: F-14, F/A-18.' },
-  { id: 'carrier_trap', name: 'Carrier: trap practice', desc: 'Four miles astern on glideslope, gear, flaps and hook down. Fly the ball and catch a wire — 3-wire is the goal.' },
+  { id: 'carrier_ops', name: 'Carrier: cat shot & recovery', desc: 'On the bow catapult. Full power, launch (C), fly the pattern, lower the hook (H) and trap. Carrier-capable jets: F-14, F/A-18.', carrier: true },
+  { id: 'carrier_trap', name: 'Carrier: trap practice', desc: 'Four miles astern on glideslope, gear, flaps and hook down. Fly the ball and catch a wire — 3-wire is the goal.', carrier: true },
   { id: 'refuel', name: 'Aerial refueling', desc: 'Join a KC-135R on its track with 35% fuel. Boom (F-16/F-15) or drogue (probe jets). Follow the HUD cue.' },
   { id: 'bfm_guns', name: 'BFM: guns only', desc: '1v1 head-on merge at 15,000 ft. Guns only — energy management decides.' },
   { id: 'bfm_ir', name: 'BFM: heaters + guns', desc: '1v1 from 10 nm, IR missiles and guns. Flares, flares, flares.' },
@@ -469,6 +484,12 @@ export interface CustomOptions {
   clouds: 'clear' | 'scattered' | 'overcast';
   /** theater (map) to fly in; default Varnia */
   theaterId?: string;
+}
+
+/** The scenarios an aircraft can fly: the carrier ones need a carrier-capable jet. */
+export function scenariosFor(aircraftId: string) {
+  const carrier = AIRCRAFT_BY_ID[aircraftId]?.capabilities?.includes('carrier') ?? false;
+  return SCENARIOS.filter((s) => carrier || !s.carrier);
 }
 
 export function defaultCustom(): CustomOptions {

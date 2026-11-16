@@ -7,7 +7,6 @@ import { quality, qualityFrame, startWork } from './quality.js';
 import { buildCarrierMesh } from './carrierMesh.js';
 import { buildAircraftModel, updateAircraftModel, syncStores, groundMesh, storeMesh, missileDims, type AircraftModel } from './models.js';
 import { createBurner, type Burner } from './afterburner.js';
-import { hdSpecFor } from './hdModels.js';
 import { updatePapi, type Airfield } from './airfield.js';
 import { Effects } from './particles.js';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
@@ -26,8 +25,8 @@ export function hudQuadSize(fovDeg: number, aspect: number, d: number): [number,
   return [h * aspect, h];
 }
 import { surfaceHeight, theaterVersion } from '../world/theater.js';
-import { buildCockpit, type Cockpit } from './cockpit.js';
-import { Cockpit3D, type PitHit } from './cockpit3d.js';
+import type { Cockpit3D, PitHit } from './cockpit3d.js';
+import { CockpitView } from './cockpitView.js';
 import { clamp } from '../core/math.js';
 
 export type ViewMode = 'cockpit' | 'chase' | 'flyby' | 'target' | 'weapon' | 'enemy';
@@ -83,10 +82,10 @@ export class SceneRenderer {
   private theaterVer = theaterVersion;
   /** MFD canvases shown as live screens in the 3D cockpit (set by the flight session) */
   mfdCanvases: HTMLCanvasElement[] = [];
-  private cockpit: Cockpit | null = null;
-  private cockpitDef = '';
-  /** the clickable cockpit of a jet with its own systems */
-  pit: Cockpit3D | null = null;
+  /** the cockpit model, clickable cockpit and live screens: loaded only while in cockpit view */
+  readonly cockpitView = new CockpitView(() => this.mfdCanvases);
+  /** the clickable cockpit of a jet with its own systems (only while in cockpit view) */
+  get pit(): Cockpit3D | null { return this.cockpitView.pit; }
   private pitDt = 0;
 
   constructor(canvas: HTMLCanvasElement) {
@@ -228,6 +227,7 @@ export class SceneRenderer {
     for (const m of this.acModels.values()) this.scene.remove(m.root);
     for (const m of this.groundModels.values()) this.scene.remove(m);
     for (const m of this.missileModels.values()) this.scene.remove(m);
+    this.cockpitView.unload();
     this.acModels.clear(); this.groundModels.clear(); this.missileModels.clear();
     this.fx.clear();
   }
@@ -243,7 +243,7 @@ export class SceneRenderer {
       syncStores(m, ac, (i) => world.stationOffset(ac, i));
       updateAircraftModel(m, ac, t, m.root.position.distanceTo(this.viewCam.position));
       m.root.visible = true;
-      if (ac.isPlayer) this.updatePlayerCockpit(m, ac, this.view === 'cockpit');
+      if (ac.isPlayer) this.cockpitView.update(m, ac, this.view === 'cockpit', this.pitDt);
     }
     for (const [id, m] of this.acModels) if (!seen.has(id)) { this.scene.remove(m.root); this.acModels.delete(id); }
     for (const g of world.ground) {
@@ -277,100 +277,17 @@ export class SceneRenderer {
     for (const [id, m] of this.missileModels) if (!mseen.has(id)) { this.scene.remove(m); this.missileModels.delete(id); }
   }
 
-  /**
-   * F1 view: keep your own jet visible (nose, wings) but hide canopy glass from inside, and show a cockpit —
-   * the HD model's own cockpit when it is loaded, otherwise the procedural one (with live MFD screens).
-   */
-  private updatePlayerCockpit(m: AircraftModel, ac: Aircraft, inside: boolean) {
-    const hdOn = !!m.hd && m.hd.root.visible;
-    m.canopy.visible = !inside && !hdOn;
-    if (m.hd) for (const gl of m.hd.glass) gl.visible = !inside;
-    const useHdPit = hdOn && m.hd!.cockpit.length > 0;
-    // the procedural fuselage encloses the eye: the cockpit model provides nose/spine/floor instead
-    const hideFus = inside && !useHdPit;
-    if (!hdOn) for (const f of m.fuselage) f.visible = !hideFus;
-    if (inside && !useHdPit) {
-      if (!this.cockpit || this.cockpitDef !== ac.def.id) {
-        if (this.cockpit) this.cockpit.group.parent?.remove(this.cockpit.group);
-        this.cockpit = buildCockpit(ac.def, this.mfdCanvases);
-        this.cockpitDef = ac.def.id;
-      }
-      if (this.cockpit.group.parent !== m.body) m.body.add(this.cockpit.group);
-      this.cockpit.group.position.copy(this.eyeOffset(ac));
-      this.cockpit.group.visible = true;
-      for (const s of this.cockpit.screens) s.needsUpdate = true;
-    } else if (this.cockpit) {
-      this.cockpit.group.visible = false;
-    }
-    // HD cockpits: live MFD pages on the model's own screens
-    if (m.hd) this.updateHdMfds(m, ac, inside && useHdPit);
-    this.updatePit(m, ac, inside, useHdPit);
-  }
-
-  /** The clickable switches, lights, gauges and displays, seated on whichever cockpit is in use. */
-  private updatePit(m: AircraftModel, ac: Aircraft, inside: boolean, useHdPit: boolean) {
-    const sys = ac.systems, layout = sys?.cockpit;
-    if (!sys || !layout || !inside) { if (this.pit) this.pit.group.visible = false; return; }
-    if (!this.pit || this.pit.sys !== sys) {
-      this.pit?.group.parent?.remove(this.pit.group);
-      this.pit = new Cockpit3D(sys, layout);
-    }
-    const pit = this.pit;
-    if (pit.group.parent !== m.body) m.body.add(pit.group);
-    const eye = this.eyeOffset(ac);
-    pit.group.position.copy(eye);
-    pit.group.visible = true;
-    const key = `${ac.id}:${useHdPit ? 'hd' : 'proc'}`;
-    if (pit.fitted !== key) {
-      m.body.updateWorldMatrix(true, true);
-      pit.fit(useHdPit ? m.hd!.cockpit : this.cockpit ? [this.cockpit.group] : [], key);
-      const spec = useHdPit ? hdSpecFor(ac.def) : null;
-      if (spec?.mfds) for (const d of spec.mfds) {
-        const n = new THREE.Vector3(...d.n).normalize();
-        pit.placeMfd(d.screen, new THREE.Vector3(...d.c).sub(eye).addScaledVector(n, 0.002), n, d.w, d.h);
-      } else layout.mfds.forEach((d, i) => pit.placeMfd(i, new THREE.Vector3(...d.c), new THREE.Vector3(...d.n), d.w, d.h));
-    }
-    pit.update(sys, this.pitDt);
-  }
-
-  /** What in the cockpit is under a screen position (normalised device coordinates), if anything. */
+  /** The pick under a screen position (normalised device coordinates) in the cockpit, if anything. */
   pickCockpit(ndcX: number, ndcY: number): PitHit | null {
-    if (this.view !== 'cockpit' || !this.pit) return null;
+    if (this.view !== 'cockpit') return null;
     this.viewCam.updateMatrixWorld();
-    return this.pit.pick(this.viewCam, ndcX, ndcY);
-  }
-
-  private hdMfdTextures: THREE.CanvasTexture[] = [];
-  private updateHdMfds(m: AircraftModel, ac: Aircraft, show: boolean) {
-    const spec = hdSpecFor(ac.def);
-    if (!spec?.mfds || !m.hd) return;
-    let quads = m.hd.root.userData.mfdQuads as THREE.Mesh[] | undefined;
-    if (!quads) {
-      if (!this.hdMfdTextures.length) this.hdMfdTextures = this.mfdCanvases.map((c) => { const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; });
-      quads = spec.mfds.map((d) => {
-        const q = new THREE.Mesh(new THREE.PlaneGeometry(d.w, d.h), new THREE.MeshBasicMaterial({ map: this.hdMfdTextures[d.screen] ?? null, toneMapped: false }));
-        const c = new THREE.Vector3(...d.c), n = new THREE.Vector3(...d.n).normalize();
-        q.position.copy(c).addScaledVector(n, 0.003);   // just proud of the painted screen
-        q.lookAt(c.clone().add(n));
-        q.renderOrder = 2;
-        m.hd!.root.add(q);
-        return q;
-      });
-      m.hd.root.userData.mfdQuads = quads;
-    }
-    for (const q of quads) q.visible = show;
-    if (show) for (const t of this.hdMfdTextures) t.needsUpdate = true;
+    return this.cockpitView.pick(this.viewCam, ndcX, ndcY);
   }
 
   eyeOffset(ac: Aircraft) {
-    if (ac.isPlayer) {
-      const m = this.acModels.get(ac.id);
-      if (m?.hd && m.hd.root.visible && m.hd.cockpit.length) return m.hd.eye.clone();
-    }
-    const L = ac.def.length;
-    const R = Math.max(0.55, L * 0.042) * (ac.def.model.engines === 2 ? 1.15 : 1);
-    return new THREE.Vector3(0, R * 0.95, -L * 0.22);
+    return this.cockpitView.eye(ac.isPlayer ? this.acModels.get(ac.id) : undefined, ac);
   }
+
 
   private updateCamera(world: World, dt: number) {
     const cam = this.camera;
