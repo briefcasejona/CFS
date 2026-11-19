@@ -1,6 +1,6 @@
 # F-16 cockpit model
 
-`cockpit.glb` is the F-16 cockpit supplied by the project owner (2026-11-19). It is loaded only in cockpit view and
+`cockpit.glb` is the F-16 cockpit made by the CFS playtester, supplied by the project owner (2026-11-19). It is loaded only in cockpit view and
 placed so its MFDs sit where the exterior model's MFDs are (`src/f16/cockpit/view.ts`).
 
 Its node names say what each control is and how it moves; the game reads them (`src/f16/cockpit/controls.ts`):

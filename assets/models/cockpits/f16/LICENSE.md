@@ -1,3 +1,3 @@
 # F-16 cockpit model: licence
 
-Supplied by the project owner for CFS. Author, source and licence: to be filled in by the project owner.
+Made by the CFS playtester and supplied to the project by its owner (2026-11-19) for use in CFS.
