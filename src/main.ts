@@ -95,8 +95,6 @@ class App implements AppApi {
             root: document.getElementById('sim')!,
             canvas3d: document.getElementById('c3d') as HTMLCanvasElement,
             hud: document.getElementById('hud') as HTMLCanvasElement,
-            mfdL: document.getElementById('mfdL') as HTMLCanvasElement,
-            mfdR: document.getElementById('mfdR') as HTMLCanvasElement,
             map: document.getElementById('map') as HTMLCanvasElement,
             overlay: document.getElementById('overlay')!,
           }, this.input, this.audio, this.settings);

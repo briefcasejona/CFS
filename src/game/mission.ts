@@ -348,6 +348,8 @@ export function buildMission(spec: MissionSpec, opts: WorldOptions, rampStart = 
       world.addAircraft(ac);
       if (f.player && i === 0) {
         ac.isPlayer = true;
+        // the player's F-16 has no radar until it is rebuilt from the Dash-34 (the AI F-16s keep the game's radar)
+        if (ac.def.family === 'F-16') ac.radar = null;
         ac.infiniteWeapons = opts.unlimitedWeapons;
         player = ac;
         world.player = ac;

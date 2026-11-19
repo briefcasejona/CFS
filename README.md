@@ -41,7 +41,7 @@ All 16 fly on the same **6-DOF rigid-body flight model**, and each jet supplies 
 
 ## Aircraft systems
 
-Aircraft are being given their own systems and cockpit, one type at a time. The **F-16** is the first: electrical, hydraulic, fuel, engine start (JFS), EPU, landing gear, brakes and the warning and caution lights work as in the real jet, from the flight manual. Press **K** for the cockpit panel (switches, lights, gauges and the checklist), **Shift+K** to have the crew chief start the jet, **J** to reset the master caution. Turn on **Cold start** in Settings to begin ground missions cold and dark, parked on the ramp. The cockpit is clickable: left click moves a switch up or presses a button, right click moves it down, the wheel turns knobs. The flight control system (gains, BIT, fault list) and the avionics (ICP and DED, INS alignment, MFD formats) follow the manuals too. See [docs/SYSTEMS.md](docs/SYSTEMS.md).
+The **F-16** is the only flyable aircraft; the others fly as AI. It is being rebuilt from five documents only: the HFFM Manual (flight model), TO 1F-16CMAM-1 (flight manual), TO 1F-16CMAM-34-1-1 (avionics), the BMS Technical Manual and the DCS F-16C Viper Guide. Done so far: the HFFM flight model for Blocks 15, 30, 32, 40, 42, 50 and 52 (lift, drag, thrust, CAT I limiter) with the flight control laws of the flight manual, and a new cockpit model whose switches, knobs, buttons and wheels all move: left click moves a switch up or presses a button, right click moves it down, the wheel turns knobs, and the wheels can be bound to joystick axes. The aircraft systems, HUD, MFDs and radar come next, from the manuals.
 
 ## Combat
 

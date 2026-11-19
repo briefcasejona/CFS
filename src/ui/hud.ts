@@ -6,7 +6,6 @@ import { WEAPONS } from '../weapons/stores.js';
 import { DEG, RAD, clamp, wrap360 } from '../core/math.js';
 import { FT, KT, NM, G0 } from '../sim/atmosphere.js';
 import { surfaceHeight } from '../world/theater.js';
-import { drawF16Hud } from './hudF16.js';
 
 export interface HudState {
   autopilot: boolean;
@@ -64,10 +63,9 @@ export class Hud {
     this.drawMessages(world);
     if (p && st.labels) this.drawLabels(world, scene, p);
     if (!p) return;
-    // a HUD without electrical power shows nothing
-    const hudOn = !p.systems || p.systems.powered('hud');
-    if (scene.view === 'cockpit' && p.alive) { if (hudOn) this.drawHud(world, scene, p, st); }
-    else this.drawDataStrip(world, p, st);
+    // The F-16 HUD symbology is rebuilt from TO 1F-16CMAM-34-1-1 separately; until then every view shows the game's
+    // own data strip (not a cockpit display).
+    this.drawDataStrip(world, p, st);
     if (p.gLoc > 0.02) {
       const a = clamp(p.gLoc, 0, 1);
       const r = Math.max(this.w, this.h);
@@ -118,203 +116,6 @@ export class Hud {
     }
   }
 
-  /** Project a direction from the eye point (conformal symbology at infinity). */
-  private projDir(scene: SceneRenderer, dir: THREE.Vector3): Pt | null {
-    const far = scene.viewCam.position.clone().addScaledVector(dir.clone().normalize(), 10000);
-    return scene.project(far, this.w, this.h);
-  }
-
-  /** The F-16's own HUD (hudF16.ts, to the Dash-34), with the weapon symbology and warnings over it. */
-  private drawF16(world: World, scene: SceneRenderer, p: Aircraft, st: HudState): boolean {
-    const c = this.ctx, col = st.color;
-    const wid = p.selWeapon, kind = wid && wid !== 'gun' ? WEAPONS[wid]?.kind : null;
-    const masterMode = wid === 'gun' ? 'GUN' : !kind ? 'NAV' : ['ir', 'sarh', 'arh'].includes(kind) ? 'AAM' : kind === 'arm' ? 'HTS' : 'CCRP';
-    const bull = (p.systems?.avionics as { stpts?: Array<{ x: number; z: number } | undefined> } | undefined)?.stpts?.[24];
-    const f = drawF16Hud({
-      ctx: c, col, p, proj: (d) => this.projDir(scene, d), steerpoint: st.steerpoint, steerName: st.steerName,
-      eye: scene.viewCam.position, masterMode, bullseye: bull ? new THREE.Vector3(bull.x, 0, bull.z) : null, time: world.time,
-    });
-    if (!f) return false;
-    c.save();
-    c.strokeStyle = col; c.fillStyle = col; c.lineWidth = 1.6; c.shadowColor = col; c.shadowBlur = 3;
-    c.beginPath(); c.rect(f.clip.x0, f.clip.y0, f.clip.x1 - f.clip.x0, f.clip.y1 - f.clip.y0); c.clip();
-    this.drawTargeting(world, scene, p, st, f.bore, f.fpm, f.k, { hx0: f.clip.x0, hx1: f.clip.x1, hy0: f.clip.y0, hy1: f.clip.y1 });
-    const warns = this.warnings(p);
-    const mid = f.at(0, 125);
-    if (warns.length && this.flash % 0.8 < 0.55) {
-      const red = warns[0] === 'PULL UP' || warns[0] === 'MISSILE';
-      this.text(warns[0], mid.x, mid.y - 20 * f.k, red ? '#ff4040' : col, 9 * f.k, 'center');
-    }
-    const cue = this.world?.refuel.cue();
-    if (cue) this.text(cue, mid.x, mid.y + 10 * f.k, col, 7 * f.k, 'center');
-    if (this.world) this.drawCarrierCues(this.world, p, mid.x, mid.y, f.clip.x1, f.k, col);
-    c.restore();
-    c.shadowBlur = 0;
-    return true;
-  }
-
-  private drawHud(world: World, scene: SceneRenderer, p: Aircraft, st: HudState) {
-    if (p.def.family === 'F-16') { if (!this.drawF16(world, scene, p, st)) this.drawDataStrip(world, p, st); return; }
-    const c = this.ctx;
-    const fm = p.fm;
-    const col = st.color;
-    c.strokeStyle = col; c.fillStyle = col; c.lineWidth = 1.6;
-    c.shadowColor = col; c.shadowBlur = 3;
-    const q = p.quat;
-    const bodyDir = (az: number, el: number) => new THREE.Vector3(Math.sin(az * DEG) * Math.cos(el * DEG), Math.sin(el * DEG), -Math.cos(az * DEG) * Math.cos(el * DEG)).applyQuaternion(q);
-    const bore = this.projDir(scene, bodyDir(0, 0));
-    const tl = this.projDir(scene, bodyDir(-14, 9));
-    const br = this.projDir(scene, bodyDir(14, -16));
-    if (!bore || !tl || !br) { c.shadowBlur = 0; this.drawDataStrip(world, p, st); return; }
-    const hx0 = Math.min(tl.x, br.x), hx1 = Math.max(tl.x, br.x), hy0 = Math.min(tl.y, br.y), hy1 = Math.max(tl.y, br.y);
-    const hh = hy1 - hy0;
-    const scale = clamp(hh / 420, 0.6, 2.2);
-    c.save();
-    c.beginPath(); c.rect(hx0, hy0, hx1 - hx0, hh); c.clip();
-
-    // gun cross / boresight
-    c.beginPath();
-    c.moveTo(bore.x - 10 * scale, bore.y); c.lineTo(bore.x - 4 * scale, bore.y);
-    c.moveTo(bore.x + 4 * scale, bore.y); c.lineTo(bore.x + 10 * scale, bore.y);
-    c.moveTo(bore.x, bore.y - 10 * scale); c.lineTo(bore.x, bore.y - 4 * scale);
-    c.stroke();
-
-    // flight path marker
-    const v = fm.vel.clone();
-    const fpm = (v.lengthSq() > 25 ? this.projDir(scene, v) : null) ?? bore;
-    c.beginPath(); c.arc(fpm.x, fpm.y, 6 * scale, 0, Math.PI * 2);
-    c.moveTo(fpm.x - 6 * scale, fpm.y); c.lineTo(fpm.x - 16 * scale, fpm.y);
-    c.moveTo(fpm.x + 6 * scale, fpm.y); c.lineTo(fpm.x + 16 * scale, fpm.y);
-    c.moveTo(fpm.x, fpm.y - 6 * scale); c.lineTo(fpm.x, fpm.y - 12 * scale);
-    c.stroke();
-
-    // pitch ladder, aligned with the flight path heading
-    const vh = v.clone(); vh.y = 0;
-    const hdgV = vh.lengthSq() > 1 ? Math.atan2(vh.x, -vh.z) : fm.attitude().hdg;
-    const right = new THREE.Vector3(Math.cos(hdgV), 0, Math.sin(hdgV));
-    for (let pa = -85; pa <= 85; pa += 5) {
-      const ctr = new THREE.Vector3(Math.sin(hdgV) * Math.cos(pa * DEG), Math.sin(pa * DEG), -Math.cos(hdgV) * Math.cos(pa * DEG));
-      const half = pa === 0 ? 0.35 : 0.075;
-      const gap = pa === 0 ? 0.02 : 0.03;
-      const pts = [-half, -gap, gap, half].map((k) => this.projDir(scene, ctr.clone().addScaledVector(right, k)));
-      if (pts.some((x) => !x)) continue;
-      const [a, b, cc, d] = pts as Pt[];
-      c.setLineDash(pa < 0 ? [6, 4] : []);
-      c.beginPath();
-      c.moveTo(a.x, a.y); c.lineTo(b.x, b.y);
-      c.moveTo(cc.x, cc.y); c.lineTo(d.x, d.y);
-      if (pa !== 0) {
-        const tick = pa > 0 ? 6 : -6;
-        const nx = -(b.y - a.y), ny = b.x - a.x;
-        const nl = Math.hypot(nx, ny) || 1;
-        c.moveTo(a.x, a.y); c.lineTo(a.x + nx / nl * tick, a.y + ny / nl * tick);
-        c.moveTo(d.x, d.y); c.lineTo(d.x + nx / nl * tick, d.y + ny / nl * tick);
-      }
-      c.stroke();
-      c.setLineDash([]);
-      if (pa !== 0) {
-        this.text(`${Math.abs(pa)}`, a.x - 14, a.y, col, 11 * scale, 'center');
-        this.text(`${Math.abs(pa)}`, d.x + 14, d.y, col, 11 * scale, 'center');
-      }
-    }
-
-    this.drawTargeting(world, scene, p, st, bore, fpm, scale, { hx0, hx1, hy0, hy1 });
-
-    if (st.steerpoint) {
-      const sp = this.projDir(scene, st.steerpoint.clone().sub(scene.viewCam.position));
-      if (sp) { c.beginPath(); c.moveTo(sp.x, sp.y - 6); c.lineTo(sp.x + 6, sp.y); c.lineTo(sp.x, sp.y + 6); c.lineTo(sp.x - 6, sp.y); c.closePath(); c.stroke(); }
-    }
-    c.restore();
-
-    // ---------------- fixed-format data
-    const cx = (hx0 + hx1) / 2;
-    const fs = 13 * scale;
-    const hdg = wrap360(fm.attitude().hdg * RAD);
-    const tapeY = hy0 + 18 * scale;
-    c.save(); c.beginPath(); c.rect(cx - 120 * scale, tapeY - 14 * scale, 240 * scale, 30 * scale); c.clip();
-    for (let d = Math.floor((hdg - 30) / 5) * 5; d <= hdg + 30; d += 5) {
-      const x = cx + (d - hdg) * 4 * scale;
-      c.beginPath(); c.moveTo(x, tapeY + 8 * scale); c.lineTo(x, tapeY + (d % 10 === 0 ? 2 : 5) * scale); c.stroke();
-      if (d % 10 === 0) this.text(String(Math.round(wrap360(d) / 10) % 36).padStart(2, '0'), x, tapeY - 4 * scale, col, 11 * scale, 'center');
-    }
-    c.restore();
-    c.beginPath(); c.moveTo(cx, tapeY + 9 * scale); c.lineTo(cx - 4 * scale, tapeY + 15 * scale); c.lineTo(cx + 4 * scale, tapeY + 15 * scale); c.closePath(); c.stroke();
-
-    const ias = fm.ias / KT;
-    const altFt = fm.pos.y / FT;
-    const boxY = (hy0 + hy1) / 2 - 20 * scale;
-    const lx = hx0 + 40 * scale, rx = hx1 - 40 * scale;
-    c.strokeRect(lx - 30 * scale, boxY - 11 * scale, 60 * scale, 22 * scale);
-    this.text(ias.toFixed(0), lx, boxY, col, fs + 2, 'center');
-    c.strokeRect(rx - 38 * scale, boxY - 11 * scale, 76 * scale, 22 * scale);
-    this.text(altFt.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ','), rx, boxY, col, fs + 2, 'center');
-    const agl = (fm.pos.y - surfaceHeight(fm.pos.x, fm.pos.z)) / FT;
-    if (agl < 5000) this.text(`R ${agl.toFixed(0)}`, rx, boxY + 24 * scale, col, fs, 'center');
-    const vvi = (fm.vel.y / FT) * 60;
-    this.text(`${vvi >= 0 ? '+' : ''}${Math.round(vvi / 100) * 100}`, rx, boxY - 24 * scale, col, fs - 2, 'center');
-    this.text(`M ${fm.mach.toFixed(2)}`, lx - 28 * scale, boxY + 26 * scale, col, fs);
-    this.text(`G ${fm.nz.toFixed(1)}`, lx - 28 * scale, boxY + 44 * scale, col, fs);
-    this.text(`α ${(fm.alpha * RAD).toFixed(1)}`, lx - 28 * scale, boxY + 62 * scale, col, fs);
-    this.text(`T ${(p.ctrl.throttle * 100).toFixed(0)}%${fm.abFrac > 0.05 ? ' AB' : ''}`, lx - 28 * scale, boxY + 80 * scale, col, fs);
-
-    const wid = p.selWeapon;
-    const bl = hy1 - 70 * scale;
-    let wtxt = 'NAV';
-    if (wid === 'gun') wtxt = `GUN ${p.gunRounds}`;
-    else if (wid) wtxt = `${WEAPONS[wid]?.name ?? wid} x${p.countOf(wid)}`;
-    this.text(wtxt, hx0 + 10 * scale, bl, col, fs);
-    const r = p.radar;
-    if (r) this.text(`${r.mode} ${r.rangeScale / NM}`, hx0 + 10 * scale, bl + 18 * scale, col, fs);
-    this.text(`CH ${p.chaff}  FL ${p.flares}`, hx0 + 10 * scale, bl + 36 * scale, col, fs);
-    this.text(`FUEL ${Math.round(fm.totalFuel / 0.4536 / 10) * 10}`, hx1 - 10 * scale, bl, col, fs, 'right');
-    const cfg: string[] = [];
-    if (fm.gearPos > 0.05) cfg.push(fm.gearPos > 0.95 ? 'GEAR' : 'GEAR*');
-    if (fm.flapPos > 0.05) cfg.push('FLAPS');
-    if (fm.brakePos > 0.05) cfg.push('SPDBRK');
-    if (p.ctrl.brakes > 0.1) cfg.push('BRK');
-    if (st.autopilot) cfg.push('A/P');
-    if (p.hook) cfg.push('HOOK');
-    if (p.def.fcs.vtol) cfg.push(`NOZ ${(fm.nozzleAngle * RAD).toFixed(0)}`);
-    if (p.def.fcs.swingWing) cfg.push(`SWP ${fm.sweep.toFixed(0)}`);
-    this.text(cfg.join(' '), hx1 - 10 * scale, bl + 18 * scale, col, fs, 'right');
-    if (st.steerpoint) {
-      const d = st.steerpoint.clone().sub(p.pos); d.y = 0;
-      const brg = wrap360(Math.atan2(d.x, -d.z) * RAD);
-      this.text(`${st.steerName} ${brg.toFixed(0).padStart(3, '0')}/${(d.length() / NM).toFixed(1)}`, hx1 - 10 * scale, bl + 36 * scale, col, fs, 'right');
-    }
-    const warns = this.warnings(p);
-    if (warns.length && this.flash % 0.8 < 0.55) {
-      const red = warns[0] === 'PULL UP' || warns[0] === 'MISSILE';
-      this.text(warns[0], cx, (hy0 + hy1) / 2 + 70 * scale, red ? '#ff4040' : col, 20 * scale, 'center');
-    }
-    // air-to-air refuelling director cue (like tanker director lights)
-    const cue = this.world?.refuel.cue();
-    if (cue) this.text(cue, cx, (hy0 + hy1) / 2 + 100 * scale, col, 14 * scale, 'center');
-    if (this.world) this.drawCarrierCues(this.world, p, cx, (hy0 + hy1) / 2, hx1, scale, col);
-    c.shadowBlur = 0;
-  }
-
-  /** catapult prompt and the "meatball" (IFLOLS-style glideslope + lineup) on approach to the carrier */
-  private drawCarrierCues(world: World, p: Aircraft, cx: number, cy: number, hx1: number, scale: number, col: string) {
-    if (!world.carriers.length) return;
-    const c = this.ctx;
-    const op = world.carrierOps.state(p);
-    if (op === 'cat') this.text('ON CATAPULT — FULL POWER, THEN C TO LAUNCH', cx, cy - 115 * scale, col, 14 * scale, 'center');
-    const a = world.carrierOps.approach(p, world.carriers);
-    if (!a || a.range > 6000) return;
-    // datum bar with the ball: one cell = 0.4°, ball limited to ±5 cells
-    const x = hx1 - 40 * scale, y = cy, cell = 9 * scale;
-    c.strokeStyle = col; c.lineWidth = 1.5;
-    c.beginPath(); c.moveTo(x - 30 * scale, y); c.lineTo(x - 10 * scale, y); c.moveTo(x + 10 * scale, y); c.lineTo(x + 30 * scale, y); c.stroke();
-    const k = clamp(a.glideDev / 0.4, -5, 5);
-    const low = a.glideDev < -0.8;
-    c.fillStyle = low ? '#ff5040' : '#ffc040';
-    c.beginPath(); c.arc(x, y - k * cell, 5 * scale, 0, Math.PI * 2); c.fill();
-    const lu = Math.abs(a.lineup) < 4 ? 'LINEUP OK' : a.lineup > 0 ? `◀ ${a.lineup.toFixed(0)} m` : `${(-a.lineup).toFixed(0)} m ▶`;
-    this.text(lu, x, y + 60 * scale, col, 12 * scale, 'center');
-    this.text(`${(a.range / NM).toFixed(1)} NM`, x, y - 60 * scale, col, 12 * scale, 'center');
-  }
-
   warnings(p: Aircraft): string[] {
     const fm = p.fm;
     const w: string[] = [];
@@ -324,7 +125,6 @@ export class Hud {
     }
     if (p.rwr.some((r) => r.kind === 'launch' || r.kind === 'missile')) w.push('MISSILE');
     if (fm.stalled) w.push('STALL');
-    if (p.systems) w.push(...p.systems.hudWarnings());
     if (fm.nz > p.def.limits.gMax * 1.02) w.push('OVER G');
     if (!fm.wow && (fm.alpha * RAD > p.def.limits.aoaMax || fm.alpha * RAD < -(p.def.limits.aoaNeg ?? 10))) w.push('AOA');
     if (fm.totalFuel < p.def.fuelInternal * 0.15) w.push('BINGO');
@@ -332,120 +132,6 @@ export class Hud {
     if (fm.damage.fuelLeak > 0) w.push('FUEL LEAK');
     if (!fm.wow && fm.gearPos > 0.5 && fm.ias > 290 * KT) w.push('GEAR SPEED');
     return w;
-  }
-
-  private drawTargeting(world: World, scene: SceneRenderer, p: Aircraft, st: HudState,
-    bore: Pt, fpm: Pt, scale: number, box: { hx0: number; hx1: number; hy0: number; hy1: number }) {
-    const c = this.ctx;
-    const col = st.color;
-    const wid = p.selWeapon;
-    const wdef = wid && wid !== 'gun' ? WEAPONS[wid] : null;
-    const tgt = p.radar?.stt ?? null;
-    const cx = (box.hx0 + box.hx1) / 2, cy = (box.hy0 + box.hy1) / 2;
-    const inv = p.quat.clone().invert();
-    if (tgt) {
-      const s = this.projDir(scene, tgt.pos.clone().sub(scene.viewCam.position));
-      const range = tgt.pos.distanceTo(p.pos);
-      const inBox = s && s.x > box.hx0 && s.x < box.hx1 && s.y > box.hy0 && s.y < box.hy1;
-      if (s && inBox) {
-        const sz = 9 * scale;
-        c.strokeRect(s.x - sz, s.y - sz, sz * 2, sz * 2);
-      } else {
-        const dir = tgt.pos.clone().sub(p.pos).applyQuaternion(inv);
-        const ang = Math.atan2(dir.x, dir.y);
-        const L = 60 * scale;
-        c.beginPath(); c.moveTo(bore.x, bore.y); c.lineTo(bore.x + Math.sin(ang) * L, bore.y - Math.cos(ang) * L); c.stroke();
-        const off = Math.acos(clamp(-dir.z / dir.length(), -1, 1)) * RAD;
-        this.text(off.toFixed(0), bore.x + Math.sin(ang) * (L + 12), bore.y - Math.cos(ang) * (L + 12), col, 11 * scale, 'center');
-      }
-      const los = tgt.pos.clone().sub(p.pos).normalize();
-      const vc = -tgt.vel.clone().sub(p.vel).dot(los) / KT;
-      this.text(`${(range / NM).toFixed(1)} NM  Vc ${vc.toFixed(0)}`, box.hx1 - 10 * scale, box.hy0 + 50 * scale, col, 12 * scale, 'right');
-      this.text(`${tgt.def.name}  ${(tgt.pos.y / FT / 1000).toFixed(0)}K`, box.hx1 - 10 * scale, box.hy0 + 66 * scale, col, 12 * scale, 'right');
-      if (wdef && (wdef.kind === 'arh' || wdef.kind === 'sarh' || wdef.kind === 'ir')) {
-        const z = dlz(p, tgt, wid);
-        const top = cy - 90 * scale, bot = cy + 90 * scale, x = box.hx1 - 30 * scale;
-        const scaleMax = z.rmax * 1.3;
-        const yOf = (rr: number) => bot - (clamp(rr, 0, scaleMax) / scaleMax) * (bot - top);
-        c.beginPath();
-        c.moveTo(x, yOf(z.rmax)); c.lineTo(x + 10, yOf(z.rmax));
-        c.moveTo(x, yOf(z.rmax)); c.lineTo(x, yOf(z.rmin));
-        c.moveTo(x, yOf(z.rmin)); c.lineTo(x + 10, yOf(z.rmin));
-        c.stroke();
-        c.fillRect(x, yOf(z.rne), 6, yOf(z.rmin) - yOf(z.rne));
-        const ry = yOf(z.range);
-        c.beginPath(); c.moveTo(x - 2, ry); c.lineTo(x - 12, ry - 5); c.lineTo(x - 12, ry + 5); c.closePath(); c.stroke();
-        if (z.range < z.rmax && z.range > z.rmin && (wdef.kind !== 'ir' || p.irLock) && this.flash % 0.6 < 0.4) {
-          this.text('SHOOT', cx, box.hy1 - 100 * scale, col, 18 * scale, 'center');
-        }
-        if (wdef.kind !== 'ir') {
-          const R = 40 * scale;
-          c.beginPath(); c.arc(cx, cy, R, 0, Math.PI * 2); c.stroke();
-          const d = tgt.pos.clone().sub(p.pos).applyQuaternion(inv).normalize();
-          const dx = clamp(Math.atan2(d.x, -d.z) / (20 * DEG), -1.2, 1.2), dy = clamp(Math.atan2(d.y, -d.z) / (20 * DEG), -1.2, 1.2);
-          c.beginPath(); c.arc(cx + dx * R, cy - dy * R, 3.5 * scale, 0, Math.PI * 2); c.fill();
-        }
-      }
-    }
-    if (wdef && wdef.kind === 'ir') {
-      if (p.irLock) {
-        const s = this.projDir(scene, p.irLock.pos.clone().sub(scene.viewCam.position));
-        if (s) { c.beginPath(); c.arc(s.x, s.y, 14 * scale, 0, Math.PI * 2); c.stroke(); c.beginPath(); c.arc(s.x, s.y, 3, 0, Math.PI * 2); c.stroke(); }
-      } else {
-        c.setLineDash([4, 4]);
-        c.beginPath(); c.arc(bore.x, bore.y, 22 * scale, 0, Math.PI * 2); c.stroke();
-        c.setLineDash([]);
-      }
-    }
-    if (wid === 'gun' && p.def.gun) {
-      const range = tgt ? clamp(tgt.pos.distanceTo(p.pos), 200, 2500) : 700;
-      const mv = p.def.gun.muzzleVel;
-      const gdir = p.fm.forward().addScaledVector(p.fm.up(), 0.026).normalize();
-      const tof = range / (mv * 0.92 + 1);
-      const bullet = gdir.clone().multiplyScalar(mv * tof * 0.92).add(new THREE.Vector3(0, -0.5 * G0 * tof * tof, 0));
-      const s = this.projDir(scene, bullet);
-      if (s) {
-        c.beginPath(); c.arc(s.x, s.y, 12 * scale, 0, Math.PI * 2); c.stroke();
-        c.beginPath(); c.arc(s.x, s.y, 2, 0, Math.PI * 2); c.fill();
-        c.beginPath(); c.arc(s.x, s.y, 16 * scale, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * clamp(range / 1200, 0, 1)); c.stroke();
-      }
-      if (tgt) this.text(`${(tgt.pos.distanceTo(p.pos) / FT).toFixed(0)} FT`, cx, box.hy1 - 120 * scale, col, 13 * scale, 'center');
-    }
-    if (wdef && (wdef.kind === 'bomb' || wdef.kind === 'lgb')) {
-      const pred = world.predictImpact(p, wdef);
-      if (pred) {
-        const s = this.projDir(scene, pred.point.clone().sub(scene.viewCam.position));
-        if (s) {
-          c.beginPath(); c.moveTo(fpm.x, fpm.y); c.lineTo(s.x, s.y); c.stroke();
-          c.beginPath(); c.arc(s.x, s.y, 7 * scale, 0, Math.PI * 2); c.stroke();
-          c.beginPath(); c.arc(s.x, s.y, 1.5, 0, Math.PI * 2); c.fill();
-        }
-        this.text(`TOF ${pred.tof.toFixed(1)}s`, box.hx0 + 10 * scale, box.hy1 - 110 * scale, col, 12 * scale);
-      }
-    }
-    if (wdef && (wdef.kind === 'agm' || wdef.kind === 'lgb')) {
-      const g = p.agTarget;
-      const pt = g?.alive ? g.pos : p.agPoint;
-      if (pt) {
-        const s = this.projDir(scene, pt.clone().sub(scene.viewCam.position));
-        if (s) {
-          c.beginPath(); c.moveTo(s.x, s.y - 9); c.lineTo(s.x + 9, s.y); c.lineTo(s.x, s.y + 9); c.lineTo(s.x - 9, s.y); c.closePath(); c.stroke();
-          if (wdef.kind === 'agm') c.strokeRect(s.x - 14, s.y - 14, 28, 28);
-        }
-        this.text(`${g?.alive ? g.name : 'POINT'} ${(pt.distanceTo(p.pos) / NM).toFixed(1)}NM`, box.hx1 - 10 * scale, box.hy0 + 82 * scale, col, 12 * scale, 'right');
-      } else {
-        c.setLineDash([3, 3]); c.strokeRect(bore.x - 16, bore.y - 16, 32, 32); c.setLineDash([]);
-        this.text('LOCK TO DESIGNATE', cx, box.hy1 - 100 * scale, col, 12 * scale, 'center');
-      }
-    }
-    if (wdef && wdef.kind === 'arm') {
-      const em = world.findEmitter(p, wdef);
-      if (em) {
-        const s = this.projDir(scene, em.pos.clone().sub(scene.viewCam.position));
-        if (s) { c.strokeRect(s.x - 10, s.y - 10, 20, 20); this.text(em.symbol || 'SAM', s.x, s.y - 18, col, 11 * scale, 'center'); }
-        this.text(`HARM ${em.name} ${(em.pos.distanceTo(p.pos) / NM).toFixed(0)}NM`, box.hx1 - 10 * scale, box.hy0 + 82 * scale, col, 12 * scale, 'right');
-      } else this.text('HARM NO EMITTER', box.hx1 - 10 * scale, box.hy0 + 82 * scale, col, 12 * scale, 'right');
-    }
   }
 
   private drawDataStrip(world: World, p: Aircraft, st: HudState) {

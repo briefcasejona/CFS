@@ -25,8 +25,7 @@ export function hudQuadSize(fovDeg: number, aspect: number, d: number): [number,
   return [h * aspect, h];
 }
 import { surfaceHeight, theaterVersion } from '../world/theater.js';
-import type { Cockpit3D, PitHit } from './cockpit3d.js';
-import { CockpitView } from './cockpitView.js';
+import { F16CockpitView, type CockpitHit } from '../f16/cockpit/view.js';
 import { clamp } from '../core/math.js';
 
 export type ViewMode = 'cockpit' | 'chase' | 'flyby' | 'target' | 'weapon' | 'enemy';
@@ -80,12 +79,8 @@ export class SceneRenderer {
   private smoothQuat = new THREE.Quaternion();
   private deadMat = new THREE.MeshLambertMaterial({ color: 0x222018 });
   private theaterVer = theaterVersion;
-  /** MFD canvases shown as live screens in the 3D cockpit (set by the flight session) */
-  mfdCanvases: HTMLCanvasElement[] = [];
-  /** the cockpit model, clickable cockpit and live screens: loaded only while in cockpit view */
-  readonly cockpitView = new CockpitView(() => this.mfdCanvases);
-  /** the clickable cockpit of a jet with its own systems (only while in cockpit view) */
-  get pit(): Cockpit3D | null { return this.cockpitView.pit; }
+  /** the F-16 cockpit model with its working controls: loaded only while in cockpit view */
+  readonly cockpit = new F16CockpitView();
   private pitDt = 0;
 
   constructor(canvas: HTMLCanvasElement) {
@@ -227,7 +222,7 @@ export class SceneRenderer {
     for (const m of this.acModels.values()) this.scene.remove(m.root);
     for (const m of this.groundModels.values()) this.scene.remove(m);
     for (const m of this.missileModels.values()) this.scene.remove(m);
-    this.cockpitView.unload();
+    this.cockpit.unload();
     this.acModels.clear(); this.groundModels.clear(); this.missileModels.clear();
     this.fx.clear();
   }
@@ -243,7 +238,7 @@ export class SceneRenderer {
       syncStores(m, ac, (i) => world.stationOffset(ac, i));
       updateAircraftModel(m, ac, t, m.root.position.distanceTo(this.viewCam.position));
       m.root.visible = true;
-      if (ac.isPlayer) this.cockpitView.update(m, ac, this.view === 'cockpit', this.pitDt);
+      if (ac.isPlayer) this.cockpit.update(m, ac, this.view === 'cockpit', this.pitDt);
     }
     for (const [id, m] of this.acModels) if (!seen.has(id)) { this.scene.remove(m.root); this.acModels.delete(id); }
     for (const g of world.ground) {
@@ -278,14 +273,19 @@ export class SceneRenderer {
   }
 
   /** The pick under a screen position (normalised device coordinates) in the cockpit, if anything. */
-  pickCockpit(ndcX: number, ndcY: number): PitHit | null {
+  pickCockpit(ndcX: number, ndcY: number): CockpitHit | null {
     if (this.view !== 'cockpit') return null;
     this.viewCam.updateMatrixWorld();
-    return this.cockpitView.pick(this.viewCam, ndcX, ndcY);
+    return this.cockpit.pick(this.viewCam, ndcX, ndcY);
   }
 
   eyeOffset(ac: Aircraft) {
-    return this.cockpitView.eye(ac.isPlayer ? this.acModels.get(ac.id) : undefined, ac);
+    if (ac.def.family === 'F-16') return this.cockpit.eye();
+    // any other jet seen from its cockpit (an AI aircraft in a spectator view): the exterior model's eye point
+    const m = this.acModels.get(ac.id);
+    if (m?.hd && m.hd.root.visible) return m.hd.eye.clone();
+    const L = ac.def.length;
+    return new THREE.Vector3(0, Math.max(0.55, L * 0.042) * 0.95, -L * 0.22);
   }
 
 

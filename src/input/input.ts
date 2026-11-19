@@ -1,4 +1,5 @@
 // HOTAS / joystick / keyboard input with fully bindable actions (Gamepad API + keyboard).
+import { AXIS_CONTROLS, axisAction } from '../f16/cockpit/controls.js';
 
 export type ActionType = 'axis' | 'button';
 export interface ActionDef { id: string; label: string; type: ActionType; group: string }
@@ -37,9 +38,6 @@ export const ACTIONS: ActionDef[] = [
   { id: 'nozzleUp', label: 'Nozzles aft (Harrier)', type: 'button', group: 'Systems' },
   { id: 'nozzleDown', label: 'Nozzles down (Harrier)', type: 'button', group: 'Systems' },
   { id: 'autopilot', label: 'Autopilot (alt/hdg hold)', type: 'button', group: 'Systems' },
-  { id: 'systemsPanel', label: 'Cockpit systems panel (switches, lights, checklist)', type: 'button', group: 'Systems' },
-  { id: 'autoStart', label: 'Auto-start (crew chief runs the start-up)', type: 'button', group: 'Systems' },
-  { id: 'masterCaution', label: 'Master caution reset', type: 'button', group: 'Systems' },
   { id: 'jettison', label: 'Emergency jettison', type: 'button', group: 'Systems' },
   { id: 'eject', label: 'Eject', type: 'button', group: 'Systems' },
   { id: 'fire', label: 'Fire selected weapon (smart)', type: 'button', group: 'Weapons' },
@@ -79,11 +77,11 @@ export const ACTIONS: ActionDef[] = [
   { id: 'padlock', label: 'Padlock target', type: 'button', group: 'Views' },
   { id: 'zoomIn', label: 'Zoom in', type: 'button', group: 'Views' },
   { id: 'zoomOut', label: 'Zoom out', type: 'button', group: 'Views' },
-  { id: 'mfdLeft', label: 'Left MFD page cycle', type: 'button', group: 'Views' },
-  { id: 'mfdRight', label: 'Right MFD page cycle', type: 'button', group: 'Views' },
   { id: 'pause', label: 'Pause / menu', type: 'button', group: 'Game' },
   { id: 'timeAccel', label: 'Time acceleration', type: 'button', group: 'Game' },
   { id: 'labels', label: 'Toggle labels', type: 'button', group: 'Game' },
+  // the cockpit model's wheels and rheostats (node names ending _AX): bind an axis, or turn them with the mouse wheel
+  ...AXIS_CONTROLS.map((c): ActionDef => ({ id: axisAction(c), label: `${c.label} (cockpit)`, type: 'axis', group: 'Cockpit axes' })),
 ];
 export const ACTION_BY_ID: Record<string, ActionDef> = Object.fromEntries(ACTIONS.map((a) => [a.id, a]));
 
@@ -111,7 +109,6 @@ export function defaultKeyboard(): BindingMap {
     gear: [K('KeyG')], hook: [K('KeyH')], catLaunch: [K('KeyC')], commsMenu: [K('Backslash')], voicePtt: [K('Backquote')], flaps: [K('KeyF')], speedbrake: [K('KeyB')], wheelBrake: [K('KeyW')],
     // note: Ctrl+W / Ctrl+T cannot be intercepted by a web page (they close/open browser tabs)
     nozzleUp: [K('KeyM')], nozzleDown: [K('KeyN')], autopilot: [K('KeyA')], jettison: [K('KeyW', { shift: true })], eject: [K('KeyE', { shift: true })],
-    systemsPanel: [K('KeyK')], autoStart: [K('KeyK', { shift: true })], masterCaution: [K('KeyJ')],
     fire: [K('Space')], weaponNext: [K('KeyD')], weaponPrev: [K('KeyD', { shift: true })],
     modeAA: [K('Digit2')], modeDogfight: [K('Digit3')], modeGun: [K('Digit4')], modeAG: [K('Digit6')],
     radarLock: [K('Enter'), K('NumpadEnter')], radarUnlock: [K('Backspace')], targetNext: [K('Tab')], radarMode: [K('KeyR')],
@@ -121,7 +118,6 @@ export function defaultKeyboard(): BindingMap {
     viewCockpit: [K('F1')], viewChase: [K('F2')], viewFlyby: [K('F3')], viewTarget: [K('F4')], viewEnemy: [K('F5')], viewWeapon: [K('F6')], viewMap: [K('F10'), K('KeyO')],
     lookUp: [K('Numpad8')], lookDown: [K('Numpad2')], lookLeft: [K('Numpad4')], lookRight: [K('Numpad6')], lookCenter: [K('Numpad5')],
     padlock: [K('KeyL')], zoomIn: [K('NumpadMultiply')], zoomOut: [K('NumpadDivide')],
-    mfdLeft: [K('Comma')], mfdRight: [K('Period')],
     pause: [K('Escape'), K('KeyP')], timeAccel: [K('KeyZ', { ctrl: true })], labels: [K('F9')],
   };
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from './expect.js';
 import { COMMS, matchCommand, braa } from '../src/game/comms.js';
 import { buildMission, buildScenario, defaultCustom } from '../src/game/mission.js';
+import { Radar } from '../src/avionics/radar.js';
 
 const OPTS = { unlimitedFuel: false, unlimitedWeapons: false, invulnerable: false, gEffects: true, abDetent: 0.8 };
 const run = (id: string, b: ReturnType<typeof buildMission>) =>
@@ -41,6 +42,8 @@ describe('radio / voice commands', () => {
     // no radar lock: the wingman asks for a target
     expect(run('attack', b)[1][1]).toContain('no target');
     const bandit = b.world.enemiesOf('blue')[0];
+    // the player's F-16 has no radar until it is rebuilt from the Dash-34: the test lends it the game's radar
+    b.player.radar = new Radar(b.player, b.player.def.radar!);
     (b.player.radar as unknown as { stt: unknown }).stt = bandit;
     expect(run('attack', b)[1][1]).toContain('engaging');
     expect(wing.ai!.orderedTarget).toBe(bandit);

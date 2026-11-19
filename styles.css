@@ -166,9 +166,6 @@ table.binds .bind { display: inline-block; background: #0b1218; border: 1px soli
 #c3d, #hud, #map { position: absolute; inset: 0; width: 100%; height: 100%; }
 #hud { cursor: crosshair; z-index: 2; }
 #map { display: none; z-index: 5; }
-.mfd { position: absolute; bottom: 10px; width: 230px; height: 230px; border: 3px solid #222; border-radius: 6px; background: #000; opacity: 0.92; z-index: 3; cursor: pointer; }
-.mfd.left { left: 10px; }
-.mfd.right { right: 10px; }
 #overlay { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.55); z-index: 10; }
 #overlay .pause { min-width: 380px; }
 #overlay .pause h2 { margin-top: 0; }
