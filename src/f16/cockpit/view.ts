@@ -176,7 +176,7 @@ export class F16CockpitView {
       const box = new THREE.Box3().setFromObject(node);
       const size = box.getSize(new THREE.Vector3());
       const centre = box.getCenter(new THREE.Vector3());
-      // a node far larger than any control (UFC_S2 spans the whole cockpit in this model) stays where it is
+      // a node far larger than any control stays where it is (a guard against a misnamed node)
       if (Math.max(size.x, size.y, size.z) > MAX_PART_SIZE) { console.warn('cockpit model: node too large to move', def.node); continue; }
       const away = centre.clone().sub(eye).normalize();
       let pivotAt = centre.clone();

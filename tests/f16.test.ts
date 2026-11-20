@@ -178,9 +178,9 @@ describe('F-16 cockpit: controls from the model\'s node names', () => {
     view.panel = new CockpitPanel();
     const scene = await loadGlbScene(file);
     view.build(scene);
-    // every control moves except UFC_S2, a node that spans the whole cockpit in this model
-    expect(view.partCount).toBe(CONTROLS.length - 1);
-    expect(view.pivotOf('UFC')).toBe(undefined);
+    expect(view.partCount).toBe(CONTROLS.length);
+    // UFC_S2 is not a control: named so by mistake
+    expect(parseControl('UFC_S2')).toBe(null);
     // a switch tips, a button goes in
     view.pose(0.5);
     const sw = view.pivotOf('MAIN_POWER')!, btn = view.pivotOf('ICP_ENTR')!;

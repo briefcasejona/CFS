@@ -33,7 +33,7 @@ export interface ControlDef {
 /** Every node of the cockpit model that is a control, as named in the file. tests/cockpit.test.ts checks this list
  *  against the model itself. */
 export const COCKPIT_NODES = [
-  'UFC_S2', 'AG_MASTER_B', 'AA_MASTER_B', 'ICP_LIST_B', 'ICP_IFF_B', 'ICP_COM2_B', 'ICP_COM1_B', 'ICP_SYM_AX',
+  'AG_MASTER_B', 'AA_MASTER_B', 'ICP_LIST_B', 'ICP_IFF_B', 'ICP_COM2_B', 'ICP_COM1_B', 'ICP_SYM_AX',
   'LASER_ARM_S2', 'MASTER_ARM_S3', 'ICP_RCL_B', 'ICP_B0', 'ICP_B1', 'ICP_B2', 'ICP_B3', 'ICP_B4', 'ICP_B5', 'ICP_B6',
   'ICP_B7', 'ICP_B8', 'ICP_B9', 'ICP_ENTR_B', 'ICP_INC/DC_S2', 'ICP_DOBBER_S5', 'WARN_RESET_S3', 'COMM2_VOL_AX',
   'COMM1_VOL_AX', 'FORM_LIGHTS_AX', 'LE_FLAPS_S2', 'DIGITAL_BACKUP_S2', 'MANUAL_TF_FLYUP_S2', 'ALT_FLAPS_S2',
@@ -64,8 +64,12 @@ const LABELS: Record<string, string> = {
   OXIGEN_SUPLY: 'OXYGEN SUPPLY', PBRAKE: 'PARKING BRAKE', JFS: 'JFS', MCC: 'MMC', CHAN_SEL: 'UHF CHANNEL',
 };
 
+/** Nodes named like a control that are not one: UFC_S2 was named so by mistake (the model's maker, 2026-11-20). */
+export const NOT_CONTROLS = new Set(['UFC_S2']);
+
 /** Parse one node name. Returns null for a node that is not a control. */
 export function parseControl(node: string): ControlDef | null {
+  if (NOT_CONTROLS.has(node)) return null;
   const raw = node.replace(/\.\d+$/, '');   // Blender duplicates: ROSB13_B.001 is OSB 13
   let m: RegExpExecArray | null;
   let kind: ControlKind, n: number, base: string;
