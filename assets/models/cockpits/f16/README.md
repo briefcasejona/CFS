@@ -1,7 +1,14 @@
-# F-16 cockpit model (slot)
+# F-16 cockpit model
 
-Put the F-16 cockpit model here as `cockpit.glb` (glTF binary), with a `LICENSE.md` next to it that names the
-author, the source and the licence.
+`cockpit.glb` is the F-16 cockpit made by the CFS playtester, supplied by the project owner (2026-11-19). It is loaded only in cockpit view and
+placed so its MFDs sit where the exterior model's MFDs are (`src/f16/cockpit/view.ts`).
 
-It is loaded only in cockpit view. Its placement, eye point and MFD faces are set in
-`src/render/cockpitModels.ts` (entry `'F-16'`). Until the file is here the game uses the exterior model's cockpit.
+Its node names say what each control is and how it moves; the game reads them (`src/f16/cockpit/controls.ts`):
+
+* `_S<n>`: a switch with n positions
+* `_K<n>`: a knob with n detents
+* `_B`: a button (`ICP_B3` is ICP button 3)
+* `_AX`: an axis, bound to a joystick axis or turned with the mouse wheel
+
+Spring-loaded: the ICP INC/DEC rocker, the ICP dobber (four ways, back to centre), MANUAL PITCH, WARN RESET (down)
+and PROBE HEAT (down).

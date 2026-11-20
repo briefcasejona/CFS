@@ -2,11 +2,6 @@ import * as THREE from 'three';
 import type { AircraftDef } from '../aircraft/types.js';
 import { atmosphere, casFromTas, G0, type AtmoState } from './atmosphere.js';
 import { approach, clamp, DEG, smoothstep, table1 } from '../core/math.js';
-import type { FmHooks } from '../systems/types.js';
-
-/** F-16 FLCS: AoA limit (deg) and the speed (m/s, ≈450 kt) below which the stick's G gearing falls off */
-const F16_AOA_LIMIT = 25;
-const F16_CORNER = 230;
 
 /**
  * 6-DOF rigid-body flight model.
@@ -92,9 +87,7 @@ export class FlightModel {
   private nzPrev = 1;
   /** load-factor rate (g/s), smoothed — the limiters look ahead on it */
   private nzDot = 0;
-  private qi = new THREE.Quaternion();
-  /** F-16 FLCS state: prefiltered G and roll commands, roll authority left by the rudder, filtered load factor */
-  private flcs = { n: 1, ps: 0, rollAuth: 1, nzF: 1 };
+  protected qi = new THREE.Quaternion();
 
   // outputs
   alpha = 0; beta = 0; mach = 0; tas = 0; ias = 0; qbar = 0;
@@ -102,7 +95,7 @@ export class FlightModel {
   thrust = 0; fuelFlow = 0;
   /** compressor stall state: seconds left, which engine (−1 left / +1 right), how many so far */
   stallTimer = 0; stallSide = 0; stallCount = 0;
-  private asymThrust = 0;
+  protected asymThrust = 0;
   private lastThrottle = 0;
   onGround = false;
   wow = false;
@@ -115,9 +108,6 @@ export class FlightModel {
   time = 0;
   atmo: AtmoState = atmosphere(0);
   damage: Damage = { engine: 1, controls: 1, fuelLeak: 0, hydraulics: 1 };
-  /** the aircraft's own systems, when it has them (src/systems): they decide whether the engine is lit, the gear
-   *  can move, how much power the flight controls have and so on. null = the generic assumptions below. */
-  sys: FmHooks | null = null;
 
   constructor(def: AircraftDef) {
     this.def = def;
@@ -194,7 +184,6 @@ export class FlightModel {
   ctrlEffectNow() { return 1 - 0.35 * smoothstep(0.9, 1.5, this.mach); }
 
   get rpm() {
-    if (this.sys && this.sys.rpm !== null) return this.sys.rpm;
     return this.engineRunning && this.fuel > 0 ? 62 + 38 * this.core + 3 * this.abFrac : Math.max(0, 62 * this.core);
   }
 
@@ -212,10 +201,8 @@ export class FlightModel {
       coreCmd = 1;
       abCmd = (throttle - detent) / (1 - detent);
     }
-    const sys = this.sys;
-    const running = this.engineRunning && (sys ? sys.engineOn : this.fuel + this.extFuel > 0);
+    const running = this.engineRunning && this.fuel + this.extFuel > 0;
     if (!running) { coreCmd = 0; abCmd = 0; }
-    if (sys?.abInhibit) abCmd = 0;
     const rate = (1 / e.spoolTime) * (this.core < 0.3 ? 0.7 : 1.3);
     this.core = approach(this.core, coreCmd, rate, dt);
     if (abCmd > 0 && this.core > 0.95) {
@@ -236,7 +223,7 @@ export class FlightModel {
     const vmax = this.def.limits.vmaxKcas * 0.514444;
     const qLim = 0.5 * 1.225 * vmax * vmax;
     const qCut = clamp(1 - (this.qbar - qLim) / (0.3 * qLim), 0.2, 1);
-    this.thrust = (milT + abT) * e.count * inlet * qCut * this.damage.engine * (sys ? sys.thrustScale : 1);
+    this.thrust = (milT + abT) * e.count * inlet * qCut * this.damage.engine;
     // compressor stall (TF30): high AoA / sideslip / abrupt throttle in AB → one engine stalls for a few seconds
     this.asymThrust = 0;
     if (e.stallProne && running && e.count === 2) {
@@ -261,7 +248,7 @@ export class FlightModel {
     }
     this.lastThrottle = throttle;
     this.fuelFlow = running ? (milT * e.tsfcMil + abT * e.tsfcAB) * e.count + 0.05 : 0;
-    if (!opts.unlimitedFuel && !sys?.ownsFuel) {
+    if (!opts.unlimitedFuel) {
       const burn = (this.fuelFlow + this.damage.fuelLeak) * dt;
       if (this.extFuel > 0) this.extFuel = Math.max(0, this.extFuel - burn);
       else this.fuel = Math.max(0, this.fuel - burn);
@@ -284,13 +271,12 @@ export class FlightModel {
     const rho = this.atmo.rho;
 
     // --- secondary actuators
-    const sys = this.sys;
-    const gearCmd = sys && sys.gearCmd !== null ? sys.gearCmd : c.gearDown;
-    if (!this.wow || gearCmd) this.gearPos = approach(this.gearPos, gearCmd ? 1 : 0, (sys ? sys.gearRate : 1) / 6, dt);
-    let flapCmd = sys && sys.flapCmd !== null ? sys.flapCmd : c.flaps;
+    const gearCmd = c.gearDown;
+    if (!this.wow || gearCmd) this.gearPos = approach(this.gearPos, gearCmd ? 1 : 0, 1 / 6, dt);
+    let flapCmd = c.flaps;
     if (this.ias > 140) flapCmd = 0; // flap blowback ~270 kt
     this.flapPos = approach(this.flapPos, flapCmd, 0.25, dt);
-    if (!sys || sys.speedbrakeAvail) this.brakePos = approach(this.brakePos, Math.min(c.speedbrake, sys ? sys.speedbrakeMax : 1), 0.8, dt);
+    this.brakePos = approach(this.brakePos, c.speedbrake, 0.8, dt);
     if (def.fcs.vtol) this.nozzleAngle = approach(this.nozzleAngle, c.nozzle * 98 * DEG, 90 * DEG, dt);
     if (def.fcs.swingWing) this.sweep = approach(this.sweep, 20 + 48 * smoothstep(0.45, 0.95, this.mach), 7, dt);
 
@@ -324,8 +310,7 @@ export class FlightModel {
 
     // --- lift coefficient: linear, smooth quadratic roll-off to CLmax, then post-stall flat plate
     const CLa = A.CLa * table1(CLA_MACH, M);
-    // (leading-edge flaps that have stopped following their schedule cost lift at high AoA)
-    const CLmax = A.CLmax * table1(CLMAX_MACH, M) * clmaxMul * (1 - (this.sys?.flcs?.liftLoss ?? 0)) + A.flapCL * this.flapPos * 0.6;
+    const CLmax = A.CLmax * table1(CLMAX_MACH, M) * clmaxMul + A.flapCL * this.flapPos * 0.6;
     const sgn = alpha >= 0 ? 1 : -1;
     const negScale = alpha >= 0 ? 1 : 0.75;
     const clm = CLmax * negScale;
@@ -379,10 +364,8 @@ export class FlightModel {
     const pitchBreak = stallF * 0.08 * sgn * (def.fcs.canard ? 0.3 : 1);
 
     // --- flight control system -> surface deflections
-    const ctrlHealth = this.damage.controls * this.damage.hydraulics * (this.sys ? this.sys.controlPower : 1);
-    if (def.fcs.law === 'f16') {
-      this.f16Flcs(dt, c, Vs, qbar, ctrlHealth, { CLa, CLmax, aStall: aStallPos, stallF, superCtrl, Cma, Cnb, Clb, Cnp, advYawDa, wingRock, pitchBreak });
-    } else this.fcs(dt, c, V, Vs, qbar, CLa, aStallPos, ctrlHealth);
+    const ctrlHealth = this.damage.controls * this.damage.hydraulics;
+    this.fcs(dt, c, V, Vs, qbar, CLa, aStallPos, ctrlHealth);
 
     // --- aerodynamic moment coefficients
     const qhat = this.q * cbar / (2 * Vs);
@@ -485,139 +468,6 @@ export class FlightModel {
       }
     }
     if (this.pos.y > 24000) this.vel.y = Math.min(this.vel.y, 0);
-  }
-
-  /**
-   * F-16 flight control system (FLCS), after the real jet's structure: a G command with an AoA limiter in pitch, a
-   * stability-axis roll-rate command in roll, and a sideslip command with turn coordination in yaw — flown here by
-   * dynamic inversion: every loop asks for an angular acceleration and the law works out, from the same aerodynamic
-   * and inertia terms the flight model uses (including the inertial coupling of rolling while pulling), which
-   * stabilator, flaperon and rudder deflection produces it. The relaxed-stability airframe then responds the same way
-   * at every speed and weight, and the rudder is solved together with the flaperons, so rolls under G stay coordinated
-   * instead of setting off a yaw swing.
-   */
-  private f16Flcs(dt: number, c: Controls, Vs: number, qbar: number, health: number, an: {
-    CLa: number; CLmax: number; aStall: number; stallF: number; superCtrl: number; Cma: number; Cnb: number; Clb: number; Cnp: number;
-    advYawDa: number; wingRock: number; pitchBreak: number;
-  }) {
-    const def = this.def;
-    const A = def.aero;
-    const L = def.limits;
-    const st = this.flcs;
-    const eMax = def.controls.elev * DEG, aMax = def.controls.ail * DEG, rMax = def.controls.rud * DEG;
-    const S = def.wingArea, b = def.span, cbar = def.chord;
-    const att = this.attitude();
-    const mS = clamp(this.mass / (def.massEmpty + def.fuelInternal * 0.5), 0.7, 1.6);
-    const Ixx = def.inertia[0] * mS, Iyy = def.inertia[1] * mS, Izz = def.inertia[2] * mS;
-    const qS = Math.max(qbar * S, 1);
-    const p = this.p, q = this.q, r = this.r, alpha = this.alpha, beta = this.beta;
-    const absA = Math.abs(alpha);
-    // force-stick gradient: fine control near the centre, the full command at the stop
-    const shape = (x: number) => Math.sign(x) * (0.45 * Math.abs(x) + 0.55 * x * x);
-    const pitchIn = clamp(c.pitch + c.trimPitch * 0.25, -1, 1);
-    const rollIn = clamp(c.roll + c.trimRoll * 0.1, -1, 1);
-    const yawIn = clamp(c.yaw + c.trimYaw * 0.2, -1, 1);
-    const air = !this.wow && Vs > 30;
-
-    if (!air) {
-      // on the ground (or barely moving) the FLCS passes the stick straight to the surfaces
-      st.n = 1; st.ps = 0; st.rollAuth = 1; st.nzF = 1; this.alphaInt = 0;
-      this.elev = approach(this.elev, clamp(pitchIn * eMax, -eMax, eMax) * health, 60 * DEG, dt);
-      this.ail = approach(this.ail, clamp(rollIn * aMax, -aMax, aMax) * health, 80 * DEG, dt);
-      this.rud = approach(this.rud, clamp(yawIn * rMax, -rMax, rMax) * health, 120 * DEG, dt);
-      return;
-    }
-
-    // ================= pitch: G command, AoA limiter
-    // below corner speed the G per inch of stick is geared down with the speed, so an inch of stick gives about the
-    // same pitch rate at 250 kt as at 450 kt (a pure G command doubles the pitch rate per inch as the speed halves, and
-    // the pilot ends up chasing the nose); full stick still reaches the AoA limiter
-    const fh0 = this.sys?.flcs ?? null;
-    const gMaxL0 = Math.min(L.gMax, fh0?.gMax ?? 99), gMinL0 = fh0?.gMin ?? L.gMin;
-    const kV = Math.min(1, (Vs + 30) / (F16_CORNER + 30));
-    const nTarget = pitchIn >= 0 ? 1 + shape(pitchIn) * kV * (0.96 * gMaxL0 - 1) : 1 + shape(-pitchIn) * kV * (0.96 * gMinL0 - 1);
-    // stick prefilter (≈0.08 s) and the measured load factor through a light filter, so the law never chases noise
-    st.n += (nTarget - st.n) * Math.min(1, dt / 0.08);
-    st.nzF += (this.nz - st.nzF) * Math.min(1, dt / 0.03);
-    this.nzDot += ((st.nzF - this.nzPrev) / dt - this.nzDot) * Math.min(1, dt * 15);
-    this.nzPrev = st.nzF;
-    this.alphaDot += ((alpha - this.alphaPrev) / dt - this.alphaDot) * Math.min(1, dt * 20);
-    this.alphaPrev = alpha;
-    const nCmd = st.n;
-    const W = this.mass * G0;
-    // the G command becomes an AoA command through the lift curve, rounded top included (the flaps' share
-    // subtracted); a load the wing cannot make sends the jet to the AoA limiter
-    // the real FLCS limits AoA to ~25°: short of the stall and its pitch-up, where the stabilator can still stop the nose
-    // the flight-control computer's own state (gains, digital backup, CAT III, manual pitch override) narrows these
-    const fh = this.sys?.flcs ?? null;
-    const gMaxL = Math.min(L.gMax, fh?.gMax ?? 99), gMinL = fh?.gMin ?? L.gMin;
-    const aoaMax = Math.min(L.aoaMax, F16_AOA_LIMIT, fh?.aoaMax ?? 99) * DEG, aoaNeg = (fh?.mpo ? 25 : L.aoaNeg ?? 10) * DEG;
-    let aCmd = this.aoaForCl((nCmd * W) / qS - A.flapCL * this.flapPos, an.CLa, an.CLmax, aoaMax, aoaNeg);
-    // hard G limit with look-ahead on the load-factor rate
-    const nzLead = st.nzF + 0.12 * this.nzDot;
-    const gOver = nCmd >= 1 ? Math.max(0, nzLead - Math.min(nCmd, gMaxL)) : Math.min(0, nzLead - Math.max(nCmd, gMinL));
-    aCmd -= (0.6 * gOver * W) / qS / an.CLa;
-    // integral trims out the steady G error once the load has settled
-    const settle = 1 - smoothstep(0.4, 1.5, Math.abs(nCmd - st.nzF));
-    this.alphaInt = clamp(this.alphaInt + (nCmd - st.nzF) * 0.03 * settle * dt, -0.08, 0.08);
-    aCmd += this.alphaInt;
-    const aLim = aoaMax - 0.12 * Math.max(0, this.alphaDot);
-    if (aCmd > aLim) { aCmd = aLim; this.alphaInt = Math.min(this.alphaInt, 0); }
-    if (aCmd < -aoaNeg) { aCmd = -aoaNeg; this.alphaInt = Math.max(this.alphaInt, 0); }
-    // AoA → pitch-rate demand on top of the flight path's own turn rate, → pitch acceleration (critically damped)
-    const gamma = Math.asin(clamp(this.vel.y / Vs, -1, 1));
-    // (+ the kinematic coupling of rolling with sideslip, which turns β into AoA: α̇ = q − (p·cosα + r·sinα)·tanβ − …)
-    const qRef = (G0 / Vs) * (st.nzF - Math.cos(gamma) * Math.cos(att.roll))
-      + (p * Math.cos(alpha) + r * Math.sin(alpha)) * Math.tan(beta);
-    // response bandwidth scheduled on the stabilator's pitch authority (its full-deflection pitch acceleration): asking
-    // a slow, low-q jet for a 5 rad/s response drives the stabilator into its 60°/s rate limit, and the lag of a
-    // rate-limited surface turns into a nose that bobs, worst with a pilot chasing it
-    const authority = (qS * cbar * A.Cmde * an.superCtrl * eMax) / Iyy;
-    // standby gains: the response is right at one airspeed only: sluggish below it, sharp and poorly damped above
-    const gk = fh?.gain ?? 1;
-    const WN = clamp(1.6 * Math.sqrt(authority), 2.8, 5) * Math.sqrt(gk), ZETA = 1.4 / Math.max(1, gk), QMAX = 0.45 * Math.min(1, 0.35 + 0.65 * gk);
-    const qDem = clamp((WN / (2 * ZETA)) * (aCmd - alpha), -QMAX, QMAX);
-    const qdotDes = 2 * ZETA * WN * (qDem - (q - qRef));
-    // moment that acceleration needs, less the inertial pitch-up of rolling while yawing, (Izz − Ixx)·p·r
-    const cmReq = (Iyy * qdotDes - (Izz - Ixx) * p * r) / (qS * cbar);
-    const cmKnown = an.Cma * alpha + A.Cmq * q * cbar / (2 * Vs) - 0.02 * this.brakePos - 0.04 * this.flapPos - an.pitchBreak;
-    const de = (cmReq - cmKnown) / (A.Cmde * an.superCtrl);
-
-    // ================= roll and yaw: stability-axis roll rate + sideslip command, solved together
-    // roll-rate limit: the jet's 300°/s at speed, less at low dynamic pressure and as the AoA builds
-    const pSched = L.rollRate * DEG * (1 - 0.7 * smoothstep(10 * DEG, 30 * DEG, absA)) * (fh?.rollScale ?? 1);
-    const pMax = (fh?.rollRate ? Math.min(fh.rollRate * DEG, L.rollRate * DEG) : pSched) * clamp(qbar / 6000, 0.25, 1) * Math.min(1, 0.3 + 0.7 * gk);
-    const psTarget = shape(rollIn) * pMax * st.rollAuth;
-    st.ps += (psTarget - st.ps) * Math.min(1, dt / 0.06);
-    // the pedals command sideslip at low AoA; past ~20° AoA they fade out (the FLCS turns them into roll coordination),
-    // and at high dynamic pressure they are geared down to a few degrees, like the real rudder command
-    const betaCmd = -yawIn * 10 * DEG * (1 - smoothstep(15 * DEG, 25 * DEG, absA)) * clamp(8000 / Math.max(qbar, 1), 0.2, 1);
-    // stability-axis yaw rate that keeps the sideslip at its command: turn coordination (gravity and side force)
-    // plus sideslip feedback — β then decays as e^(−Kβ·t) instead of swinging
-    const KB = 2.2;
-    const rsCmd = (G0 * Math.cos(att.pitch) * Math.sin(att.roll)) / Vs + (qS * A.CYb * beta) / (this.mass * Vs) + KB * (beta - betaCmd);
-    const ca = Math.cos(alpha), sa = Math.sin(alpha);
-    const pCmd = st.ps * ca - rsCmd * sa;
-    const rCmd = st.ps * sa + rsCmd * ca;
-    const KP = 10, KR = 4;
-    const clReq = (Ixx * KP * (pCmd - p) - (Iyy - Izz) * q * r) / (qS * b);
-    const cnReq = (Izz * KR * (rCmd - r) - (Ixx - Iyy) * p * q) / (qS * b);
-    const phat = p * b / (2 * Vs), rhat = r * b / (2 * Vs);
-    const daEff = A.Clda * an.superCtrl * (1 - 0.5 * an.stallF);
-    let da = (clReq - (an.Clb * beta + A.Clp * phat + A.Clr * rhat + an.wingRock)) / daEff;
-    da = clamp(da, -aMax, aMax);
-    const drEff = A.Cndr * an.superCtrl * (1 - 0.4 * an.stallF);
-    let dr = (cnReq - (an.Cnb * beta + A.Cnr * rhat + an.Cnp * phat + an.advYawDa * da)) / drEff;
-    // roll–sideslip interconnect: when the rudder runs out of travel to coordinate the roll, the roll command backs off
-    // (instead of the jet rolling on with the sideslip building)
-    const need = Math.abs(dr) / rMax;
-    const authTarget = clamp(1 - 2.5 * (need - 0.75), 0.3, 1) * (1 - 0.7 * smoothstep(4 * DEG, 12 * DEG, Math.abs(beta)));
-    st.rollAuth = approach(st.rollAuth, authTarget, authTarget < st.rollAuth ? 4 : 1, dt);
-
-    this.elev = approach(this.elev, clamp(de, -eMax, eMax) * health, 60 * DEG, dt);
-    this.ail = approach(this.ail, da * health, 100 * DEG, dt);
-    dr = clamp(dr, -rMax, rMax);
-    this.rud = approach(this.rud, dr * health, 120 * DEG, dt);
   }
 
   /** AoA (rad) at which the wing makes lift coefficient `cl` — the inverse of the lift curve in substep(), up to its
@@ -769,7 +619,7 @@ export class FlightModel {
   }
 
   /** Spring-damper gear and airframe ground collision. Returns true if in contact. */
-  private groundForces(dt: number, c: Controls, env: FlightEnv, force: THREE.Vector3,
+  protected groundForces(dt: number, c: Controls, env: FlightEnv, force: THREE.Vector3,
     addMoment: (l: number, m: number, n: number) => void): boolean {
     const def = this.def;
     const g = def.gear;
@@ -790,10 +640,8 @@ export class FlightModel {
     const gv = env.groundVelocity?.(this.pos.x, this.pos.z) ?? null;
     const speed = gv ? this.vel.clone().sub(gv).length() : this.vel.length();
     if (wheelsDown && !water) {
-      const sys = this.sys;
-      // without nosewheel steering the nosewheel castors: the rudder pedals do nothing to it
-      const steer = sys && !sys.nws ? 0 : (speed < 20 ? 55 : 6) * DEG * clamp(c.yaw, -1, 1);
-      const brakes = sys ? (sys.parkingBrake ? 1 : c.brakes * sys.brakeScale) : c.brakes;
+      const steer = (speed < 20 ? 55 : 6) * DEG * clamp(c.yaw, -1, 1);
+      const brakes = c.brakes;
       const pts: Array<[number, number, number, number]> = [
         [0, -g.height, -g.nose, 0],
         [-g.track / 2, -g.height, g.main, 1],

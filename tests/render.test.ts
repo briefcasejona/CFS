@@ -3,24 +3,6 @@ import * as THREE from 'three';
 import { bake, instantiateHd, updateHdInstance, HD_SPECS } from '../src/render/hdModels.js';
 import { getAircraft } from '../src/aircraft/defs.js';
 import { loadGlbScene } from './glbScene.js';
-import { buildCockpit } from '../src/render/cockpit.js';
-
-describe('procedural cockpit', () => {
-  it('builds an eye-relative cockpit; two-seaters get a rear cockpit, framed canopies a bow', () => {
-    const single = buildCockpit(getAircraft('f16c'), []);
-    const twin = buildCockpit(getAircraft('f16d'), []);
-    const tomcat = buildCockpit(getAircraft('f14a'), []);
-    expect(twin.group.children.length).toBeGreaterThan(single.group.children.length);
-    const hasBow = (g: THREE.Group) => g.children.some((c) => (c as THREE.Mesh).geometry?.type === 'TorusGeometry');
-    expect(hasBow(single.group)).toBe(false); // F-16 bubble canopy
-    expect(hasBow(tomcat.group)).toBe(true);
-    // everything in front of the eye is below the sight line (nothing blocks the HUD view)
-    const box = new THREE.Box3();
-    single.group.children.filter((c) => c.position.z < -0.3).forEach((c) => box.expandByObject(c));
-    expect(box.max.y).toBeLessThan(0);
-    expect(single.group.visible).toBe(false);
-  });
-});
 
 describe('HD models', () => {
   it('F-14 wings sweep as whole parts about the real pivot: published spans, nothing crosses the fuselage', () => {
