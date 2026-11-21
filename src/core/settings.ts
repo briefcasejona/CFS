@@ -8,7 +8,7 @@ export interface Settings {
   gEffects: boolean;
   labels: boolean;
   easyRadar: boolean;
-  /** start cold and dark on the ground in aircraft that have their own systems (src/systems) */
+  /** start cold and dark on the ramp, engine off (f16/systems.ts), when the mission starts at an airbase */
   coldStart: boolean;
   // controls
   abDetent: number;           // throttle position of the afterburner detent 0..1

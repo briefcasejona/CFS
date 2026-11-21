@@ -378,6 +378,7 @@ export function settingsScreen(app: AppApi): HTMLElement {
           ${chk('unlimitedFuel', 'Unlimited fuel', '')}
           ${chk('unlimitedWeapons', 'Unlimited weapons', 'stores, gun rounds and countermeasures never run out')}
           ${chk('invulnerable', 'Invulnerable', 'your aircraft cannot be damaged (crashes still count)')}
+          ${chk('coldStart', 'Cold start', 'start cold and dark on the ramp: power up, JFS, engine start (Shift+K starts it for you)')}
           ${chk('labels', 'Labels', 'type and range labels on aircraft and ground units (F9 in flight)')}
           ${chk('easyRadar', 'Easy radar', '+60% radar detection range')}
           <p class="muted">Realism profile: <b>${realismLabel(s)}</b></p>
