@@ -102,7 +102,7 @@ export class FlightSession {
     this.tipEl.style.cssText = 'position:absolute;z-index:6;display:none;max-width:340px;padding:5px 9px;background:rgba(8,10,12,.9);border:1px solid #58636a;border-radius:4px;font:12px/1.35 system-ui,sans-serif;color:#e6ecef;pointer-events:none';
     ui.root.append(this.tipEl);
     this.sysEl = document.createElement('div');
-    this.sysEl.style.cssText = 'position:absolute;z-index:5;left:10px;bottom:10px;display:none;padding:6px 10px;background:rgba(6,8,10,.82);border:1px solid #4a555c;border-radius:4px;font:12px/1.45 ui-monospace,Consolas,monospace;color:#d8e2e6;pointer-events:none;white-space:pre';
+    this.sysEl.style.cssText = 'position:fixed;z-index:20;right:10px;top:56px;display:none;padding:6px 10px;background:rgba(6,8,10,.82);border:1px solid #4a555c;border-radius:4px;font:12px/1.45 ui-monospace,Consolas,monospace;color:#d8e2e6;pointer-events:none;white-space:pre';
     ui.root.append(this.sysEl);
     ui.map.addEventListener('mousedown', (e) => { this.mouse = { down: true, button: 9, x: e.clientX, y: e.clientY }; });
     window.addEventListener('mouseup', () => { this.mouse.down = false; this.panel.release(); });
