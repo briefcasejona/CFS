@@ -16,6 +16,10 @@ import type { Aircraft } from '../sim/entities.js';
 import type { World } from '../sim/world.js';
 import { AXIS_CONTROLS, CockpitPanel, axisAction } from '../f16/cockpit/controls.js';
 import { routeProgress } from './ramp.js';
+import { StartupChecklist } from '../f16/startup.js';
+import { F16Avionics } from '../f16/avionics/avionics.js';
+import { F16Systems, GEAR, JFS, PBRAKE } from '../f16/systems.js';
+import { F16FlightModel } from '../f16/flightModel.js';
 
 const DT = 1 / 120;
 
@@ -74,6 +78,15 @@ export class FlightSession {
   private voice = new VoiceInput();
   /** the position of every control in the player's cockpit (kept while the cockpit model is unloaded) */
   panel = new CockpitPanel();
+  /** the player F-16's aircraft systems (f16/systems.ts); null for any other jet */
+  sys: F16Systems | null = null;
+  /** the F-16's MFDs, DED and HUD */
+  avionics: F16Avionics | null = null;
+  /** the start-up checklist of a cold and dark ramp start */
+  startup: StartupChecklist | null = null;
+  private sysEl!: HTMLElement;
+  private sysShown = false;
+  private autoStarting = false;
 
   constructor(ui: SessionUI, input: InputManager, audio: AudioSystem, settings: Settings) {
     this.ui = ui;
@@ -94,6 +107,9 @@ export class FlightSession {
     this.tipEl = document.createElement('div');
     this.tipEl.style.cssText = 'position:absolute;z-index:6;display:none;max-width:340px;padding:5px 9px;background:rgba(8,10,12,.9);border:1px solid #58636a;border-radius:4px;font:12px/1.35 system-ui,sans-serif;color:#e6ecef;pointer-events:none';
     ui.root.append(this.tipEl);
+    this.sysEl = document.createElement('div');
+    this.sysEl.style.cssText = 'position:fixed;z-index:20;right:10px;top:56px;display:none;padding:6px 10px;background:rgba(6,8,10,.82);border:1px solid #4a555c;border-radius:4px;font:12px/1.45 ui-monospace,Consolas,monospace;color:#d8e2e6;pointer-events:none;white-space:pre';
+    ui.root.append(this.sysEl);
     ui.map.addEventListener('mousedown', (e) => { this.mouse = { down: true, button: 9, x: e.clientX, y: e.clientY }; });
     window.addEventListener('mouseup', () => { this.mouse.down = false; this.panel.release(); });
     window.addEventListener('mousemove', (e) => this.onMouseMove(e));
@@ -135,6 +151,9 @@ export class FlightSession {
     const hit = this.scene.pickCockpit(...this.ndc(x, y));
     if (!hit) return false;
     if (!hold && hit.kind !== 'knob' && hit.kind !== 'axis') return false;
+    // the player's reversals (Settings → Controls): the wheel as a whole, and single knobs and wheels
+    if (!hold && this.settings.cockpitWheelReverse) dir = -dir as 1 | -1;
+    if (this.settings.cockpitReverse.includes(hit.id)) dir = -dir as 1 | -1;
     this.panel.operate(hit.id, dir, hold, hit.dir4);
     this.audio.click();
     this.pointer.moved = true;
@@ -184,7 +203,7 @@ export class FlightSession {
     this.built = buildMission(withFlyablePlayer(spec), {
       unlimitedFuel: s.unlimitedFuel, unlimitedWeapons: s.unlimitedWeapons, invulnerable: s.invulnerable,
       gEffects: s.gEffects, abDetent: s.abDetent,
-    });
+    }, s.coldStart);
     this.taxi = this.built.ramp ? { stage: 0 } : null;
     this.netHook?.attach(this.built);
     this.scene.reset();
@@ -208,6 +227,19 @@ export class FlightSession {
     // every cockpit control starts in its first position; the systems that read them are rebuilt separately
     this.panel = new CockpitPanel();
     this.scene.cockpit.panel = this.panel;
+    this.sys = null; this.avionics = null; this.startup = null; this.autoStarting = false;
+    this.scene.cockpit.onDraw = null;
+    if (p.fm instanceof F16FlightModel) {
+      this.sys = new F16Systems(this.panel, p.fm.block.engine);
+      const av = this.avionics = new F16Avionics(this.panel), sys = this.sys, built = this.built;
+      this.scene.cockpit.onDraw = (scr) => { av.steerIndex = this.steerIndex; av.draw(scr, built.player, sys, built.steerpoints, built.world.time); };
+      // cold and dark: the ramp start of the mission setup, or the Cold start setting for any ramp start
+      if (this.built.ramp && (s.coldStart || spec.flights.some((f) => f.player && f.start.kind === 'runway' && f.start.ramp))) { this.sys.setCold(p.fm.fuel); p.fm.engineRunning = false; p.ctrl.throttle = 0; this.startup = new StartupChecklist(this.panel, this.sys); }
+      else this.sys.setRunning(p.fm.fuel);
+      this.panel.set('GEAR_LEVER', p.ctrl.gearDown ? GEAR.DN : GEAR.UP);
+    }
+    this.sysShown = !!this.sys && !p.fm.engineRunning;
+    this.sysEl.style.display = this.sysShown ? 'block' : 'none';
     if (p.radar && s.easyRadar) p.radar.def = { ...p.radar.def, range: p.radar.def.range * 1.6 };
     this.kb = { pitch: 0, roll: 0, yaw: 0 };
     // keyboard throttle starts where the mission put it (idle on the ground, cruise in the air, approach power on final)
@@ -300,6 +332,7 @@ export class FlightSession {
       this.acc += dt * this.timeAccel;
       let steps = 0;
       while (this.acc >= DT && steps < 480) {
+        this.stepSystems(DT);
         world.step(DT);
         this.acc -= DT;
         steps++;
@@ -315,6 +348,7 @@ export class FlightSession {
       ...this.steering(),
     }, dt);
     this.updateTip();
+    this.updateSystemsStrip();
     if (this.mapOpen) this.drawMap();
     this.updateAudio(dt);
   }
@@ -338,6 +372,61 @@ export class FlightSession {
       }
       this.lastKillCount = kills.length;
     }
+  }
+
+  /** The player F-16's systems, once per simulation step: they decide whether the engine runs. */
+  private stepSystems(dt: number) {
+    const sys = this.sys, p = this.built.player;
+    if (!sys || !p.alive) return;
+    const fm = p.fm as F16FlightModel, c = p.ctrl, world = this.built.world;
+    if (this.autoStarting) this.autoStartStep(sys, c.throttle);
+    // the gear handle: the cockpit lever (clicked or keyed); system B is needed to retract (9)
+    const leverDown = this.panel.get('GEAR_LEVER') === GEAR.DN;
+    if (!leverDown && fm.wow) { this.panel.set('GEAR_LEVER', GEAR.DN); world.radio('Gear handle locked — weight on wheels.', '#fc8'); }
+    const gearDown = this.panel.get('GEAR_LEVER') === GEAR.DN || !sys.gearCanRetract;
+    if (gearDown !== c.gearDown) { c.gearDown = gearDown; world.radio(`Gear ${gearDown ? 'down' : 'up'}.`, '#ccc'); }
+    sys.step(dt, {
+      throttle: c.throttle, wow: fm.wow, altM: p.pos.y, groundSpeed: Math.hypot(fm.vel.x, fm.vel.z),
+      fuel: fm.fuel, extFuel: fm.extFuel, core: fm.core, abFrac: fm.abFrac, fuelFlow: fm.fuelFlow,
+      engineHealth: fm.damage.engine,
+      // ASSUMED windmilling: the Dash-1 airstart data are not modelled
+      windmillRpm: fm.wow ? 0 : clamp(fm.mach * 45, 0, 40),
+    });
+    fm.engineRunning = sys.lit;
+    fm.rpmOverride = sys.lit ? null : sys.rpm;
+    if (sys.parkingBrake && fm.wow) c.brakes = 1;
+    else if (!sys.brakePressure) c.brakes = 0;
+    for (const m of sys.drainMessages()) world.radio(`VMS: ${m}`, '#ffb84f');
+  }
+
+  /** Shift+K: the start the pilot would do, one switch at a time (Dash-1 6.9, 2.27 – 2.29). */
+  private autoStartStep(sys: F16Systems, throttle: number) {
+    const pn = this.panel;
+    if (pn.get('MAIN_POWER') < 2) { pn.set('MAIN_POWER', pn.get('MAIN_POWER') + 1); return; }
+    if (!sys.jfsOn && !sys.burning && sys.rpm < 50 && sys.jfsSpeed < 0.05) { pn.set('JFS', JFS.START2); return; }
+    if (sys.throttleOff && sys.rpm >= 20) {
+      if (!sys.setThrottleOff(false, throttle)) this.built.world.radio('Auto start: bring the throttle back to IDLE.', '#fc8');
+      return;
+    }
+    if (sys.lit && sys.mainGen) {
+      this.autoStarting = false;
+      this.built.world.radio(`Auto start complete. ${pn.get('PBRAKE') === PBRAKE.PARK ? 'Parking brake is set: ' : ''}ready to taxi.`, '#9fd8ff');
+    }
+  }
+
+  private updateSystemsStrip() {
+    const sys = this.sys;
+    if (!sys || !this.sysShown) return;
+    const g = sys.gauges();
+    const f = (v: number, d = 0) => v.toFixed(d).padStart(5);
+    const sw = ['OFF', 'BATT', 'MAIN PWR'][this.panel.get('MAIN_POWER')];
+    const jfs = ['START 2', 'OFF', 'START 1'][this.panel.get('JFS')];
+    this.sysEl.textContent =
+      `RPM ${f(g.rpm)} %   FTIT ${f(g.ftit)} °C   NOZ ${f(g.noz)} %   OIL ${f(g.oil)} psi   FF ${f(g.fuelFlowPph)} pph\n` +
+      `HYD A ${f(g.hydA)}  B ${f(g.hydB)} psi   FUEL FR ${f(g.fuelFwdLb)}  AL ${f(g.fuelAftLb)} lb   EPU ${f(g.epuFuel)} %\n` +
+      `MAIN PWR ${sw}   JFS ${jfs}   THROTTLE ${sys.throttleOff ? 'OFF' : 'IDLE+'}   ${['ANTI-SKID OFF', 'ANTI-SKID', 'PARKING BRAKE'][this.panel.get('PBRAKE')]}\n` +
+      (sys.lightsText() || 'no lights') +
+      (this.startup ? '\n\n' + this.startup.text() : '');
   }
 
   /** Ground and tower calls for a jet that starts on the ramp. */
@@ -398,7 +487,7 @@ export class FlightSession {
       this.scene.view = v;
     }
     // cockpit wheels and rheostats bound to a joystick axis
-    for (const c of AXIS_CONTROLS) { const v = i.axis(axisAction(c)); if (v !== null) this.panel.set(c.id, (v + 1) / 2); }
+    for (const c of AXIS_CONTROLS) { const v = i.axis(axisAction(c)); if (v !== null) this.panel.set(c.id, this.settings.cockpitReverse.includes(c.id) ? (1 - v) / 2 : (v + 1) / 2); }
     if (i.mouseWheel !== 0 && !this.mapOpen && this.pointer.x >= 0 && this.clickCockpit(this.pointer.x, this.pointer.y, i.mouseWheel > 0 ? -1 : 1, false)) { /* a knob was turned */ }
     else if (i.mouseWheel !== 0) {
       if (!this.mapOpen) {
@@ -478,7 +567,22 @@ export class FlightSession {
     // ---- systems
     if (i.pressed('gear')) {
       if (c.gearDown && p.fm.wow) world.radio('Gear handle locked — weight on wheels.', '#fc8');
+      else if (this.sys) this.panel.set('GEAR_LEVER', this.panel.get('GEAR_LEVER') === GEAR.DN ? GEAR.UP : GEAR.DN);
       else { c.gearDown = !c.gearDown; world.radio(`Gear ${c.gearDown ? 'down' : 'up'}.`, '#ccc'); }
+    }
+    if (this.sys) {
+      if (i.pressed('throttleOff')) {
+        const off = !this.sys.throttleOff;
+        if (this.sys.setThrottleOff(off, c.throttle)) world.radio(`Throttle ${off ? 'OFF' : 'IDLE'}.`, '#ccc');
+        else world.radio('Throttle to IDLE first: it goes in and out of OFF only from the IDLE detent.', '#fc8');
+      }
+      if (i.pressed('autoStart')) {
+        this.autoStarting = !this.autoStarting && !this.sys.lit;
+        world.radio(this.autoStarting ? 'Auto start: MAIN PWR, JFS START 2, throttle to IDLE at 20 % rpm.' : 'Auto start off.', '#9fd8ff');
+      }
+      if (i.pressed('systemsStrip')) { this.sysShown = !this.sysShown; this.sysEl.style.display = this.sysShown ? 'block' : 'none'; }
+      // the throttle stays at IDLE while it is in OFF
+      if (this.sys.throttleOff) c.throttle = 0;
     }
     if (i.pressed('hook')) {
       if (!p.def.capabilities?.includes('carrier')) world.radio('No tailhook on this jet.', '#fc8');

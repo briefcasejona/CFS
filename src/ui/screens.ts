@@ -1,3 +1,4 @@
+import { CONTROLS } from '../f16/cockpit/controls.js';
 import { AIRCRAFT, AIRCRAFT_BY_ID } from '../aircraft/defs.js';
 import { WEAPONS } from '../weapons/stores.js';
 import { SAM_PARAMS } from '../sim/entities.js';
@@ -135,7 +136,7 @@ export function missionSetup(app: AppApi, advanced: boolean): HTMLElement {
             <label>Enemy skill <select class="skill"><option>rookie</option><option>regular</option><option>veteran</option><option>ace</option></select></label>
             <label>Wingmen <input class="wingmen" type="number" min="0" max="3" value="${o.wingmen}"></label>
             <h3>Conditions</h3>
-            <label>Start <select class="start"><option value="air">In the air</option><option value="runway">On the runway</option></select></label>
+            <label>Start <select class="start">${[['air', 'In the air'], ['runway', 'On the runway'], ['ramp', 'On the ramp, cold and dark (F-16 start-up)']].map(([v, n]) => `<option value="${v}"${o.start === v ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
             <label>Altitude (ft) <input class="alt" type="number" min="1000" max="45000" step="1000" value="${o.altFt}"></label>
             <label>Time of day <input class="tod" type="range" min="5" max="20" step="0.5" value="${o.timeOfDay}"><span class="todv"></span></label>
             <label>Visibility (km) <input class="vis" type="number" min="5" max="150" value="${o.visibilityKm}"></label>
@@ -211,7 +212,7 @@ export function missionSetup(app: AppApi, advanced: boolean): HTMLElement {
       o.enemyCount = Math.max(1, Math.min(8, Number(q<HTMLInputElement>('.enemyCount').value) || 1));
       o.skill = q<HTMLSelectElement>('.skill').value as CustomOptions['skill'];
       o.wingmen = Math.max(0, Math.min(3, Number(q<HTMLInputElement>('.wingmen').value) || 0));
-      o.start = q<HTMLSelectElement>('.start').value as 'air' | 'runway';
+      o.start = q<HTMLSelectElement>('.start').value as CustomOptions['start'];
       o.altFt = Math.max(1000, Math.min(45000, Number(q<HTMLInputElement>('.alt').value) || 15000));
       o.timeOfDay = Number(q<HTMLInputElement>('.tod').value);
       o.visibilityKm = Math.max(5, Math.min(150, Number(q<HTMLInputElement>('.vis').value) || 80));
@@ -378,6 +379,7 @@ export function settingsScreen(app: AppApi): HTMLElement {
           ${chk('unlimitedFuel', 'Unlimited fuel', '')}
           ${chk('unlimitedWeapons', 'Unlimited weapons', 'stores, gun rounds and countermeasures never run out')}
           ${chk('invulnerable', 'Invulnerable', 'your aircraft cannot be damaged (crashes still count)')}
+          ${chk('coldStart', 'Cold start', 'start cold and dark on the ramp: power up, JFS, engine start (Shift+K starts it for you)')}
           ${chk('labels', 'Labels', 'type and range labels on aircraft and ground units (F9 in flight)')}
           ${chk('easyRadar', 'Easy radar', '+60% radar detection range')}
           <p class="muted">Realism profile: <b>${realismLabel(s)}</b></p>
@@ -386,6 +388,11 @@ export function settingsScreen(app: AppApi): HTMLElement {
           <h3>Controls</h3>
           <label>Afterburner detent (throttle position 0.5–1) <input data-n="abDetent" type="number" min="0.5" max="1" step="0.01" value="${s.abDetent}"></label>
           <label>Keyboard stick sensitivity <input data-n="keyboardSensitivity" type="number" min="0.3" max="3" step="0.1" value="${s.keyboardSensitivity}"></label>
+          ${chk('cockpitWheelReverse', 'Reverse cockpit mouse wheel', 'the mouse wheel turns the F-16 cockpit knobs and wheels the other way')}
+          <details class="small"><summary>Reverse single cockpit knobs and wheels</summary>
+            <p class="muted small">Ticked controls turn the other way with the mouse buttons and wheel, and with a joystick axis bound to them (Controls → Cockpit axes; the binding's own Invert, deadzone and curve apply too).</p>
+            ${CONTROLS.filter((c) => c.kind === 'knob' || c.kind === 'axis').map((c) => `<label class="chk"><input type="checkbox" data-rev="${c.id}" ${s.cockpitReverse.includes(c.id) ? 'checked' : ''}> ${esc(c.label)}</label>`).join('')}
+          </details>
           <h3>Graphics</h3>
           <label>Field of view (deg) <input data-n="fov" type="number" min="40" max="110" value="${s.fov}"></label>
           <label>Max visibility (km) <input data-n="visibilityKm" type="number" min="10" max="150" value="${s.visibilityKm}"></label>
@@ -415,6 +422,7 @@ export function settingsScreen(app: AppApi): HTMLElement {
     e.querySelectorAll<HTMLInputElement>('input[data-k]').forEach((i) => { rec[i.dataset.k!] = i.checked; });
     e.querySelectorAll<HTMLInputElement>('input[data-n]').forEach((i) => { const v = Number(i.value); if (Number.isFinite(v)) rec[i.dataset.n!] = v; });
     e.querySelectorAll<HTMLInputElement>('input[data-c]').forEach((i) => { rec[i.dataset.c!] = i.value; });
+    app.settings.cockpitReverse = [...e.querySelectorAll<HTMLInputElement>('input[data-rev]')].filter((i) => i.checked).map((i) => i.dataset.rev!);
     e.querySelectorAll<HTMLSelectElement>('select[data-q]').forEach((i) => { rec[i.dataset.q!] = i.value === 'auto' ? 'auto' : Number(i.value); });
     saveSettings(app.settings);
     setQuality(app.settings.graphicsQuality);

@@ -5,8 +5,11 @@
 //   <NAME>_K<n>   a knob with n detents               AIR_SOURCE_K4
 //   <NAME>_B      a push button (ICP_B<d>: ICP key d)  Master_Caution_B, ICP_B3
 //   <NAME>_AX     an axis: a wheel or rheostat that can be bound to a joystick axis or turned with the mouse wheel
-// Spring-loaded controls snap back when released (Jonathan's list): the ICP INC/DEC rocker, the ICP DOBBER (4-way,
-// back to centre), the MANUAL PITCH override switch, and the down positions of WARN RESET and PROBE HEAT.
+// Spring-loaded controls snap back when released (Jonathan's lists, 2026-11-19 and 2026-11-22): the ICP INC/DEC
+// rocker, the ICP DOBBER (4-way, back to centre), the MANUAL PITCH override switch, the down positions of WARN RESET
+// and PROBE HEAT, and FLCS RESET (rests down). Two are held by a solenoid and returned by the systems instead of by
+// the hand: the JFS switch (rests in the middle; held in START until the JFS shuts down, Dash-1 2.27) and FLCS BIT
+// (held in BIT until the test ends, then back down, Dash-1 17.12).
 //
 // This file is pure data and state (no three.js), so the simulation, the input bindings and the tests can use it.
 
@@ -20,8 +23,9 @@ export interface ControlDef {
   kind: ControlKind;
   /** positions (switch), detents (knob), 2 for a button (out / in), 0 for an axis */
   n: number;
-  /** spring-loaded: the positions that are only held while the pilot holds them, and where the control returns to */
-  spring?: { momentary: number[]; rest: number };
+  /** spring-loaded: the positions that are only held while the pilot holds them, and where the control returns to.
+   *  `solenoid`: held in a momentary position by the aircraft systems, not the hand (they return it). */
+  spring?: { momentary: number[]; rest: number; solenoid?: boolean };
   /** 4-way + centre (the ICP dobber): position 0 centre, 1 up, 2 down, 3 left, 4 right */
   fourWay?: boolean;
   /** an endless rotary (no stops), e.g. the HSI heading knob */
@@ -39,7 +43,7 @@ export const COCKPIT_NODES = [
   'COMM1_VOL_AX', 'FORM_LIGHTS_AX', 'LE_FLAPS_S2', 'DIGITAL_BACKUP_S2', 'MANUAL_TF_FLYUP_S2', 'ALT_FLAPS_S2',
   'FLCS_BIT_2', 'FLCS_RESET_S2', 'REFUEL_DOOR_S2', 'ANTI_COLLISION_S2', 'MAIN_POWER_S3', 'JFS_S3', 'PBRAKE_S3',
   'F-ack_B', 'MAX_PWR_S2', 'LIGHTS_MASTER_S2', 'UHF_DIGIT1_K10', 'UHF_DIGIT2_K10', 'UHF_DIGIT3_K10', 'UHF_DIGIT4_K10',
-  'UHF_PWR_K4', 'UHF_MODE_K3', 'CHAN_SEL_K20', 'UHF_DIGIT5AND6_K4', 'ENG_FEED_K4', 'IFF_MASTER_K5', 'CANOPY_S2',
+  'UHF_PWR_K4', 'UHF_MODE_K3', 'CHAN_SEL_K20', 'UHF_DIGIT5AND6_K4', 'ENG_FEED_K4', 'IFF_MASTER_K5',
   'FUEL_SELECT_K5', 'NAV_MODE_K3', 'HEADING_SELECT_AX', 'Gear_Lever_S2', 'RDR_ALTIMETER_S3', 'DED_DISPLAY_BRT_AX',
   'INSTRUMENT_FLOOD_LIGHTS_AX', 'CONSOLE_FLOOD_LIGHT_AX', 'AIR_SOURCE_K4', 'MCC_S2', 'ST_STA_S2', 'MFD_S2',
   'DATA_LINK_S2', 'GPS_S2', 'INS_FUNCTION_K6', 'OXIGEN_SUPLY_S2', 'LAND_LIGHT_S3', 'Master_Caution_B',
@@ -64,8 +68,22 @@ const LABELS: Record<string, string> = {
   OXIGEN_SUPLY: 'OXYGEN SUPPLY', PBRAKE: 'PARKING BRAKE', JFS: 'JFS', MCC: 'MMC', CHAN_SEL: 'UHF CHANNEL',
 };
 
-/** Nodes named like a control that are not one: UFC_S2 was named so by mistake (the model's maker, 2026-11-20). */
-export const NOT_CONTROLS = new Set(['UFC_S2']);
+/** Nodes named like a control that are not one: UFC_S2 was named so by mistake (the model's maker, 2026-11-20). The
+ *  canopy switch does nothing for now (Jonathan, 2026-11-22). */
+export const NOT_CONTROLS = new Set(['UFC_S2', 'CANOPY_S2']);
+
+/** Where each control rests in a cold and dark jet, where that is not its first position or its spring's rest.
+ *  Index 0 is the down / aft / fully anticlockwise position. Sources: Jonathan (MASTER ARM in the middle), the DCS
+ *  F-16C Viper Guide part 4 (the start-up begins from these), Dash-1 for the switch positions. */
+export const COLD_DEFAULTS: Record<string, number> = {
+  MASTER_ARM: 1,          // MASTER ARM / OFF / SIMULATE: OFF in the middle
+  LAND_LIGHT: 1,          // LANDING / OFF / TAXI: OFF in the middle
+  ENG_FEED: 1,            // OFF / NORM / AFT / FWD: NORM (guide step 10 checks it)
+  FUEL_SELECT: 1,         // TEST / NORM / RSVR / INT WING / EXT WING: NORM
+  PBRAKE: 1,              // OFF / ANTI-SKID / PARKING BRAKE: ANTI-SKID (guide step 6 sets PARKING BRAKE)
+  OXIGEN_SUPLY: 1,        // OXYGEN SUPPLY ON
+  RDR_ALTIMETER: 0,
+};
 
 /** Parse one node name. Returns null for a node that is not a control. */
 export function parseControl(node: string): ControlDef | null {
@@ -84,6 +102,9 @@ export function parseControl(node: string): ControlDef | null {
   const def: ControlDef = { node, id, kind, n, label: LABELS[id] ?? id.replace(/_/g, ' ') };
   // spring-loaded, as Jonathan listed them
   if (id === 'ICP_INC_DC') { def.n = 3; def.spring = { momentary: [0, 2], rest: 1 }; }   // DEC / centre / INC
+  else if (id === 'JFS') def.spring = { momentary: [0, 2], rest: 1, solenoid: true };      // START 2 / OFF / START 1
+  else if (id === 'FLCS_BIT') def.spring = { momentary: [1], rest: 0, solenoid: true };    // OFF / BIT
+  else if (id === 'FLCS_RESET') def.spring = { momentary: [1], rest: 0 };                  // OFF / RESET
   else if (id === 'ICP_DOBBER') { def.fourWay = true; def.spring = { momentary: [1, 2, 3, 4], rest: 0 }; }
   else if (/MANUAL_PITCH/.test(id)) { def.spring = { momentary: [0, n - 1].filter((p) => p !== Math.floor((n - 1) / 2)), rest: Math.floor((n - 1) / 2) }; }
   else if (id === 'WARN_RESET' || /PROBE_HEAT/.test(id)) { def.spring = { momentary: [0], rest: 1 }; }   // the down position (index 0) springs back
@@ -109,9 +130,11 @@ export class CockpitPanel {
   private held = new Set<string>();
   /** changes since the last drain (for the systems, sounds and tests) */
   private changes: ControlChange[] = [];
+  /** called on every change, as it happens (the MFD OSBs, which the systems' drain would otherwise swallow) */
+  readonly listeners: Array<(ch: ControlChange) => void> = [];
 
   constructor(init: Record<string, number> = {}) {
-    for (const c of CONTROLS) this.pos.set(c.id, init[c.id] ?? (c.spring ? c.spring.rest : c.kind === 'axis' ? 0 : 0));
+    for (const c of CONTROLS) this.pos.set(c.id, init[c.id] ?? COLD_DEFAULTS[c.id] ?? (c.spring ? c.spring.rest : 0));
   }
 
   get(id: string): number { return this.pos.get(id) ?? 0; }
@@ -126,7 +149,9 @@ export class CockpitPanel {
     const from = this.get(id);
     if (from === to) return;
     this.pos.set(id, to);
-    this.changes.push({ id, from, to });
+    const ch = { id, from, to };
+    this.changes.push(ch);
+    for (const l of this.listeners) l(ch);
   }
 
   /** The pilot works a control with the mouse. `dir` +1 = left button / wheel up (switch up/forward, knob clockwise,
@@ -151,7 +176,7 @@ export class CockpitPanel {
         const to = Math.min(c.n - 1, Math.max(0, p + dir));
         if (to === p) break;
         this.set(id, to);
-        if (c.spring?.momentary.includes(to)) { if (hold) this.held.add(id); else this.set(id, c.spring.rest); }
+        if (c.spring?.momentary.includes(to) && !c.spring.solenoid) { if (hold) this.held.add(id); else this.set(id, c.spring.rest); }
         break;
       }
     }
@@ -180,7 +205,7 @@ export class CockpitPanel {
       case 'knob': return `${c.label}: detent ${p + 1} of ${c.n} (left click / wheel up: clockwise)`;
       default:
         if (c.fourWay) return `${c.label}: click its top, bottom, left or right side (springs back to centre)`;
-        return `${c.label}: position ${p + 1} of ${c.n}${c.spring ? ' (spring-loaded)' : ''} (left click: up, right click: down)`;
+        return `${c.label}: position ${p + 1} of ${c.n}${c.spring ? (c.spring.solenoid ? ' (spring-loaded, held by its solenoid)' : ' (spring-loaded)') : ''} (left click: up, right click: down)`;
     }
   }
 }

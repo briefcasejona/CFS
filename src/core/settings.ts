@@ -8,11 +8,15 @@ export interface Settings {
   gEffects: boolean;
   labels: boolean;
   easyRadar: boolean;
-  /** start cold and dark on the ground in aircraft that have their own systems (src/systems) */
+  /** start cold and dark on the ramp, engine off (f16/systems.ts), when the mission starts at an airbase */
   coldStart: boolean;
   // controls
   abDetent: number;           // throttle position of the afterburner detent 0..1
   keyboardSensitivity: number;
+  /** the mouse wheel turns the F-16's cockpit knobs and wheels the other way */
+  cockpitWheelReverse: boolean;
+  /** cockpit knobs and wheels (control ids) whose mouse direction, and bound joystick axis, are reversed */
+  cockpitReverse: string[];
   // graphics
   fov: number;
   visibilityKm: number;
@@ -47,6 +51,8 @@ export const DEFAULT_SETTINGS: Settings = {
   coldStart: false,
   abDetent: 0.8,
   keyboardSensitivity: 1,
+  cockpitWheelReverse: false,
+  cockpitReverse: [],
   fov: 75,
   visibilityKm: 80,
   hdModels: true,

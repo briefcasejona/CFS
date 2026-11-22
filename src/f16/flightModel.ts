@@ -138,6 +138,10 @@ export class F16FlightModel extends FlightModel {
   nzCmd = 1; alphaCmd = 0;
   /** roll rate limiter: the share of the roll authority left (Dash-1 sec. 16.2.2) */
   rollLimit = 1;
+  /** the engine rpm from the aircraft systems (f16/systems.ts) while they run: starting, spooling down, windmilling */
+  rpmOverride: number | null = null;
+
+  override get rpm() { return this.rpmOverride ?? super.rpm; }
 
   constructor(def: AircraftDef) {
     super(def);
