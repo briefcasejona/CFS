@@ -130,6 +130,8 @@ export class CockpitPanel {
   private held = new Set<string>();
   /** changes since the last drain (for the systems, sounds and tests) */
   private changes: ControlChange[] = [];
+  /** called on every change, as it happens (the MFD OSBs, which the systems' drain would otherwise swallow) */
+  readonly listeners: Array<(ch: ControlChange) => void> = [];
 
   constructor(init: Record<string, number> = {}) {
     for (const c of CONTROLS) this.pos.set(c.id, init[c.id] ?? COLD_DEFAULTS[c.id] ?? (c.spring ? c.spring.rest : 0));
@@ -147,7 +149,9 @@ export class CockpitPanel {
     const from = this.get(id);
     if (from === to) return;
     this.pos.set(id, to);
-    this.changes.push({ id, from, to });
+    const ch = { id, from, to };
+    this.changes.push(ch);
+    for (const l of this.listeners) l(ch);
   }
 
   /** The pilot works a control with the mouse. `dir` +1 = left button / wheel up (switch up/forward, knob clockwise,

@@ -16,6 +16,8 @@ import type { Aircraft } from '../sim/entities.js';
 import type { World } from '../sim/world.js';
 import { AXIS_CONTROLS, CockpitPanel, axisAction } from '../f16/cockpit/controls.js';
 import { routeProgress } from './ramp.js';
+import { StartupChecklist } from '../f16/startup.js';
+import { F16Avionics } from '../f16/avionics/avionics.js';
 import { F16Systems, GEAR, JFS, PBRAKE } from '../f16/systems.js';
 import { F16FlightModel } from '../f16/flightModel.js';
 
@@ -78,6 +80,10 @@ export class FlightSession {
   panel = new CockpitPanel();
   /** the player F-16's aircraft systems (f16/systems.ts); null for any other jet */
   sys: F16Systems | null = null;
+  /** the F-16's MFDs, DED and HUD */
+  avionics: F16Avionics | null = null;
+  /** the start-up checklist of a cold and dark ramp start */
+  startup: StartupChecklist | null = null;
   private sysEl!: HTMLElement;
   private sysShown = false;
   private autoStarting = false;
@@ -145,6 +151,9 @@ export class FlightSession {
     const hit = this.scene.pickCockpit(...this.ndc(x, y));
     if (!hit) return false;
     if (!hold && hit.kind !== 'knob' && hit.kind !== 'axis') return false;
+    // the player's reversals (Settings → Controls): the wheel as a whole, and single knobs and wheels
+    if (!hold && this.settings.cockpitWheelReverse) dir = -dir as 1 | -1;
+    if (this.settings.cockpitReverse.includes(hit.id)) dir = -dir as 1 | -1;
     this.panel.operate(hit.id, dir, hold, hit.dir4);
     this.audio.click();
     this.pointer.moved = true;
@@ -218,10 +227,14 @@ export class FlightSession {
     // every cockpit control starts in its first position; the systems that read them are rebuilt separately
     this.panel = new CockpitPanel();
     this.scene.cockpit.panel = this.panel;
-    this.sys = null; this.autoStarting = false;
+    this.sys = null; this.avionics = null; this.startup = null; this.autoStarting = false;
+    this.scene.cockpit.onDraw = null;
     if (p.fm instanceof F16FlightModel) {
       this.sys = new F16Systems(this.panel, p.fm.block.engine);
-      if (this.built.ramp && s.coldStart) { this.sys.setCold(p.fm.fuel); p.fm.engineRunning = false; p.ctrl.throttle = 0; }
+      const av = this.avionics = new F16Avionics(this.panel), sys = this.sys, built = this.built;
+      this.scene.cockpit.onDraw = (scr) => { av.steerIndex = this.steerIndex; av.draw(scr, built.player, sys, built.steerpoints, built.world.time); };
+      // cold and dark: the ramp start of the mission setup, or the Cold start setting for any ramp start
+      if (this.built.ramp && (s.coldStart || spec.flights.some((f) => f.player && f.start.kind === 'runway' && f.start.ramp))) { this.sys.setCold(p.fm.fuel); p.fm.engineRunning = false; p.ctrl.throttle = 0; this.startup = new StartupChecklist(this.panel, this.sys); }
       else this.sys.setRunning(p.fm.fuel);
       this.panel.set('GEAR_LEVER', p.ctrl.gearDown ? GEAR.DN : GEAR.UP);
     }
@@ -412,7 +425,8 @@ export class FlightSession {
       `RPM ${f(g.rpm)} %   FTIT ${f(g.ftit)} °C   NOZ ${f(g.noz)} %   OIL ${f(g.oil)} psi   FF ${f(g.fuelFlowPph)} pph\n` +
       `HYD A ${f(g.hydA)}  B ${f(g.hydB)} psi   FUEL FR ${f(g.fuelFwdLb)}  AL ${f(g.fuelAftLb)} lb   EPU ${f(g.epuFuel)} %\n` +
       `MAIN PWR ${sw}   JFS ${jfs}   THROTTLE ${sys.throttleOff ? 'OFF' : 'IDLE+'}   ${['ANTI-SKID OFF', 'ANTI-SKID', 'PARKING BRAKE'][this.panel.get('PBRAKE')]}\n` +
-      (sys.lightsText() || 'no lights');
+      (sys.lightsText() || 'no lights') +
+      (this.startup ? '\n\n' + this.startup.text() : '');
   }
 
   /** Ground and tower calls for a jet that starts on the ramp. */
@@ -473,7 +487,7 @@ export class FlightSession {
       this.scene.view = v;
     }
     // cockpit wheels and rheostats bound to a joystick axis
-    for (const c of AXIS_CONTROLS) { const v = i.axis(axisAction(c)); if (v !== null) this.panel.set(c.id, (v + 1) / 2); }
+    for (const c of AXIS_CONTROLS) { const v = i.axis(axisAction(c)); if (v !== null) this.panel.set(c.id, this.settings.cockpitReverse.includes(c.id) ? (1 - v) / 2 : (v + 1) / 2); }
     if (i.mouseWheel !== 0 && !this.mapOpen && this.pointer.x >= 0 && this.clickCockpit(this.pointer.x, this.pointer.y, i.mouseWheel > 0 ? -1 : 1, false)) { /* a knob was turned */ }
     else if (i.mouseWheel !== 0) {
       if (!this.mapOpen) {

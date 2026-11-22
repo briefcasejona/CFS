@@ -12,6 +12,7 @@
 //  * buttons travel in along the normal while pressed;
 //  * the ICP dobber tips towards the side that is held.
 import * as THREE from 'three';
+import { CockpitScreens } from './screens.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { Aircraft } from '../../sim/entities.js';
 import type { AircraftModel } from '../../render/models.js';
@@ -94,6 +95,10 @@ export class F16CockpitView {
   private hidden: THREE.Object3D[] = [];
   private body: THREE.Object3D | null = null;
   private ray = new THREE.Raycaster();
+  /** the MFDs, DED and HUD drawn onto the model (made with the model, freed with it) */
+  screens: CockpitScreens | null = null;
+  /** each frame while the model is shown: draw the displays (set by the flight session) */
+  onDraw: ((scr: CockpitScreens) => void) | null = null;
 
   get loaded() { return !!this.root; }
 
@@ -114,6 +119,7 @@ export class F16CockpitView {
       m.body.add(this.root);
     }
     this.pose();
+    if (this.screens && this.onDraw) this.onDraw(this.screens);
     void dt;
   }
 
@@ -138,8 +144,9 @@ export class F16CockpitView {
   /** Leave cockpit view: remove the model and free its memory; the exterior shows again. */
   unload() {
     for (const o of this.hidden) o.visible = true;
-    this.hidden = [];
+    this.hidden = []; this.hiddenFor = undefined;
     if (this.root) { this.root.parent?.remove(this.root); dispose(this.root); }
+    this.screens?.dispose(); this.screens = null;
     this.root = null;
     this.parts.clear(); this.pickMeshes = []; this.meshPart.clear();
     this.loading = false;
@@ -147,8 +154,12 @@ export class F16CockpitView {
     this.gen++;
   }
 
+  private hiddenFor: unknown = undefined;
+
   private hideExterior(m: AircraftModel) {
-    if (this.hidden.length) return;
+    // again once the HD exterior has loaded: its cockpit would otherwise show through the model's screens
+    if (this.hiddenFor === m.hd) return;
+    this.hiddenFor = m.hd;
     // the exterior's own cockpit, HUD and canopy glass would show through the model; the procedural canopy too
     const hide = [...(m.hd?.cockpit ?? []), ...(m.hd?.glass ?? []), m.canopy];
     for (const o of hide) if (o.visible) { o.visible = false; this.hidden.push(o); }
@@ -253,6 +264,7 @@ export class F16CockpitView {
       this.parts.set(def.id, part);
       for (const mm of meshes) { this.pickMeshes.push(mm); this.meshPart.set(mm, part); }
     }
+    this.screens = new CockpitScreens(root, byName, eye);
     // "throttle (B)" in the model is the canopy structure, not the throttle (Jonathan, 2026-11-22): it never moves
     return root;
   }

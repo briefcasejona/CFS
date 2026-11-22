@@ -249,3 +249,40 @@ describe('F-16 systems: fuel, brakes, lights', () => {
     expect(sys.gauges().hydA).toBe(0);
   });
 });
+
+describe('F-16 systems: spring-loaded switches (Jonathan, 2026-11-22)', () => {
+  it('JFS rests in OFF (middle) and is held in START 2 until the JFS has run up and dropped out', () => {
+    const { panel, sys, run } = rig();
+    sys.setCold(3000 * KG);
+    expect(panel.get('JFS')).toBe(JFS.OFF);
+    panel.set('MAIN_POWER', MAIN_POWER.MAIN); run(1);
+    panel.operate('JFS', -1, false);          // a click down: START 2
+    expect(panel.get('JFS')).toBe(JFS.START2);
+    run(3);
+    expect(sys.jfsOn).toBe(true);
+    expect(panel.get('JFS')).toBe(JFS.START2);   // held while the JFS runs
+  });
+
+  it('FLCS BIT runs on the ground and the switch drops back to OFF when it passes', () => {
+    const { panel, sys, run } = rig();
+    sys.setRunning(3000 * KG);
+    run(1);
+    panel.set('FLCS_BIT', 1); run(1);
+    expect(sys.bitRun).toBe(true);
+    expect(panel.get('FLCS_BIT')).toBe(1);
+    run(50);
+    expect(sys.bitPassed).toBe(true);
+    expect(panel.get('FLCS_BIT')).toBe(0);
+  });
+
+  it('SEC caution below 20 % rpm', () => {
+    const { panel, sys, run } = rig();
+    sys.setCold(3000 * KG);
+    panel.set('MAIN_POWER', MAIN_POWER.MAIN); run(1);
+    expect(sys.cautions.has('SEC')).toBe(true);
+  });
+
+  it('MASTER ARM starts in the middle (OFF)', () => {
+    expect(new CockpitPanel().get('MASTER_ARM')).toBe(1);
+  });
+});

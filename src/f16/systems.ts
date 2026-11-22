@@ -190,6 +190,11 @@ export class F16Systems {
     const p = this.panel;
     p.set('MAIN_POWER', MAIN_POWER.MAIN); p.set('JFS', JFS.OFF); p.set('ENG_FEED', ENG_FEED.NORM);
     p.set('AIR_SOURCE', AIR_SOURCE.NORM); p.set('PBRAKE', PBRAKE.ANTI_SKID);
+    // the avionics as the start-up leaves them (DCS F-16C Viper Guide part 4, steps 23 – 37): MMC, ST STA, MFD and GPS
+    // on, INS in NAV, UHF BOTH, IFF NORM, the HUD and DED bright
+    for (const id of ['MCC', 'ST_STA', 'MFD', 'GPS']) p.set(id, 1);
+    p.set('INS_FUNCTION', 3); p.set('UHF_PWR', 2); p.set('IFF_MASTER', 3);
+    p.set('ICP_SYM', 0.8); p.set('DED_DISPLAY_BRT', 0.8);
     p.drainChanges();
     this.lastMainPower = MAIN_POWER.MAIN;
     this.throttleOff = false;

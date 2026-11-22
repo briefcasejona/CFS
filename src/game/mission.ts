@@ -15,7 +15,7 @@ import { rng } from '../core/math.js';
 
 export type StartSpec =
   | { kind: 'air'; x: number; z: number; alt: number; hdg: number; speed: number }   // hdg deg, alt m, speed m/s
-  | { kind: 'runway'; airbaseId: string }
+  | { kind: 'runway'; airbaseId: string; ramp?: boolean }   // ramp: parked on the ramp, cold and dark (F-16)
   | { kind: 'carrier'; carrierId: string };   // on a bow catapult
 
 export interface FlightSpec {
@@ -338,7 +338,7 @@ export function buildMission(spec: MissionSpec, opts: WorldOptions, rampStart = 
         const right = new THREE.Vector3(Math.cos(h), 0, Math.sin(h));
         const along = 150 + (Math.floor(i / 2) + (f.runwaySlot ?? 0) * 2) * 250;
         const lat = (i % 2 === 0 ? -1 : 1) * 9;
-        if (rampStart && f.player && i === 0) {
+        if ((rampStart || f.start.ramp) && f.player && i === 0) {
           ramp = { ...rampPlan(ab, 0), base: ab };
           ac.fm.placeOnGround(ramp.spot.x, ramp.spot.z, terrainHeight(ramp.spot.x, ramp.spot.z), ramp.spot.hdg);
         } else ac.fm.placeOnGround(ends.start.x + ends.dir.x * along + right.x * lat, ends.start.z + ends.dir.z * along + right.z * lat, ab.elev, h);
@@ -479,7 +479,7 @@ export interface CustomOptions {
   enemyCount: number;
   wingmen: number;
   skill: Skill;
-  start: 'air' | 'runway';
+  start: 'air' | 'runway' | 'ramp';
   altFt: number;
   timeOfDay: number;
   visibilityKm: number;
@@ -569,7 +569,7 @@ export function buildScenario(o: CustomOptions): MissionSpec {
   const goals: MissionGoal[] = [{ kind: 'survive' }];
   const isAA = (id: string) => ['ir', 'sarh', 'arh'].includes(weaponKind(id));
   const playerStart = (x: number, z: number, hdg: number, a = alt, sp = spd): StartSpec =>
-    o.start === 'runway' ? { kind: 'runway', airbaseId: 'halvorsen' } : { kind: 'air', x, z, alt: a, hdg, speed: sp };
+    o.start === 'runway' ? { kind: 'runway', airbaseId: 'halvorsen' } : o.start === 'ramp' ? { kind: 'runway', airbaseId: 'halvorsen', ramp: true } : { kind: 'air', x, z, alt: a, hdg, speed: sp };
   const playerFlight = (stores: string[], start: StartSpec, task: AITask = 'sweep', wps?: FlightSpec['waypoints'], target?: string): FlightSpec => ({
     id: 'player', callsign: 'Viper', side: playerSide, aircraftId: o.aircraftId, stores, count: 1 + o.wingmen, skill: 'veteran', task,
     start, homeBase: start.kind === 'runway' ? start.airbaseId : 'halvorsen', player: true, waypoints: wps, targetGroup: target,
