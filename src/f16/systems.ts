@@ -11,7 +11,9 @@
 //
 // Controls in the cockpit model that the systems read (index 0 is the down / aft / anticlockwise position):
 //   MAIN_POWER_S3  OFF / BATT / MAIN PWR                  (Dash-1 6.9)
-//   JFS_S3         START 1 / OFF / START 2                (2.27)
+//   JFS_S3         START 2 / OFF / START 1                (2.27; spring to OFF, held in START by the systems)
+//   FLCS_BIT_2     OFF / BIT                              (17.12; held in BIT for the test, then back to OFF)
+//   FLCS_RESET_S2  OFF / RESET                            (spring to OFF)
 //   ENG_FEED_K4    OFF / NORM / AFT / FWD                 (3.4, 3.5)
 //   AIR_SOURCE_K4  OFF / NORM / DUMP / RAM                (5.4)
 //   PBRAKE_S3      OFF / ANTI-SKID / PARKING BRAKE        (12.5)
@@ -23,17 +25,17 @@ import type { CockpitPanel } from './cockpit/controls.js';
 import type { EngineId } from './blocks.js';
 
 export const MAIN_POWER = { OFF: 0, BATT: 1, MAIN: 2 } as const;
-export const JFS = { START1: 0, OFF: 1, START2: 2 } as const;
+export const JFS = { START2: 0, OFF: 1, START1: 2 } as const;
 export const ENG_FEED = { OFF: 0, NORM: 1, AFT: 2, FWD: 3 } as const;
 export const AIR_SOURCE = { OFF: 0, NORM: 1, DUMP: 2, RAM: 3 } as const;
 export const PBRAKE = { OFF: 0, ANTI_SKID: 1, PARK: 2 } as const;
 export const GEAR = { DN: 0, UP: 1 } as const;
 
 /** Lights on the caution light panel that the systems drive (19.4; each one's own section in brackets). */
-export const CAUTIONS = ['ELEC SYS', 'FWD FUEL LOW', 'AFT FUEL LOW', 'ANTI SKID', 'EQUIP HOT', 'CABIN PRESS', 'SEC'] as const;
+export const CAUTIONS = ['ELEC SYS', 'FLCS FAULT', 'FWD FUEL LOW', 'AFT FUEL LOW', 'ANTI SKID', 'EQUIP HOT', 'CABIN PRESS', 'SEC'] as const;
 export type Caution = typeof CAUTIONS[number];
 /** Red warning lights on the glareshield (2.42, 2.43). */
-export const WARNINGS = ['ENGINE', 'HYD/OIL PRESS'] as const;
+export const WARNINGS = ['ENGINE', 'HYD/OIL PRESS', 'FLCS'] as const;
 export type Warning = typeof WARNINGS[number];
 
 /** Failures a test or the damage model can set. */
@@ -86,6 +88,8 @@ const HYD_RPM = [10, 40];
 const PBRAKE_THROTTLE = 0.08;
 /** the caution voice message comes 7 s after a caution light, the warning message 1.5 s after a warning light (19.1) */
 const VMS_CAUTION_DELAY = 7, VMS_WARNING_DELAY = 1.5;
+/** the FLCS BIT runs for about 45 s (17.12) */
+const FLCS_BIT_TIME = 45;
 /** ASSUMED: EQUIP HOT comes on "shortly after" AIR SOURCE OFF (5.4) */
 const EQUIP_HOT_DELAY = 5;
 
@@ -159,6 +163,15 @@ export class F16Systems {
   fuelFwd = 0; fuelAft = 0;
   private fuelInit = false;
 
+  // ---- FLCS BIT (17.12)
+  bitTime = -1;
+  /** FLCP RUN and FAIL lights */
+  get bitRun() { return this.bitTime >= 0; }
+  bitFail = false;
+  bitPassed = false;
+  /** FLCS warning faults that a reset can clear (17.9); a BIT failure cannot be reset */
+  private flcsFault = false;
+
   // ---- lights
   readonly cautions = new Set<Caution>();
   readonly warnings = new Set<Warning>();
@@ -181,7 +194,7 @@ export class F16Systems {
     this.lastMainPower = MAIN_POWER.MAIN;
     this.throttleOff = false;
     this.rpm = IDLE_RPM; this.burning = true; this.lit = true;
-    this.ftit = 480; this.oil = 35; this.noz = 90;
+    this.ftit = 480; this.oil = 35; this.noz = 95;
     this.jfsSpeed = 0; this.jfsOn = false; this.accumulators = 2;
     this.mainGen = true; this.stbyGen = false; this.stbyTime = MAIN_GEN_DELAY; this.flcsRelays = true;
     this.hydA = 3000; this.hydB = 3000;
@@ -290,6 +303,7 @@ export class F16Systems {
     this.stepEpu(dt, inp);
     this.stepHydraulics(0);
     this.stepFuel(inp);
+    this.stepFlcsBit(dt, inp);
     // the parking brake lets go when the throttle is advanced (12.5)
     if (p.get('PBRAKE') === PBRAKE.PARK && !this.throttleOff && inp.throttle > PBRAKE_THROTTLE) p.set('PBRAKE', PBRAKE.ANTI_SKID);
     this.stepLights(dt, inp);
@@ -314,6 +328,9 @@ export class F16Systems {
       }
     }
     if (sw === JFS.OFF && this.jfsOn) this.jfsOn = false;
+    // the switch is spring-loaded to OFF and held in START only while the JFS is starting or running on battery
+    // power (2.27): a start that cannot begin lets it go at once
+    if (sw !== JFS.OFF && !this.jfsOn) p.set('JFS', JFS.OFF);
     if (this.jfsOn) this.jfsSpeed = Math.min(1, this.jfsSpeed + this.jfsRate * dt);
     else this.jfsSpeed = Math.max(0, this.jfsSpeed - dt / JFS_SPOOLDOWN);
     // on a ground start the JFS switch returns to OFF at 50 % rpm and the JFS shuts down (2.27, 2.29)
@@ -351,7 +368,7 @@ export class F16Systems {
     this.ftit += (ftitTarget - this.ftit) * Math.min(1, dt * (this.burning ? 0.5 : 0.05));
     const oilTarget = Math.min(55, this.rpm * 0.6);
     this.oil += (oilTarget - this.oil) * Math.min(1, dt * 1.5);
-    const nozTarget = !this.lit ? 0 : inp.abFrac > 0 ? 25 + 75 * inp.abFrac : inp.wow && inp.core < 0.05 ? 90 : 80 * (1 - inp.core);
+    const nozTarget = !this.lit ? 0 : inp.abFrac > 0 ? 25 + 75 * inp.abFrac : inp.wow && inp.core < 0.05 ? 95 : 80 * (1 - inp.core);
     this.noz += (nozTarget - this.noz) * Math.min(1, dt * 1.2);
     this.fuelFlowPph = this.lit ? inp.fuelFlow * PPH_PER_KGS : this.burning ? 900 + 30 * this.rpm : 0;
   }
@@ -390,6 +407,24 @@ export class F16Systems {
     // bleed air keeps it running above the bleed rpm; below that, and at every start, hydrazine (8, 8.3)
     this.epuHydrazine = this.epuCommanded && (this.epuSpeed < 0.95 || this.rpm < this.num.epuBleedRpm);
     if (this.epuHydrazine && this.epuSpeed > 0) this.hydrazine = Math.max(0, this.hydrazine - 100 * dt / HYDRAZINE_TIME);
+  }
+
+  // ---------------------------------------------------------------- FLCS BIT (17.12)
+  private stepFlcsBit(dt: number, inp: SysInput) {
+    const p = this.panel;
+    if (p.get('FLCS_RESET') === 1 && !this.bitFail) this.flcsFault = false;
+    if (p.get('FLCS_BIT') === 1 && this.bitTime < 0) {
+      // ASSUMED interlocks (the Dash-1 names "BIT interlock failure" without listing them): FLCS power, weight on
+      // wheels, standing still, both hydraulic systems up
+      const ok = this.batteryBus && this.flcsRelays && inp.wow && inp.groundSpeed < 1 && this.hydA >= 1000 && this.hydB >= 1000;
+      if (ok) { this.bitTime = 0; this.bitPassed = false; }
+      else { this.bitFail = true; p.set('FLCS_BIT', 0); }
+    }
+    if (this.bitTime >= 0) {
+      this.bitTime += dt;
+      if (p.get('FLCS_BIT') !== 1 || !this.batteryBus || !inp.wow) { this.bitTime = -1; this.bitFail = true; p.set('FLCS_BIT', 0); }
+      else if (this.bitTime >= FLCS_BIT_TIME) { this.bitTime = -1; this.bitFail = false; this.bitPassed = true; p.set('FLCS_BIT', 0); }
+    }
   }
 
   // ---------------------------------------------------------------- fuel (3)
@@ -438,8 +473,10 @@ export class F16Systems {
     // NORM, or no bleed air) the cockpit is at the outside pressure altitude.
     const pressurized = air === AIR_SOURCE.NORM && this.lit;
     set('CABIN PRESS', e && !pressurized && inp.altM > 27000 * 0.3048);
-    // SEC: the engine in SEC or low main fuel pump pressure (2.34). The model has no ENG CONT switch: never on.
-    set('SEC', false);
+    // SEC: the engine in SEC or low main fuel pump pressure (2.34). The main fuel pump turns with the engine (2.22);
+    // it goes out at 20 % rpm in a start (DCS guide, part 4 step 18). The model has no ENG CONT switch.
+    set('SEC', b && this.rpm < 20);
+    set('FLCS FAULT', false);
 
     // MASTER CAUTION: a new caution light lights it; it stays on while a caution light is on unless reset (19.3)
     for (const c of this.cautions) if (!before.has(c)) { this.masterCaution = true; this.vms.caution = 0; this.vms.cautionDone = false; }
@@ -455,6 +492,8 @@ export class F16Systems {
     // HYD/OIL PRESS: system A or B below 1000 psi, or oil below 10 psi for 30 s; the oil part goes out above 20 psi (2.42)
     if (this.oil < 10) this.oilLowTime += dt; else if (this.oil > 20) this.oilLowTime = 0;
     if (b && (this.hydA < 1000 || this.hydB < 1000 || this.oilLowTime > 30)) this.warnings.add('HYD/OIL PRESS');
+    // FLCS: a failed BIT, until a later BIT passes (17.9, 17.12)
+    if (b && (this.bitFail || this.flcsFault)) this.warnings.add('FLCS');
     if (this.warnings.size > wasWarn) { this.vms.warning = 0; this.vms.warningDone = false; }
 
     // the voice message system does not work with weight on wheels (19.1)
@@ -479,6 +518,8 @@ export class F16Systems {
     if (c.length) parts.push(c.join(' · '));
     if (this.jfsRun) parts.push('JFS RUN');
     if (this.epuRun) parts.push('EPU RUN');
+    if (this.bitRun) parts.push(`FLCS BIT RUN ${Math.ceil(FLCS_BIT_TIME - this.bitTime)} s`);
+    if (this.bitFail) parts.push('FLCS BIT FAIL');
     return parts.join('  |  ');
   }
 }

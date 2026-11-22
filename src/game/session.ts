@@ -16,7 +16,7 @@ import type { Aircraft } from '../sim/entities.js';
 import type { World } from '../sim/world.js';
 import { AXIS_CONTROLS, CockpitPanel, axisAction } from '../f16/cockpit/controls.js';
 import { routeProgress } from './ramp.js';
-import { F16Systems, GEAR, PBRAKE } from '../f16/systems.js';
+import { F16Systems, GEAR, JFS, PBRAKE } from '../f16/systems.js';
 import { F16FlightModel } from '../f16/flightModel.js';
 
 const DT = 1 / 120;
@@ -390,7 +390,7 @@ export class FlightSession {
   private autoStartStep(sys: F16Systems, throttle: number) {
     const pn = this.panel;
     if (pn.get('MAIN_POWER') < 2) { pn.set('MAIN_POWER', pn.get('MAIN_POWER') + 1); return; }
-    if (!sys.jfsOn && !sys.burning && sys.rpm < 50 && sys.jfsSpeed < 0.05) { pn.set('JFS', 2); return; }
+    if (!sys.jfsOn && !sys.burning && sys.rpm < 50 && sys.jfsSpeed < 0.05) { pn.set('JFS', JFS.START2); return; }
     if (sys.throttleOff && sys.rpm >= 20) {
       if (!sys.setThrottleOff(false, throttle)) this.built.world.radio('Auto start: bring the throttle back to IDLE.', '#fc8');
       return;
@@ -407,7 +407,7 @@ export class FlightSession {
     const g = sys.gauges();
     const f = (v: number, d = 0) => v.toFixed(d).padStart(5);
     const sw = ['OFF', 'BATT', 'MAIN PWR'][this.panel.get('MAIN_POWER')];
-    const jfs = ['START 1', 'OFF', 'START 2'][this.panel.get('JFS')];
+    const jfs = ['START 2', 'OFF', 'START 1'][this.panel.get('JFS')];
     this.sysEl.textContent =
       `RPM ${f(g.rpm)} %   FTIT ${f(g.ftit)} °C   NOZ ${f(g.noz)} %   OIL ${f(g.oil)} psi   FF ${f(g.fuelFlowPph)} pph\n` +
       `HYD A ${f(g.hydA)}  B ${f(g.hydB)} psi   FUEL FR ${f(g.fuelFwdLb)}  AL ${f(g.fuelAftLb)} lb   EPU ${f(g.epuFuel)} %\n` +
